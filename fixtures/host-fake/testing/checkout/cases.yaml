@@ -1,0 +1,66 @@
+# Golden cases fixture — exercises every schema rule the validator enforces.
+feature: checkout
+model_version: claude-fable-5
+generated_at: 2026-08-30T09:00:00Z
+
+scenario_mix:
+  happy: covered
+  negative: covered
+  boundary: covered
+  permission: covered
+  data-validation:
+    n_a: Order payloads are assembled server-side; the form exposes no free-text fields to validate.
+
+cases:
+  - id: CHECKOUT-ORDER-001
+    title: Place an order with a single in-stock item
+    priority: P0
+    type: happy
+    preconditions:
+      - Signed in as a member with a saved shipping address
+      - Cart contains exactly one in-stock item
+    steps:
+      - Open the cart page
+      - Click the "Place order" button
+    expected:
+      - The order confirmation panel is visible and shows an order number
+      - The cart badge shows 0 items
+
+  - id: CHECKOUT-ORDER-002
+    title: Placing an order with an empty cart is refused
+    priority: P1
+    type: negative
+    preconditions:
+      - Signed in as a member with an empty cart
+    steps:
+      - Open the cart page
+      - Click the "Place order" button
+    expected:
+      - An error alert reads "Your cart is empty"
+      - The order confirmation panel is not rendered
+
+  - id: CHECKOUT-QTY-003
+    title: Quantity above the per-order maximum is rejected at the boundary
+    priority: P1
+    type: edge
+    preconditions:
+      - Cart contains an item whose per-order maximum is 10
+    steps:
+      - Set the quantity field to 11
+      - Click the "Place order" button
+    expected:
+      - The quantity field shows the validation message "Maximum 10 per order"
+      - The "Place order" button is disabled
+
+  - id: CHECKOUT-PERM-004
+    title: A viewer-role account cannot place an order
+    priority: P0
+    type: permission
+    preconditions:
+      - Signed in with the viewer role account
+      - Cart contains one in-stock item
+    steps:
+      - Open the cart page
+    expected:
+      - The "Place order" button is not present on the page
+      - A notice reads "Your role cannot place orders"
