@@ -1,0 +1,65 @@
+# Golden QA-Pilot host profile — fixture for scripts/tests. Deliberately the awkward shape:
+# two apps, engine-dispatched operations (no network assertions), console-log evidence.
+project: host-fake
+
+apps:
+  storefront:
+    framework: vue3-vuetify-vuex
+    spec_dir: e2e
+    repo: .
+  admin:
+    framework: react-mui
+    spec_dir: e2e
+    repo: ../admin
+
+environments:
+  qa:
+    apps:
+      storefront: https://qa.host-fake.example.com
+      admin: https://qa-admin.host-fake.example.com
+    sha_source:
+      url: https://qa.host-fake.example.com/api/version
+      json_path: build.commit
+  staging:
+    apps:
+      storefront: https://staging.host-fake.example.com
+      admin: https://staging-admin.host-fake.example.com
+    sha_source:
+      url: https://staging.host-fake.example.com/api/version
+      json_path: build.commit
+
+auth:
+  model: mixed
+  playwright_min: "1.51"
+  storage_state:
+    dir: .playwright/profiles
+    indexed_db: true
+
+assertions:
+  network_events: forbidden
+  style: ui-state
+
+evidence:
+  extra:
+    - console_log
+
+selectors:
+  testid_attribute: data-testid
+
+models:
+  generation_approved:
+    - claude-fable-5
+    - claude-opus-5
+
+sandbox:
+  mode:
+    env_var: VITE_API_MODE
+    value: mocks
+
+cross_app:
+  propagation_window_s: 90
+  spec_home: storefront
+
+clickup:
+  plan_tier: business
+  space: QA

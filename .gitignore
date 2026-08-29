@@ -1,0 +1,7 @@
+node_modules/
+test-results/
+playwright-report/
+.playwright/profiles/
+.qa-pilot/
+.DS_Store
+*.log

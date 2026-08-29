@@ -1,0 +1,34 @@
+{
+  "name": "qa-pilot",
+  "displayName": "QA-Pilot",
+  "version": "0.1.0",
+  "description": "Evidence-first E2E feature testing: QA-approved test cases, verdicts only from committed Playwright runs against registered deployed environments, mandatory video/trace/SHA evidence, and a ClickUp-backed case lifecycle. Portable via a per-project host profile.",
+  "author": {
+    "name": "Venkata Sandeep Takasi"
+  },
+  "license": "MIT",
+  "keywords": [
+    "qa",
+    "playwright",
+    "clickup",
+    "e2e",
+    "testing",
+    "evidence"
+  ],
+  "userConfig": {
+    "profile_path": {
+      "type": "string",
+      "title": "Host profile path",
+      "description": "Repo-relative path to the committed QA-Pilot host profile",
+      "default": "qa-pilot.config.yaml",
+      "required": false
+    },
+    "testing_dir": {
+      "type": "string",
+      "title": "Testing artifacts directory",
+      "description": "Repo-relative directory holding per-feature cases.yaml, clickup-map.json, and run artifacts",
+      "default": "testing",
+      "required": false
+    }
+  }
+}
