@@ -1,0 +1,413 @@
+{
+  "config": {
+    "argv": [
+      "/usr/local/bin/node",
+      "node_modules/.bin/playwright",
+      "test"
+    ],
+    "configFile": "playwright.config.js",
+    "rootDir": "e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json",
+        {
+          "outputFile": "report.json"
+        }
+      ],
+      [
+        "list",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 4,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "sample.spec.js",
+      "file": "sample.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "CHECKOUT-ORDER-001 places an order",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 574,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-08-29T19:23:01.928Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "test-results/sample-CHECKOUT-ORDER-001-places-an-order-chromium/video.webm"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "test-results/sample-CHECKOUT-ORDER-001-places-an-order-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "775aa06a839d2ee5676f-55ff59bfd8bbc3e0f895",
+          "file": "sample.spec.js",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "CHECKOUT-ORDER-002 empty cart is refused",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 2129,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('alert')\nExpected: \u001b[32m\"Your cart is empty\"\u001b[39m\nReceived: \u001b[31m\"Something else\"\u001b[39m\nTimeout:  2000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 2000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('alert')\u001b[22m\n\u001b[2m    21 × locator resolved to <div data-testid=\"alert\">Something else</div>\u001b[22m\n\u001b[2m       - unexpected value \"Something else\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('alert')\nExpected: \u001b[32m\"Your cart is empty\"\u001b[39m\nReceived: \u001b[31m\"Something else\"\u001b[39m\nTimeout:  2000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 2000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('alert')\u001b[22m\n\u001b[2m    21 × locator resolved to <div data-testid=\"alert\">Something else</div>\u001b[22m\n\u001b[2m       - unexpected value \"Something else\"\u001b[22m\n\n    at e2e/sample.spec.js:12:43",
+                    "location": {
+                      "file": "e2e/sample.spec.js",
+                      "column": 43,
+                      "line": 12
+                    },
+                    "snippet": "  10 | test('CHECKOUT-ORDER-002 empty cart is refused', async ({ page }) => {\n  11 |   await page.setContent('<div data-testid=\"alert\">Something else</div>');\n> 12 |   await expect(page.getByTestId('alert')).toHaveText('Your cart is empty', { timeout: 2000 });\n     |                                           ^\n  13 | });\n  14 |\n  15 | // 3 flaky: fails first attempt, passes on retry -- the case that must NOT read as pass"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "e2e/sample.spec.js",
+                        "column": 43,
+                        "line": 12
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('alert')\nExpected: \u001b[32m\"Your cart is empty\"\u001b[39m\nReceived: \u001b[31m\"Something else\"\u001b[39m\nTimeout:  2000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 2000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('alert')\u001b[22m\n\u001b[2m    21 × locator resolved to <div data-testid=\"alert\">Something else</div>\u001b[22m\n\u001b[2m       - unexpected value \"Something else\"\u001b[22m\n\n\n  10 | test('CHECKOUT-ORDER-002 empty cart is refused', async ({ page }) => {\n  11 |   await page.setContent('<div data-testid=\"alert\">Something else</div>');\n> 12 |   await expect(page.getByTestId('alert')).toHaveText('Your cart is empty', { timeout: 2000 });\n     |                                           ^\n  13 | });\n  14 |\n  15 | // 3 flaky: fails first attempt, passes on retry -- the case that must NOT read as pass\n    at e2e/sample.spec.js:12:43"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-08-29T19:23:06.053Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "test-results/sample-CHECKOUT-ORDER-002-empty-cart-is-refused-chromium/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "test-results/sample-CHECKOUT-ORDER-002-empty-cart-is-refused-chromium/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "test-results/sample-CHECKOUT-ORDER-002-empty-cart-is-refused-chromium/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "e2e/sample.spec.js",
+                    "column": 43,
+                    "line": 12
+                  }
+                },
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 2222,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('alert')\nExpected: \u001b[32m\"Your cart is empty\"\u001b[39m\nReceived: \u001b[31m\"Something else\"\u001b[39m\nTimeout:  2000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 2000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('alert')\u001b[22m\n\u001b[2m    21 × locator resolved to <div data-testid=\"alert\">Something else</div>\u001b[22m\n\u001b[2m       - unexpected value \"Something else\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('alert')\nExpected: \u001b[32m\"Your cart is empty\"\u001b[39m\nReceived: \u001b[31m\"Something else\"\u001b[39m\nTimeout:  2000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 2000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('alert')\u001b[22m\n\u001b[2m    21 × locator resolved to <div data-testid=\"alert\">Something else</div>\u001b[22m\n\u001b[2m       - unexpected value \"Something else\"\u001b[22m\n\n    at e2e/sample.spec.js:12:43",
+                    "location": {
+                      "file": "e2e/sample.spec.js",
+                      "column": 43,
+                      "line": 12
+                    },
+                    "snippet": "  10 | test('CHECKOUT-ORDER-002 empty cart is refused', async ({ page }) => {\n  11 |   await page.setContent('<div data-testid=\"alert\">Something else</div>');\n> 12 |   await expect(page.getByTestId('alert')).toHaveText('Your cart is empty', { timeout: 2000 });\n     |                                           ^\n  13 | });\n  14 |\n  15 | // 3 flaky: fails first attempt, passes on retry -- the case that must NOT read as pass"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "e2e/sample.spec.js",
+                        "column": 43,
+                        "line": 12
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('alert')\nExpected: \u001b[32m\"Your cart is empty\"\u001b[39m\nReceived: \u001b[31m\"Something else\"\u001b[39m\nTimeout:  2000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 2000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('alert')\u001b[22m\n\u001b[2m    21 × locator resolved to <div data-testid=\"alert\">Something else</div>\u001b[22m\n\u001b[2m       - unexpected value \"Something else\"\u001b[22m\n\n\n  10 | test('CHECKOUT-ORDER-002 empty cart is refused', async ({ page }) => {\n  11 |   await page.setContent('<div data-testid=\"alert\">Something else</div>');\n> 12 |   await expect(page.getByTestId('alert')).toHaveText('Your cart is empty', { timeout: 2000 });\n     |                                           ^\n  13 | });\n  14 |\n  15 | // 3 flaky: fails first attempt, passes on retry -- the case that must NOT read as pass\n    at e2e/sample.spec.js:12:43"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-08-29T19:23:08.512Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "test-results/sample-CHECKOUT-ORDER-002-empty-cart-is-refused-chromium-retry1/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "test-results/sample-CHECKOUT-ORDER-002-empty-cart-is-refused-chromium-retry1/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "test-results/sample-CHECKOUT-ORDER-002-empty-cart-is-refused-chromium-retry1/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "e2e/sample.spec.js",
+                    "column": 43,
+                    "line": 12
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "775aa06a839d2ee5676f-71d012e381106eeba900",
+          "file": "sample.spec.js",
+          "line": 10,
+          "column": 1
+        },
+        {
+          "title": "CHECKOUT-QTY-003 quantity boundary",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 206,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m\n    at e2e/sample.spec.js:18:26",
+                    "location": {
+                      "file": "e2e/sample.spec.js",
+                      "column": 26,
+                      "line": 18
+                    },
+                    "snippet": "  16 | test('CHECKOUT-QTY-003 quantity boundary', async ({ page }, testInfo) => {\n  17 |   await page.setContent('<div data-testid=\"qty\">10</div>');\n> 18 |   expect(testInfo.retry).toBeGreaterThan(0);\n     |                          ^\n  19 | });\n  20 |\n  21 | // 4 skipped -> blocked"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "e2e/sample.spec.js",
+                        "column": 26,
+                        "line": 18
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m\n\n  16 | test('CHECKOUT-QTY-003 quantity boundary', async ({ page }, testInfo) => {\n  17 |   await page.setContent('<div data-testid=\"qty\">10</div>');\n> 18 |   expect(testInfo.retry).toBeGreaterThan(0);\n     |                          ^\n  19 | });\n  20 |\n  21 | // 4 skipped -> blocked\n    at e2e/sample.spec.js:18:26"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-08-29T19:23:11.198Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "test-results/sample-CHECKOUT-QTY-003-quantity-boundary-chromium/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "test-results/sample-CHECKOUT-QTY-003-quantity-boundary-chromium/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "test-results/sample-CHECKOUT-QTY-003-quantity-boundary-chromium/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "e2e/sample.spec.js",
+                    "column": 26,
+                    "line": 18
+                  }
+                },
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 196,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-08-29T19:23:11.875Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "test-results/sample-CHECKOUT-QTY-003-quantity-boundary-chromium-retry1/video.webm"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "test-results/sample-CHECKOUT-QTY-003-quantity-boundary-chromium-retry1/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "flaky"
+            }
+          ],
+          "id": "775aa06a839d2ee5676f-d262a3b3021fb166eb39",
+          "file": "sample.spec.js",
+          "line": 16,
+          "column": 1
+        },
+        {
+          "title": "CHECKOUT-PERM-004 viewer cannot order",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "location": {
+                    "file": "e2e/sample.spec.js",
+                    "line": 22,
+                    "column": 6
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-08-29T19:23:12.224Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "location": {
+                        "file": "e2e/sample.spec.js",
+                        "line": 22,
+                        "column": 6
+                      }
+                    }
+                  ],
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "test-results/sample-CHECKOUT-PERM-004-viewer-cannot-order-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "775aa06a839d2ee5676f-9931bfc2c536ee154da1",
+          "file": "sample.spec.js",
+          "line": 22,
+          "column": 6
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-08-29T19:23:00.605Z",
+    "duration": 11644.59,
+    "expected": 1,
+    "skipped": 1,
+    "unexpected": 1,
+    "flaky": 1
+  }
+}

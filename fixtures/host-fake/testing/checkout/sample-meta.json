@@ -1,0 +1,17 @@
+{
+  "run_id": "2026-08-30T09:22Z-checkout-a1b2c3d",
+  "feature": "checkout",
+  "app": "storefront",
+  "env_name": "qa",
+  "env_url": "https://qa.host-fake.example.com",
+  "api_mode": "server",
+  "sha_before": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+  "sha_after": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+  "sha_source": "https://qa.host-fake.example.com/api/version",
+  "executor": "dev-fixture",
+  "model_version": "claude-fable-5",
+  "playwright_version": "1.62.1",
+  "browser": "chromium-141",
+  "started_at": "2026-08-30T09:22:00.000Z",
+  "finished_at": "2026-08-30T09:22:12.000Z"
+}
