@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__.*[Cc][Ll][Ii][Cc][Kk][Uu][Pp].*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/clickup-guard.mjs"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
