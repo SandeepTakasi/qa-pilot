@@ -22,5 +22,5 @@ SOFTWARE.
 
 ---
 
-This project vendors reference material from neonwatty/qa-skills (MIT).
-See qa-pilot/vendor/qa-skills/LICENSE and PROVENANCE.md for attribution.
+This project bundles yaml (https://github.com/eemeli/yaml), Copyright Eemeli Aro,
+MIT licensed, at qa-pilot/scripts/lib/yaml.mjs. It is the only third-party code here.

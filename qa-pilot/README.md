@@ -59,8 +59,9 @@ skills/     the five entry points plus setup-profiles
 scripts/    deterministic validators and transforms (zero deps, node --test)
 schemas/    the host profile, case, and report contracts
 hooks/      ClickUp write guard — the scripted path is the only write path
-vendor/     pinned copies from neonwatty/qa-skills (MIT), see PROVENANCE.md
 ```
+
+The only third-party code is `scripts/lib/yaml.mjs`, a bundled copy of [yaml](https://github.com/eemeli/yaml) (MIT). Node ships no YAML parser, the host profile is hand-edited by QA and needs comments (so JSON is out), and bundling keeps consuming repos install-free.
 
 ## Development
 

@@ -6,8 +6,6 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 
 # setup-profiles — save reusable login sessions
 
-Adapted from `neonwatty/qa-skills` (MIT); see `${CLAUDE_PLUGIN_ROOT}/vendor/qa-skills/PROVENANCE.md`. The capture step is **not** the upstream one: upstream saves cookies and localStorage only, which loses IndexedDB-persisted auth. See §3.
-
 Recommended model: any current model. This is orchestration around a human login.
 
 ## 0. Profile gate
