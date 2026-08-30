@@ -77,7 +77,10 @@ scripts/           deterministic validators and transforms (zero deps, node --te
 schemas/           the host profile, case, and report contracts
 hooks/             ClickUp write guard, so the scripted path is the only write path
 SETUP-CLICKUP.md   one-time workspace setup you do by hand
+DECISIONS.md       what this plugin enforces on a host, and what swapping it would cost
 ```
+
+[DECISIONS.md](./DECISIONS.md) is worth reading before adopting this anywhere new. Short version: Playwright is a deliberate hard dependency because the trace *is* the evidence model, while ClickUp is surface-level, since no script ever calls it and swapping trackers is mostly prose.
 
 The only third-party code is `scripts/lib/yaml.mjs`, a bundled copy of [yaml](https://github.com/eemeli/yaml) (MIT). Node ships no YAML parser, the host profile is hand-edited by QA and needs comments (so JSON is out), and bundling keeps consuming repos install-free.
 
