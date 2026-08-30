@@ -9,6 +9,7 @@
 import { createRequire } from 'node:module';
 import { isMain } from './lib/is-main.mjs';
 import { existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
@@ -18,6 +19,36 @@ const MIN = [1, 51, 0];
 function arg(flag, fallback = null) {
   const i = process.argv.indexOf(flag);
   return i === -1 ? fallback : process.argv[i + 1];
+}
+
+const shellQuote = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
+
+/**
+ * This step needs a human at a keyboard: a browser opens, a person signs in, and only
+ * they can say when that finished. Without a TTY the prompt below never resolves — the
+ * browser sits open, the caller's timeout eventually kills it, and nothing is saved.
+ * So refuse up front, before launching anything, and hand back the exact command to run.
+ */
+export function ttyRefusal({ isTTY, scriptPath, url, out, browser, cwd }) {
+  if (isTTY) return null;
+  const cmd = [
+    'node', shellQuote(scriptPath),
+    '--url', shellQuote(url),
+    '--out', shellQuote(out),
+    ...(browser && browser !== 'chromium' ? ['--browser', shellQuote(browser)] : []),
+  ].join(' ');
+  return [
+    'save-storage-state needs an interactive terminal, and this session does not have one.',
+    '',
+    'Signing in is something only you can do, and only you can say when it finished —',
+    'so this command has to be run by you, in your own terminal, not by an agent.',
+    '',
+    `  cd ${shellQuote(cwd)}`,
+    `  ${cmd}`,
+    '',
+    'A browser will open. Sign in — including OAuth and 2FA — then press Enter there.',
+    'Nothing was launched here, so there is no stray browser window to close.',
+  ].join('\n');
 }
 
 /** Resolve playwright from the host repo, not from the plugin. */
@@ -59,6 +90,18 @@ async function main() {
   }
 
   const cwd = process.cwd();
+
+  // Check this before launching anything: a browser opened here would be orphaned.
+  const refusal = ttyRefusal({
+    isTTY: Boolean(stdin.isTTY),
+    scriptPath: fileURLToPath(import.meta.url),
+    url, out, browser: browserName, cwd,
+  });
+  if (refusal) {
+    console.error(refusal);
+    process.exit(2);
+  }
+
   const { mod: playwright, version, pkg } = loadPlaywright(cwd);
   const browserType = playwright[browserName];
   if (!browserType) throw new Error(`unknown browser: ${browserName} (chromium | firefox | webkit)`);

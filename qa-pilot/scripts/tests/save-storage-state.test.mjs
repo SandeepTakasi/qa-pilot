@@ -3,7 +3,19 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadPlaywright } from '../save-storage-state.mjs';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { loadPlaywright, ttyRefusal } from '../save-storage-state.mjs';
+
+const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), '../save-storage-state.mjs');
+const refusalArgs = {
+  scriptPath: '/plugins/qa-pilot/scripts/save-storage-state.mjs',
+  url: 'https://app.example.com/login',
+  out: '.playwright/profiles/storefront-member.json',
+  browser: 'chromium',
+  cwd: '/repo',
+};
 
 /** Build a throwaway host repo with a fake playwright package at `version`. */
 function fakeHost({ pkg = 'playwright', version = null } = {}) {
@@ -49,4 +61,47 @@ test('falls back to @playwright/test when playwright is absent', () => {
 
 test('explains itself when Playwright is not installed at all', () => {
   assert.throws(() => loadPlaywright(fakeHost()), /not installed in this repo/);
+});
+
+// --- the interactive-terminal requirement ------------------------------------
+// Regression: readline on non-TTY stdin never resolves, so the headed browser opened,
+// the script hung, and the caller's timeout killed it mid-login. Every single time.
+
+test('a real TTY is allowed straight through', () => {
+  assert.equal(ttyRefusal({ ...refusalArgs, isTTY: true }), null);
+});
+
+test('without a TTY it refuses with a copy-pasteable command', () => {
+  const msg = ttyRefusal({ ...refusalArgs, isTTY: false });
+  assert.match(msg, /interactive terminal/);
+  assert.match(msg, /cd \/repo/);
+  // The resolved script path, not ${CLAUDE_PLUGIN_ROOT}, which would not expand for a user.
+  assert.match(msg, /node \/plugins\/qa-pilot\/scripts\/save-storage-state\.mjs/);
+  assert.match(msg, /--url https:\/\/app\.example\.com\/login/);
+  assert.match(msg, /--out \.playwright\/profiles\/storefront-member\.json/);
+  assert.doesNotMatch(msg, /\$\{/, 'the command must contain no unexpanded variables');
+});
+
+test('the default browser is left off the command, a non-default one is included', () => {
+  assert.doesNotMatch(ttyRefusal({ ...refusalArgs, isTTY: false }), /--browser/);
+  assert.match(ttyRefusal({ ...refusalArgs, isTTY: false, browser: 'webkit' }), /--browser webkit/);
+});
+
+test('arguments needing quoting are shell-quoted', () => {
+  const msg = ttyRefusal({ ...refusalArgs, isTTY: false, cwd: "/repos/my app's repo" });
+  assert.match(msg, /cd '\/repos\/my app'\\''s repo'/);
+});
+
+test('it refuses in milliseconds rather than hanging, and launches no browser', () => {
+  const started = Date.now();
+  let status = 0;
+  try {
+    execFileSync('node', [SCRIPT, '--url', 'https://x.example.com', '--out', 'o.json'],
+      { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 15_000 });
+  } catch (e) {
+    status = e.status;
+    assert.match(e.stderr, /interactive terminal/);
+  }
+  assert.equal(status, 2, 'must exit nonzero so a caller knows nothing was saved');
+  assert.ok(Date.now() - started < 10_000, 'must not hang waiting on stdin');
 });

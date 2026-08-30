@@ -31,6 +31,10 @@ Deviations from the PRD, each forced by a verified constraint:
   session reused — but is written from scratch. Upstream captures via
   `playwright-cli state-save`, which omits IndexedDB and so loses Firebase auth. Replaced
   with `save-storage-state.mjs` using `storageState({ indexedDB: true })`.
+  The capture is run by the **user**, in their own terminal, and the skill hands them a
+  fully-resolved command rather than running it. An agent's Bash tool has no interactive
+  terminal, so the sign-in prompt could never resolve; the script now detects that before
+  launching a browser it would orphan, and exits with the command to run.
 - `publish-clickup.ts` is not a script. ClickUp writes are driven by skill instructions
   over MCP, with the deterministic work (parse, validate) staying in scripts.
 - The write guard scopes by flag file rather than by ClickUp space; checking the target
