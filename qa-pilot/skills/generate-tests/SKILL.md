@@ -18,7 +18,9 @@ Resolve the profile path (userConfig `profile_path`, default `qa-pilot.config.ya
 node "${CLAUDE_PLUGIN_ROOT}/scripts/lib/profile.mjs" <profile-path>
 ```
 
-Nonzero exit → **STOP**. Print the errors verbatim and tell the user to run `/qa-pilot:qa-init`. Also confirm the profile is committed (`git ls-files --error-unmatch <profile-path>`); if it is not, stop and say so, because an uncommitted profile means each developer is testing against a different definition of the truth.
+Nonzero exit → **STOP**. Print the errors verbatim and tell the user to run `/qa-pilot:qa-init`.
+
+Then check whether the profile is committed (`git ls-files --error-unmatch <profile-path>`). If it is not, **warn but continue**: an uncommitted profile is fine for a solo pilot and must be committed before the team relies on it, because otherwise five developers test against five different definitions of the truth. Some hosts deliberately gitignore it while trialling the pipeline, which is a legitimate choice rather than an error.
 
 Use the JSON on stdout as your source for every project-specific value. Do not re-read the YAML yourself.
 

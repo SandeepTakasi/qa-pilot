@@ -16,7 +16,9 @@ Recommended model: Sonnet-class is enough for straightforward spec authoring. Re
 node "${CLAUDE_PLUGIN_ROOT}/scripts/lib/profile.mjs" <profile-path>
 ```
 
-Nonzero exit → STOP, print errors, point at `/qa-pilot:qa-init`. Confirm it is committed (`git ls-files --error-unmatch`).
+Nonzero exit → STOP, print errors, point at `/qa-pilot:qa-init`.
+
+Then check whether the profile is committed (`git ls-files --error-unmatch <profile-path>`). If it is not, **warn but continue**: an uncommitted profile is fine for a solo pilot and must be committed before the team relies on it, because otherwise five developers test against five different definitions of the truth. Some hosts deliberately gitignore it while trialling the pipeline, which is a legitimate choice rather than an error.
 
 ## 1. Check the environment is registered
 

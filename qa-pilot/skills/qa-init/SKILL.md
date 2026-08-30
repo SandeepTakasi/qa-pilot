@@ -1,6 +1,6 @@
 ---
 name: qa-init
-description: Initialize QA-Pilot in a host repo. Scan the codebase (frameworks, package versions, existing test infra, dev-mode scripts, selector conventions, house docs), interview for what discovery cannot know (deployed environment URLs, deploy-SHA source, ClickUp workspace and tier, sandbox mode), and emit a schema-valid qa-pilot.config.yaml host profile plus a gap report. Run this before any other QA-Pilot skill; all of them refuse to run without a committed valid profile. Use when the user says "qa-init", "set up qa-pilot", "initialize QA-Pilot", or "onboard this repo to QA-Pilot".
+description: Initialize QA-Pilot in a host repo. Scan the codebase (frameworks, package versions, existing test infra, dev-mode scripts, selector conventions, house docs), interview for what discovery cannot know (deployed environment URLs, deploy-SHA source, ClickUp workspace and tier, sandbox mode), and emit a schema-valid qa-pilot.config.yaml host profile plus a gap report. Run this before any other QA-Pilot skill; all of them refuse to run without a schema-valid profile. Use when the user says "qa-init", "set up qa-pilot", "initialize QA-Pilot", or "onboard this repo to QA-Pilot".
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -103,6 +103,6 @@ sandbox value from this host's profile.
 
 ## 5. Hand off
 
-Tell the user to **commit the profile**. The other skills verify it is committed (`git ls-files --error-unmatch`), because an uncommitted profile means five developers are testing against five different definitions of the truth.
+Recommend **committing the profile**, because an uncommitted one means five developers end up testing against five different definitions of the truth. The other skills warn rather than refuse when it is uncommitted, so a host that deliberately gitignores it while trialling the pipeline still works. Say plainly that it must be committed before the team relies on it.
 
 Then state the next step: `/qa-pilot:setup-profiles` to save auth profiles, then `/qa-pilot:generate-tests <feature>` for the pilot feature.
