@@ -8,35 +8,41 @@ Fifteen minutes, once per workspace.
 
 ## 1. Space
 
-Create a Space for QA work. Any name; record it as `clickup.space` in `qa-pilot.config.yaml`.
+Use a Space for QA work, and inside it create a **Folder dedicated to the automated
+pipeline**, with **one List per feature**. Case tasks live in the feature's List.
 
-Inside it, one Folder per release or sprint, and **one List per feature**. Case tasks live
-in the feature's List. Nothing enforces the Folder layer. It is there so a sprint's
-features stay together.
+Record both in `qa-pilot.config.yaml` as `clickup.space` and `clickup.folder`. Name the
+folder, because a space usually holds several and "the feature's list in space X" is
+otherwise ambiguous enough to create 25 case tasks beside somebody's manual QA work.
+
+Put the statuses and custom fields below on the **folder**, not the space. Everything
+inside inherits them, and existing manual QA lists elsewhere in the space stay untouched.
 
 ## 2. Custom statuses
 
-Set these on the Space so every feature List inherits them.
+Right-click the folder, choose **Task statuses**, and switch to custom statuses.
 
 **The names below are only defaults.** If your workspace already has QA statuses, keep your own wording and record the mapping in the profile's `clickup.statuses` instead. What the pipeline needs is seven *distinct* states, not seven particular words. What it cannot work without is a way to express **approval**, both of a case's design and of its verdict, so a board that only has `pass` and `fail` is recording verdicts and still needs approval states added.
 
-| Status | Suggested type |
+| Group | Statuses |
 |---|---|
-| `Case Review` | Not started |
-| `Approved for Execution` | Active |
-| `Under Review` | Active |
-| `Approved` | Done |
-| `Rejected` | Active |
-| `Retest` | Active |
-| `Quarantined` | Active |
+| Active | `Case Review`, `Approved for Execution`, `Under Review`, `Retest`, `Quarantined`, `Rejected` |
+| Closed | `Approved` |
 
-Do not mark `Approved` as Closed. Closed statuses hide tasks from default views, and an
-approved case is not finished: it re-runs on the next build. That persistence is what
-makes this a regression suite instead of a one-shot.
+ClickUp requires at least one Closed status, and `Approved` is the only genuinely finished
+state, so it goes there. Closed statuses are hidden from default views, which turns out to
+be what you want: an approved case reappears by itself when the next build re-runs it and
+moves it back to `Under Review`. The pipeline reads statuses by name through the API, so
+the grouping never affects behaviour.
+
+**Gotcha:** ClickUp refuses a folder status whose name is already used by the parent space
+("Status name is already taken"). If your space already has `to do`, pick something else
+for `case_review` and record the name you chose in `clickup.statuses`.
 
 ## 3. Custom fields
 
-Create these on the Space. Names must match exactly; dropdown options must match exactly.
+Right-click the folder, choose **Custom Fields**, and create these. Names must match
+exactly, and so must dropdown options: `P0` is not `p0`.
 
 | Field | Type | Options |
 |---|---|---|
@@ -46,7 +52,7 @@ Create these on the Space. Names must match exactly; dropdown options must match
 | Build SHA | Text | none |
 | Env | Dropdown | one option per environment in your profile (e.g. `qa`, `staging`) |
 | API Mode | Dropdown | `server`, plus your sandbox value (e.g. `mocks`) |
-| App | Dropdown | one option per app in your profile (e.g. `storefront`, `admin`) |
+| App | Dropdown | one option per app declared in your profile |
 | Executor | Text | none |
 | Run Date | Date | none |
 | Flake Count | Number | none |

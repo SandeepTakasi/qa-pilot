@@ -8,7 +8,7 @@ Enforced by `scripts/lib/profile.mjs`. Unknown top-level keys are an **error** (
 project: string                     # required, non-empty
 
 apps:                               # required, >= 1 entry
-  <app-name>:                       # e.g. storefront, admin
+  <app-name>:                       # one key per frontend, e.g. storefront, admin
     framework: string               # required, e.g. vue3-vuetify-vuex, react-mui
     spec_dir: string                # required, repo-relative dir for committed specs
     repo: string                    # required, path or URL to that app's repo
