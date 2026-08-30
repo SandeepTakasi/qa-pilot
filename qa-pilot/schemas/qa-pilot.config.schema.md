@@ -25,7 +25,8 @@ environments:                       # required, >= 1 entry
 
 auth:
   model: dev-handoff | role-accounts | mixed   # required
-  playwright_min: <semver>          # required, must be >= 1.51.0 (indexedDB storageState)
+  playwright_min: "<semver>"        # required, must be >= 1.51.0 (indexedDB storageState).
+                                    # QUOTE IT: unquoted, YAML reads 1.60 as the number 1.6.
   storage_state:
     dir: string                     # optional, default ".playwright/profiles"
     indexed_db: true                # REQUIRED to be true — Firebase-style auth persists

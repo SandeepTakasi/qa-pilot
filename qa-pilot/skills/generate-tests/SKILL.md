@@ -58,7 +58,7 @@ If `model_version` is rejected, your model is not on the profile's approved list
 
 Skip this section entirely if the ClickUp MCP tools are unavailable — the validated `cases.yaml` still stands, and the user can re-run later to sync. Say clearly that sync was skipped.
 
-1. Create the write flag the plugin's guard hook checks: `mkdir -p .qa-pilot && touch .qa-pilot/allow-clickup-writes`
+1. Create the write flag the plugin's guard hook checks: `mkdir -p .qa-pilot && touch .qa-pilot/allow-clickup-writes` (it expires after 30 minutes, so a dead session cannot leave writes open)
 2. Read `testing/<feature>/clickup-map.json` if it exists. **Every case already in the map is updated, never recreated** — this is what makes reruns idempotent. Never look tasks up by name.
 3. For each unmapped case, create a task in the feature's list under the profile's `clickup.space`:
    - title: `<CASE-ID> <Title>`

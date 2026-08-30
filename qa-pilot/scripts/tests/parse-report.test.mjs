@@ -94,6 +94,54 @@ test('specs without a case-ID prefix are dropped and reported, never guessed at'
   assert.deepEqual(r.unmapped_specs, ['some ad-hoc exploratory check']);
 });
 
+// --- multi-project reports: one tests[] entry per browser, not per attempt ---
+
+const multiProject = (...entries) => ({
+  suites: [{ specs: [{ title: 'CHECKOUT-XBROWSER-001 t', tests: entries.map((results) => ({ results })) }], suites: [] }],
+  config: {}, stats: {},
+});
+const one = (status, extra = {}) => ({ status, duration: 100, attachments: [], ...extra });
+
+test('a genuine cross-browser failure is a fail, never a flake', () => {
+  // Regression: flattening projects made chromium-pass + firefox-fail look like a retry.
+  const r = buildReport(multiProject(
+    [one('passed')],
+    [one('failed', { error: { message: 'boom' } })],
+  ), meta());
+  assert.equal(r.cases[0].verdict, 'fail');
+  assert.equal(r.cases[0].retries, 0, 'no attempt was retried, so retries must be 0');
+  assert.match(r.cases[0].failure_summary, /boom/);
+});
+
+test('two clean projects are a pass with no phantom retry', () => {
+  const r = buildReport(multiProject([one('passed')], [one('passed')]), meta());
+  assert.equal(r.cases[0].verdict, 'pass');
+  assert.equal(r.cases[0].retries, 0);
+});
+
+test('a real retry inside one project is still flaky', () => {
+  const r = buildReport(multiProject(
+    [one('failed', { error: { message: 'x' } }), one('passed')],
+    [one('passed')],
+  ), meta());
+  assert.equal(r.cases[0].verdict, 'flaky');
+  assert.equal(r.cases[0].retries, 1);
+});
+
+test('retries are summed per project, not inflated by project count', () => {
+  const r = buildReport(multiProject(
+    [one('failed', { error: { message: 'x' } }), one('passed')],
+    [one('failed', { error: { message: 'y' } }), one('passed')],
+  ), meta());
+  assert.equal(r.cases[0].retries, 2);
+});
+
+test('an interrupted attempt is blocked, not a fail with no summary', () => {
+  // As a fail it tripped "failure_summary required" and refused the whole report.
+  assert.equal(verdictFor([{ status: 'interrupted' }]), 'blocked');
+  assert.equal(verdictFor([{ status: 'timedOut' }]), 'fail', 'a timeout is still a real failure');
+});
+
 test('nested describe suites are walked', () => {
   const p = pw();
   const inner = { specs: p.suites[0].specs.splice(0, 1), suites: [] };

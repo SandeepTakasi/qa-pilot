@@ -6,6 +6,7 @@
 // Usage: node parse-report.mjs <playwright-report.json> <meta.json> [-o report.json]
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { isMain } from './lib/is-main.mjs';
 
 const FAILURE_SUMMARY_MAX = 500;
 const CASE_ID_RE = /^([A-Z0-9]+-[A-Z0-9]+-\d{3})\b/;
@@ -23,8 +24,9 @@ function* walkSpecs(suites) {
 }
 
 /**
- * Verdict from the attempt results themselves, not from Playwright's own classification —
- * a config change (failOnFlakyTests, retries) must not be able to turn a flaky case green.
+ * Verdict for ONE test entry's attempts (one project/browser; results[] are its retries).
+ * Derived from the attempts themselves, not from Playwright's own classification — a
+ * config change (failOnFlakyTests, retries) must not be able to turn a flaky case green.
  */
 export function verdictFor(results, { shaMismatch = false } = {}) {
   if (shaMismatch) return 'blocked';
@@ -33,10 +35,26 @@ export function verdictFor(results, { shaMismatch = false } = {}) {
   if (statuses.every((s) => s === 'skipped')) return 'blocked';
 
   const passed = statuses.includes('passed');
-  const failed = statuses.some((s) => s === 'failed' || s === 'timedOut' || s === 'interrupted');
+  // `interrupted` means the attempt never finished (run aborted) — that is a blocked
+  // case, not a failing one, and calling it a fail also demands a failure summary
+  // that does not exist.
+  const failed = statuses.some((s) => s === 'failed' || s === 'timedOut');
   if (passed && failed) return 'flaky'; // passed only on retry — never a pass
   if (failed) return 'fail';
   if (passed) return 'pass';
+  return 'blocked';
+}
+
+/**
+ * Combine per-project verdicts for one case. A spec has one tests[] entry per project
+ * (chromium, firefox, a merged shard), and flattening them would make a genuine
+ * cross-browser failure look like a retry.
+ */
+export function combineVerdicts(verdicts) {
+  if (verdicts.length === 0) return 'blocked';
+  if (verdicts.includes('fail')) return 'fail';       // failing anywhere is failing
+  if (verdicts.includes('flaky')) return 'flaky';
+  if (verdicts.includes('pass')) return 'pass';
   return 'blocked';
 }
 
@@ -83,9 +101,10 @@ export function buildReport(pw, meta) {
   for (const spec of walkSpecs(pw.suites)) {
     const m = CASE_ID_RE.exec(spec.title);
     if (!m) { unmapped.push(spec.title); continue; }
-    const results = (spec.tests ?? []).flatMap((t) => t.results ?? []);
-    const verdict = verdictFor(results, { shaMismatch });
-    const last = results[results.length - 1] ?? {};
+    // One entry per project/browser; each entry's results[] are that project's attempts.
+    const entries = (spec.tests ?? []).map((t) => t.results ?? []);
+    const verdict = combineVerdicts(entries.map((r) => verdictFor(r, { shaMismatch })));
+    const results = entries.flat(); // artifacts, duration and errors span all attempts
 
     cases.push({
       id: m[1],
@@ -96,7 +115,8 @@ export function buildReport(pw, meta) {
       trace: attachmentPath(results, 'trace'),
       console_log: consoleLogPath(results),
       failure_summary: verdict === 'fail' || verdict === 'flaky' ? failureSummary(results) : null,
-      retries: Math.max(0, results.length - 1),
+      // Retries per project, summed — never inflated by having several projects.
+      retries: entries.reduce((sum, r) => sum + Math.max(0, r.length - 1), 0),
     });
   }
 
@@ -134,7 +154,7 @@ function argValue(flag) {
   return i === -1 ? null : process.argv[i + 1];
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const [pwPath, metaPath] = process.argv.slice(2);
   if (!pwPath || !metaPath) {
     console.error('usage: node parse-report.mjs <playwright-report.json> <meta.json> [-o report.json]');

@@ -42,25 +42,33 @@ unmapped_specs: [string]     # spec titles with no case-ID prefix; dropped, neve
 
 Derived from the attempt results, **not** from Playwright's own `status` field, so a config change (`retries`, `failOnFlakyTests`) cannot turn a flaky case green:
 
+A spec has one `tests[]` entry per Playwright project (chromium, firefox, a merged shard); that entry's `results[]` are its retry attempts. Verdicts are derived **per entry**, then combined — flattening the entries would make a genuine cross-browser failure look like a retry.
+
+Per entry, from its attempts:
+
 | Attempts | Verdict |
 |---|---|
 | any passed **and** any failed/timedOut | `flaky` |
 | any failed/timedOut, none passed | `fail` |
 | all passed | `pass` |
-| all skipped, or none ran | `blocked` |
-| **any**, when `sha_mismatch` is true | `blocked` |
+| all skipped, all interrupted, or none ran | `blocked` |
+| **any**, when the SHAs disagree | `blocked` |
+
+Then across entries: any `fail` → `fail`; else any `flaky` → `flaky`; else any `pass` → `pass`; else `blocked`. **Failing in any browser is a failure, never a flake.**
 
 A case that passed only on retry is `flaky`, never `pass`. This is the rule that keeps a suite's green from meaning less than it appears to.
+
+`interrupted` means the attempt never finished (the run was aborted) — that is `blocked`, not a failure. `timedOut` is a real failure. `retries` is summed per entry, so running two projects never invents a retry.
 
 ## Publish refusals
 
 `validate-report.mjs` exits nonzero — and nothing is written to ClickUp — when:
 
-- a `pass`, `fail`, or `flaky` case is missing video or trace (or the file is absent from disk, when `--base` is given)
+- a `pass`, `fail`, or `flaky` case is missing video or trace, or the artifact is absent from disk, or it is zero bytes (a crashed browser writes an empty video). Evidence is always checked on disk; `--base` only resolves relative paths and defaults to the report's own directory
 - a required `console_log` is missing on a host that declares it
 - `commit_sha` or `sha_source` is absent — a run with no readable build identity has no provenance
-- the deployed build changed mid-run and any case still carries a verdict
-- `env_name` is not registered, or `env_url` disagrees with the registry
+- the deployed build changed mid-run and any case still carries a verdict. The mismatch is **recomputed** from `sha_before`/`sha_after`, never taken from the report's own `sha_mismatch` flag, and a flag that disagrees with the SHAs is itself a refusal
+- `env_name` is not registered, `env_url` is missing, or `env_url` disagrees with the registry
 - `api_mode` matches the host's sandbox mode — sandbox backends are seeded and always succeed
 - a verdict is outside the enum, a case ID is not in the approved map, a `fail` has no failure summary, or the summary disagrees with the cases
 - more than 10% of cases are `blocked` — **RUN HALTED**: the environment failed, not the feature

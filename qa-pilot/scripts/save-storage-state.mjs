@@ -7,6 +7,7 @@
 // Usage: node save-storage-state.mjs --url <login-url> --out <path> [--browser chromium]
 
 import { createRequire } from 'node:module';
+import { isMain } from './lib/is-main.mjs';
 import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -100,7 +101,7 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   main().catch((e) => {
     console.error(e.message);
     process.exit(1);

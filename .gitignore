@@ -1,5 +1,7 @@
 node_modules/
 test-results/
+# ...except the committed evidence fixtures the publish-gate tests run against.
+!fixtures/host-fake/test-results/
 playwright-report/
 .playwright/profiles/
 .qa-pilot/

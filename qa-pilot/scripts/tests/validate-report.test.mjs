@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { loadProfile } from '../lib/profile.mjs';
@@ -13,10 +13,11 @@ const { profile } = loadProfile(resolve(FIXTURES, 'qa-pilot.config.yaml'));
 const golden = () => readJson('testing/checkout/sample-report.json');
 const map = readJson('testing/checkout/clickup-map.json');
 
+// Artifact paths in the golden report are relative to the fixture host repo.
 const errorsFor = (mutate, opts = {}) => {
   const r = golden();
   mutate(r);
-  return validateReport(r, profile, opts).errors;
+  return validateReport(r, profile, { base: FIXTURES, ...opts }).errors;
 };
 const refuses = (mutate, pattern, opts) => {
   const errs = errorsFor(mutate, opts);
@@ -24,7 +25,7 @@ const refuses = (mutate, pattern, opts) => {
 };
 
 test('golden report passes the publish gate', () => {
-  assert.deepEqual(validateReport(golden(), profile, { map }).errors, []);
+  assert.deepEqual(validateReport(golden(), profile, { map, base: FIXTURES }).errors, []);
 });
 
 // --- the evidence gate: the reason a Pass cannot be claimed without proof ---
@@ -51,14 +52,14 @@ test('does not require console logs on hosts that do not declare them', () => {
   noConsole.evidence = { extra: [] };
   const r = golden();
   for (const c of r.cases) c.console_log = null;
-  assert.deepEqual(validateReport(r, noConsole, { map }).errors, []);
+  assert.deepEqual(validateReport(r, noConsole, { map, base: FIXTURES }).errors, []);
 });
 
 test('blocked cases need no evidence — they never executed', () => {
   const r = golden();
   r.cases = [{ id: 'CHECKOUT-ORDER-001', verdict: 'blocked', retries: 0, video: null, trace: null, console_log: null }];
   r.summary = { pass: 0, fail: 0, flaky: 0, blocked: 1 };
-  const errs = validateReport(r, profile).errors;
+  const errs = validateReport(r, profile, { base: FIXTURES }).errors;
   assert.ok(!errs.some((e) => /video|trace|console_log/.test(e)), errs.join('\n'));
 });
 
@@ -85,6 +86,44 @@ test('refuses verdicts surviving a mid-run deploy', () => {
     r.sha_mismatch = true;
     r.sha_after = 'ffffffffffffffffffffffffffffffffffffffff';
   }, /changed mid-run.*must be blocked/s);
+});
+
+test('recomputes the SHA mismatch instead of trusting the report', () => {
+  // Regression: a report claiming sha_mismatch:false while the SHAs differ used to pass.
+  refuses((r) => {
+    r.sha_after = 'ffffffffffffffffffffffffffffffffffffffff';
+    r.sha_mismatch = false; // the lie
+  }, /changed mid-run.*must be blocked/s);
+});
+
+test('refuses a report whose sha_mismatch flag disagrees with its own SHAs', () => {
+  refuses((r) => { r.sha_mismatch = true; }, /report says true but sha_before\/sha_after say false/);
+});
+
+test('refuses a report with no env_url — omitting it must not skip the registry check', () => {
+  refuses((r) => { delete r.env_url; }, /env_url: required/);
+});
+
+test('refuses a zero-byte artifact', () => {
+  // A crashed browser writes an empty video; presence alone is not evidence.
+  const empty = resolve(FIXTURES, 'test-results/empty-fixture.webm');
+  writeFileSync(empty, '');
+  try {
+    refuses((r) => { r.cases[0].video = 'test-results/empty-fixture.webm'; }, /is empty \(0 bytes\)/);
+  } finally {
+    rmSync(empty, { force: true });
+  }
+});
+
+test('evidence is checked on disk even when no base is given', () => {
+  // Regression: `if (!base) return false` silently downgraded the gate to a string check.
+  const errs = validateReport(golden(), profile, {}).errors; // base omitted entirely
+  assert.ok(errs.some((e) => /does not exist on disk/.test(e)),
+    `omitting --base must not skip the existence check; got: ${errs.join(' | ') || '(none)'}`);
+});
+
+test('prototype keys cannot satisfy the approved-case map', () => {
+  refuses((r) => { r.cases[0].id = 'constructor'; }, /not in the approved case map/, { map });
 });
 
 // --- sandbox runs are never verdict-eligible ---
@@ -133,7 +172,7 @@ test('halts a run where more than 10% of cases are blocked', () => {
 });
 
 test('warns about flaky cases rather than silently accepting them', () => {
-  const { warnings } = validateReport(golden(), profile, { map });
+  const { warnings } = validateReport(golden(), profile, { map, base: FIXTURES });
   assert.ok(warnings.some((w) => /flaky/.test(w)), warnings.join('\n'));
 });
 

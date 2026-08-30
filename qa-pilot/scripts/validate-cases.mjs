@@ -4,6 +4,7 @@
 // Usage: node validate-cases.mjs <cases.yaml> --profile <qa-pilot.config.yaml>
 
 import { readFileSync, existsSync } from 'node:fs';
+import { isMain } from './lib/is-main.mjs';
 import { basename, dirname, resolve } from 'node:path';
 import { parse } from './lib/yaml.mjs';
 import { loadProfile } from './lib/profile.mjs';
@@ -138,7 +139,7 @@ function argValue(flag) {
   return i === -1 ? null : process.argv[i + 1];
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const casesPath = process.argv[2];
   const profilePath = argValue('--profile');
   if (!casesPath || !profilePath) {

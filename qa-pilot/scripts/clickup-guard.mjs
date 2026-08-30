@@ -11,36 +11,56 @@
 // ponytail: flag-file scoping, not QA-space scoping — checking the target space would need
 // an authenticated API call from inside a hook. Upgrade if non-QA ClickUp writes get annoying.
 
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
+import { isMain } from './lib/is-main.mjs';
 import { join } from 'node:path';
 
 const FLAG = '.qa-pilot/allow-clickup-writes';
 
-// Reads are always fine; only state changes need the scripted path.
-const READ_ONLY = /(^|_)(get|list|search|filter|find|resolve|download|read)(_|$)/;
+// A skill that dies between creating the flag and removing it would otherwise leave the
+// guard open forever, invisibly — .qa-pilot/ is gitignored, so nothing surfaces a stale
+// flag. Generous for a 25-case publish; caps the exposure to one window.
+const FLAG_TTL_MS = 30 * 60 * 1000;
+
+// Allow-list of leading verbs, deny by default. ClickUp uses "list" as a NOUN in write
+// tool names (clickup_create_list, clickup_add_task_to_list), so matching the word
+// anywhere lets writes through — only the verb the name STARTS with is meaningful.
+// Deny-by-default also means a ClickUp server that adds a new write tool is covered
+// without a code change here.
+const READ_VERBS = new Set(['get', 'list', 'search', 'filter', 'find', 'resolve', 'download', 'read']);
 
 const DENY_REASON =
   'QA-Pilot: ClickUp writes are restricted to the QA-Pilot publish path.\n' +
   'Verdicts enter the record through /qa-pilot:publish-results, which validates evidence ' +
   '(video, trace, deploy SHA) before anything is written — a verdict written by hand skips that check.\n' +
-  'Use /qa-pilot:publish-results to publish a run, or /qa-pilot:qa-review to record a review decision.\n' +
-  'For a deliberate one-off write outside those flows, the user can create the flag file: ' +
-  'mkdir -p .qa-pilot && touch .qa-pilot/allow-clickup-writes';
+  'Use /qa-pilot:publish-results to publish a run, or /qa-pilot:qa-review to record a review decision.';
+
+/** The verb a ClickUp tool name starts with: mcp__<server>__clickup_<verb>_<noun>. */
+function leadingVerb(toolName) {
+  const segments = toolName.split('__');
+  const toolPart = segments.length > 1 ? segments[segments.length - 1] : toolName;
+  return toolPart.replace(/^clickup_/i, '').split('_')[0].toLowerCase();
+}
+
+/** A flag file counts only while it is fresh — see FLAG_TTL_MS. */
+function flagIsLive(path, stat) {
+  try {
+    return Date.now() - stat(path).mtimeMs < FLAG_TTL_MS;
+  } catch {
+    return false; // missing or unreadable
+  }
+}
 
 /**
  * @param {{tool_name?: string, cwd?: string}} input PreToolUse payload
- * @param {(p: string) => boolean} exists
+ * @param {(p: string) => {mtimeMs: number}} stat
  * @returns {null | {reason: string}} null === allow
  */
-export function decide(input, exists = existsSync) {
+export function decide(input, stat = statSync) {
   const tool = input?.tool_name ?? '';
   if (!/clickup/i.test(tool)) return null;          // not ours to police
-  // Test only the tool segment. MCP names are mcp__<server>__<tool>, and a server name
-  // containing "list" or "get" must not make its write tools look read-only.
-  const segments = tool.split('__');
-  const toolPart = segments.length > 1 ? segments[segments.length - 1] : tool;
-  if (READ_ONLY.test(toolPart)) return null;
-  if (exists(join(input?.cwd ?? process.cwd(), FLAG))) return null;
+  if (READ_VERBS.has(leadingVerb(tool))) return null;
+  if (flagIsLive(join(input?.cwd ?? process.cwd(), FLAG), stat)) return null;
   return { reason: DENY_REASON };
 }
 
@@ -50,7 +70,7 @@ async function readStdin() {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   let input = {};
   try {
     const raw = (await readStdin()).trim();

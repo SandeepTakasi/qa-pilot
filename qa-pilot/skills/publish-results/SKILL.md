@@ -36,8 +36,10 @@ If it warns about specs with no case-ID prefix, surface that: those results are 
 node "${CLAUDE_PLUGIN_ROOT}/scripts/validate-report.mjs" report.json \
   --profile <profile-path> \
   --map testing/<feature>/clickup-map.json \
-  --base <dir the artifact paths are relative to>
+  --base <dir relative artifact paths resolve against>
 ```
+
+Evidence is checked on disk either way — `--base` only resolves *relative* paths and defaults to the report's own directory. Playwright writes absolute paths, so you usually need it only when the run artifacts were moved.
 
 **Nonzero exit → STOP. Print the refusals verbatim and publish nothing.** Not the passing cases, not a partial update, not a comment saying it failed. A partial publish is worse than none: it puts unevidenced verdicts in the record with the same authority as evidenced ones.
 
@@ -65,6 +67,8 @@ mkdir -p .qa-pilot && touch .qa-pilot/allow-clickup-writes
 # ... writes ...
 rm -f .qa-pilot/allow-clickup-writes
 ```
+
+The flag expires after 30 minutes, so a session that dies mid-publish cannot leave ClickUp writes open. If a long publish starts getting denied part-way through, `touch` the flag again and resume from the case you stopped at — do not restart the whole publish.
 
 **Per case** — task ID comes from `clickup-map.json`. Never search by name: a renamed task would create a duplicate and silently split the case's history.
 

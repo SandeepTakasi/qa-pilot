@@ -4,6 +4,7 @@
 // Schema: qa-pilot/schemas/qa-pilot.config.schema.md
 
 import { readFileSync, existsSync } from 'node:fs';
+import { isMain } from './is-main.mjs';
 import { dirname, resolve } from 'node:path';
 import { parse } from './yaml.mjs';
 
@@ -113,7 +114,10 @@ export function validateProfile(raw, { profilePath = null } = {}) {
       err(`auth.model: required, one of ${AUTH_MODELS.join(' | ')}`);
     }
     const pv = parseSemver(raw.auth.playwright_min);
-    if (!pv) err('auth.playwright_min: required, must be a semver string (e.g. 1.51.0)');
+    if (typeof raw.auth.playwright_min === 'number') {
+      // Unquoted YAML floats 1.60 to 1.6, which then reads as "below 1.51".
+      err(`auth.playwright_min: quote the version ("${raw.auth.playwright_min}"), otherwise YAML reads it as a number and 1.60 becomes 1.6`);
+    } else if (!pv) err('auth.playwright_min: required, must be a semver string (e.g. "1.51.0")');
     else if (cmpSemver(pv, PLAYWRIGHT_FLOOR) < 0) {
       err(`auth.playwright_min: must be >= 1.51.0 — storageState({ indexedDB: true }) landed in 1.51 and IndexedDB-persisted auth (Firebase) silently fails below it`);
     }
@@ -244,7 +248,7 @@ export function loadProfile(path) {
   return { profile, warnings };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const path = process.argv[2];
   if (!path) {
     console.error('usage: node profile.mjs <path-to-qa-pilot.config.yaml>');

@@ -65,6 +65,8 @@ mkdir -p .qa-pilot && touch .qa-pilot/allow-clickup-writes
 rm -f .qa-pilot/allow-clickup-writes
 ```
 
+The flag expires after 30 minutes; re-`touch` it if a long review session starts getting denied.
+
 - **Approve** → status `Approved`. The case now counts toward the confidence numerator.
 - **Reject** → status `Rejected` **plus a reason tag**. Use a consistent vocabulary: `bad-assertion`, `env-issue`, `wrong-expected`, `insufficient-evidence`, `selector-fragile`, `test-data-collision`, `feature-actually-broken`. These tags are the feedback loop — the weekly standards review reads their distribution and edits the skills and host profile accordingly. A rejection with no tag teaches nothing.
 - **Retest** → status `Retest`. For environment problems and expired sessions, not for real failures.

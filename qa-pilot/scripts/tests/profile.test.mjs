@@ -35,6 +35,13 @@ test('indexed_db must be true — the Firebase auth trap', () => {
   assert.ok(errs.some((e) => e.includes('indexed_db')), errs.join('\n'));
 });
 
+test('an unquoted YAML version number is rejected with the quoting fix named', () => {
+  // Regression: YAML floats 1.60 to 1.6, which then read as "below 1.51".
+  const errs = errorsFor((p) => { p.auth.playwright_min = 1.60; });
+  assert.ok(errs.some((e) => /quote the version/.test(e)), errs.join('\n'));
+  assert.ok(!errs.some((e) => /must be >= 1\.51/.test(e)), 'the misleading message must not also fire');
+});
+
 test('playwright_min below 1.51 is rejected', () => {
   const errs = errorsFor((p) => { p.auth.playwright_min = '1.50.1'; });
   assert.ok(errs.some((e) => e.includes('playwright_min')), errs.join('\n'));

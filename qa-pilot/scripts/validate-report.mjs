@@ -5,8 +5,9 @@
 // Usage: node validate-report.mjs <report.json> --profile <config.yaml> \
 //          [--map <clickup-map.json>] [--base <dir for relative artifact paths>]
 
-import { readFileSync, existsSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { readFileSync, statSync } from 'node:fs';
+import { isMain } from './lib/is-main.mjs';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { loadProfile } from './lib/profile.mjs';
 
 const VERDICTS = ['pass', 'fail', 'flaky', 'blocked'];
@@ -18,13 +19,23 @@ const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 /**
  * @returns {{ errors: string[], warnings: string[] }} errors non-empty === do not publish
  */
-export function validateReport(report, profile, { map = null, base = null, exists = existsSync } = {}) {
+export function validateReport(report, profile, { map = null, base = null, stat = statSync } = {}) {
   const errors = [];
   const warnings = [];
   const err = (m) => errors.push(m);
-  const artifactMissing = (p) => {
-    if (!base) return false; // no base given: presence of the field is all we can check
-    return !exists(isAbsolute(p) ? p : resolve(base, p));
+  // Evidence is checked on disk, always. `base` only resolves relative paths (real
+  // Playwright reports carry absolute ones); it is never an opt-out from checking.
+  // A zero-byte artifact is a broken artifact — a crashed browser writes an empty video.
+  const artifactProblem = (p) => {
+    const full = isAbsolute(p) ? p : resolve(base ?? process.cwd(), p);
+    let s;
+    try {
+      s = stat(full);
+    } catch {
+      return 'does not exist on disk';
+    }
+    if (!s.isFile?.() && s.size === undefined) return 'is not a file';
+    return s.size === 0 ? 'is empty (0 bytes) — the artifact was not written' : null;
   };
 
   if (!report || typeof report !== 'object') return { errors: ['report: must be a JSON object'], warnings };
@@ -39,7 +50,10 @@ export function validateReport(report, profile, { map = null, base = null, exist
     // already reported
   } else if (!envs[report.env_name]) {
     err(`env_name: "${report.env_name}" is not a registered environment (${Object.keys(envs).join(', ') || 'none'}) — verdicts are only valid against registered deployed environments`);
-  } else if (isStr(report.app) && isStr(report.env_url)) {
+  } else if (!isStr(report.env_url)) {
+    // Optional would mean a report can dodge the registry cross-check by omitting it.
+    err('env_url: required — without it the registered-URL check cannot run');
+  } else if (isStr(report.app)) {
     const registered = envs[report.env_name].apps?.[report.app];
     if (registered && report.env_url.replace(/\/$/, '') !== registered.replace(/\/$/, '')) {
       err(`env_url: "${report.env_url}" does not match the registered URL for ${report.app} in ${report.env_name} ("${registered}")`);
@@ -52,11 +66,18 @@ export function validateReport(report, profile, { map = null, base = null, exist
   if (!isStr(report.sha_source)) {
     err('sha_source: required — the SHA must be read from the environment, not asserted by the executor');
   }
-  if (report.sha_mismatch === true) {
+  // Recomputed, never trusted: the gate holds both SHAs, and not trusting the file it is
+  // handed is the entire point of the gate.
+  const shaMismatch = isStr(report.sha_before) && isStr(report.sha_after)
+    && report.sha_before !== report.sha_after;
+  if (shaMismatch) {
     const nonBlocked = (report.cases ?? []).filter((c) => c.verdict !== 'blocked');
     if (nonBlocked.length) {
       err(`sha_mismatch: the deployed build changed mid-run (${report.sha_before} -> ${report.sha_after}) but ${nonBlocked.length} case(s) still carry a verdict; every case must be blocked`);
     }
+  }
+  if (report.sha_mismatch !== undefined && report.sha_mismatch !== shaMismatch) {
+    err(`sha_mismatch: report says ${report.sha_mismatch} but sha_before/sha_after say ${shaMismatch}`);
   }
 
   // --- sandbox runs are never verdict-eligible ---
@@ -86,7 +107,7 @@ export function validateReport(report, profile, { map = null, base = null, exist
         continue;
       }
 
-      if (map && !(c.id in map)) {
+      if (map && !Object.hasOwn(map, c.id)) {
         err(`${at}: not in the approved case map — only cases QA approved may be published`);
       }
 
@@ -95,15 +116,17 @@ export function validateReport(report, profile, { map = null, base = null, exist
           const p = c[artifact];
           if (!isStr(p)) {
             err(`${at}.${artifact}: required for a ${c.verdict} verdict — an unevidenced verdict is exactly the unverifiable claim this pipeline exists to prevent`);
-          } else if (artifactMissing(p)) {
-            err(`${at}.${artifact}: "${p}" does not exist on disk`);
+            continue;
           }
+          const problem = artifactProblem(p);
+          if (problem) err(`${at}.${artifact}: "${p}" ${problem}`);
         }
         if (needConsole) {
           if (!isStr(c.console_log)) {
             err(`${at}.console_log: required for a ${c.verdict} verdict — this host declares console_log evidence because its operations never reach the network tab`);
-          } else if (!c.console_log.startsWith('inline:') && artifactMissing(c.console_log)) {
-            err(`${at}.console_log: "${c.console_log}" does not exist on disk`);
+          } else if (!c.console_log.startsWith('inline:')) {
+            const problem = artifactProblem(c.console_log);
+            if (problem) err(`${at}.console_log: "${c.console_log}" ${problem}`);
           }
         }
       }
@@ -165,7 +188,7 @@ function argValue(flag) {
   return i === -1 ? null : process.argv[i + 1];
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const reportPath = process.argv[2];
   const profilePath = argValue('--profile');
   if (!reportPath || !profilePath) {
@@ -177,7 +200,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const report = JSON.parse(readFileSync(reportPath, 'utf8'));
     const mapPath = argValue('--map');
     const map = mapPath ? JSON.parse(readFileSync(mapPath, 'utf8')) : null;
-    const { errors, warnings } = validateReport(report, profile, { map, base: argValue('--base') });
+    // Relative artifact paths resolve against the report's own directory unless told
+    // otherwise. Never null: evidence is always checked on disk.
+    const base = argValue('--base') ?? dirname(resolve(reportPath));
+    const { errors, warnings } = validateReport(report, profile, { map, base });
     for (const w of warnings) console.error(`warning: ${w}`);
     if (errors.length) {
       console.error(`REFUSED — this report cannot be published: ${reportPath}`);

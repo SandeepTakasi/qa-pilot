@@ -7,6 +7,7 @@
 // Usage: node read-env-sha.mjs <profile> <env-name> <app-name> [--timeout-ms 10000]
 
 import { loadProfile } from './lib/profile.mjs';
+import { isMain } from './lib/is-main.mjs';
 
 const SHA_RE = /^[0-9a-f]{7,40}$/i;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -92,7 +93,7 @@ export async function readEnvSha(profile, envName, appName, { timeoutMs = DEFAUL
   return { sha, source: src.url, app: appName ?? null, env: envName, fetched_at: new Date().toISOString() };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const [profilePath, envName, appName] = process.argv.slice(2);
   if (!profilePath || !envName) {
     console.error('usage: node read-env-sha.mjs <profile> <env-name> [app-name] [--timeout-ms 10000]');
