@@ -9,7 +9,29 @@
 import { loadProfile } from './lib/profile.mjs';
 import { isMain } from './lib/is-main.mjs';
 
-const SHA_RE = /^[0-9a-f]{7,40}$/i;
+// Two kinds of build identity, because not every host can serve a commit.
+//
+// `commit` is the strong form: a git SHA, so a verdict names the exact source it was
+// proved against. Prefer it. The strict pattern is what stops a mis-pathed config from
+// stamping a version string or a build number and calling it provenance.
+//
+// `build-id` is the pragmatic form for a host with no version endpoint: any stable
+// per-build fingerprint the app already serves, typically a bundler's content hash from
+// index.html. It still detects a deploy landing mid-run, which is the safety property
+// that matters most, but it does not name a commit, so tracing a report back to source
+// means correlating through your release records.
+const IDENTITY = {
+  commit: {
+    re: /^[0-9a-f]{7,40}$/i,
+    expected: '7 to 40 hex characters',
+    hint: 'a wrong path can silently yield a version string or a build number, which would stamp every report with a provenance that means nothing',
+  },
+  'build-id': {
+    re: /^[A-Za-z0-9][A-Za-z0-9._-]{5,63}$/,
+    expected: '6 to 64 characters of letters, digits, dot, underscore or hyphen',
+    hint: 'a wrong path can yield a fragment of markup or an empty string, which would look like a build identity without being one',
+  },
+};
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 /** Walk a dot path (`build.commit`, `data.0.sha`) through parsed JSON. */
@@ -49,15 +71,20 @@ export function extractSha(body, shaSource) {
     raw = m[1];
   }
 
+  const format = shaSource.format ?? 'commit';
+  const spec = IDENTITY[format];
+  if (!spec) throw new Error(`sha_source.format: "${format}" is not one of ${Object.keys(IDENTITY).join(' | ')}`);
+
   const sha = String(raw).trim();
-  if (!SHA_RE.test(sha)) {
+  if (!spec.re.test(sha)) {
     throw new Error(
-      `extracted value "${sha}" is not a commit SHA (expected 7-40 hex characters).\n` +
-      `Check sha_source: a wrong path can silently yield a version string or a build number, ` +
-      `which would stamp every report with a provenance that means nothing.`
+      `extracted value "${sha}" is not a valid ${format} (expected ${spec.expected}).\n` +
+      `Check sha_source: ${spec.hint}.`
     );
   }
-  return sha.toLowerCase();
+  // Commit SHAs are case-insensitive so normalise them; a build id may be
+  // case-significant (base64-ish bundler hashes are), so leave it exactly as served.
+  return format === 'commit' ? sha.toLowerCase() : sha;
 }
 
 /** Fetch and extract the deployed SHA for one app in one environment. */
@@ -90,7 +117,14 @@ export async function readEnvSha(profile, envName, appName, { timeoutMs = DEFAUL
   }
 
   const sha = extractSha(await res.text(), src);
-  return { sha, source: src.url, app: appName ?? null, env: envName, fetched_at: new Date().toISOString() };
+  return {
+    sha,
+    format: src.format ?? 'commit',
+    source: src.url,
+    app: appName ?? null,
+    env: envName,
+    fetched_at: new Date().toISOString(),
+  };
 }
 
 if (isMain(import.meta.url)) {

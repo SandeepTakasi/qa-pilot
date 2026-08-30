@@ -16,6 +16,7 @@ const NETWORK_MODES = ['allowed', 'forbidden'];
 const ASSERT_STYLES = ['ui-state', 'mixed'];
 const EVIDENCE_EXTRAS = ['console_log'];
 const PLAN_TIERS = ['free', 'unlimited', 'business', 'enterprise'];
+const SHA_FORMATS = ['commit', 'build-id'];
 const PLAYWRIGHT_FLOOR = [1, 51, 0]; // storageState({ indexedDB: true })
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -89,6 +90,12 @@ export function validateProfile(raw, { profilePath = null } = {}) {
         err(`environments.${envName}.sha_source: required. A deploy SHA that cannot be read cannot be published.`);
       } else {
         if (!isUrl(s.url)) err(`environments.${envName}.sha_source.url: required, must be an http(s) URL`);
+        if (s.format !== undefined && !SHA_FORMATS.includes(s.format)) {
+          err(`environments.${envName}.sha_source.format: must be ${SHA_FORMATS.join(' | ')} (default: commit)`);
+        }
+        if (s.format === 'build-id') {
+          warnings.push(`environments.${envName}.sha_source.format: build-id identifies the deployed bundle but not the commit, so a verdict cannot be traced to source without correlating through your release records. Prefer a commit once the environment can serve one.`);
+        }
         const hasPath = isStr(s.json_path);
         const hasRegex = isStr(s.regex);
         if (hasPath === hasRegex) {

@@ -77,6 +77,19 @@ test('a SHA change mid-run blocks the whole report', () => {
   assert.deepEqual(r.summary, { pass: 0, fail: 0, flaky: 0, blocked: 4 });
 });
 
+test('the kind of build identity is recorded, so a bundle hash is never read as a commit', () => {
+  const m = meta();
+  m.sha_before = m.sha_after = 'BA5CNMey';
+  m.sha_format = 'build-id';
+  const r = buildReport(pw(), m);
+  assert.equal(r.commit_sha, 'BA5CNMey');
+  assert.equal(r.sha_format, 'build-id');
+});
+
+test('identity defaults to commit when the run did not say', () => {
+  assert.equal(buildReport(pw(), meta()).sha_format, 'commit');
+});
+
 test('provenance is carried through from the run metadata', () => {
   const r = buildReport(pw(), meta());
   assert.equal(r.env_name, 'qa');

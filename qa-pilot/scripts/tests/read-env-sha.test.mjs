@@ -37,9 +37,62 @@ test('accepts a short SHA and normalizes case', () => {
 
 test('rejects a value that is not a SHA, so a wrong path cannot stamp a fake provenance', () => {
   assert.throws(() => extractSha(JSON.stringify({ build: { commit: 'v2.14.3' } }),
-    { json_path: 'build.commit' }), /not a commit SHA/);
+    { json_path: 'build.commit' }), /not a valid commit/);
   assert.throws(() => extractSha(JSON.stringify({ build: { commit: 1234 } }),
-    { json_path: 'build.commit' }), /not a commit SHA/);
+    { json_path: 'build.commit' }), /not a valid commit/);
+});
+
+// --- build-id: for a host that cannot serve a commit ------------------------
+
+test('build-id accepts a bundler content hash from index.html', () => {
+  // Vite fingerprints the entry chunk by content, so it changes on every build.
+  const html = '<script type="module" src="/assets/index-BA5CNMey.js"></script>';
+  const src = { regex: 'assets/index-([A-Za-z0-9_-]+)\\.js', format: 'build-id' };
+  assert.equal(extractSha(html, src), 'BA5CNMey');
+});
+
+test('build-id preserves case, because bundler hashes are case-significant', () => {
+  const src = { json_path: 'id', format: 'build-id' };
+  assert.equal(extractSha(JSON.stringify({ id: 'BA5CNMey' }), src), 'BA5CNMey');
+  // whereas a commit is normalised, since git SHAs are case-insensitive
+  assert.equal(extractSha(JSON.stringify({ id: 'A1B2C3D' }), { json_path: 'id' }), 'a1b2c3d');
+});
+
+test('build-id still rejects junk, so a bad regex cannot pass as an identity', () => {
+  for (const junk of ['', '  ', 'ab', '<div>', 'a b c']) {
+    assert.throws(() => extractSha(JSON.stringify({ id: junk }), { json_path: 'id', format: 'build-id' }),
+      /not a valid build-id|is not present/, `"${junk}" should have been rejected`);
+  }
+});
+
+test('a hex commit is not accepted as a build-id by accident, it is simply also valid', () => {
+  // Overlap is fine: what matters is that the format is declared, so the report is honest.
+  assert.equal(extractSha(JSON.stringify({ id: 'a1b2c3d4' }), { json_path: 'id', format: 'build-id' }), 'a1b2c3d4');
+});
+
+test('an unknown format is refused rather than silently defaulting', () => {
+  assert.throws(() => extractSha(JSON.stringify({ id: 'x' }), { json_path: 'id', format: 'guess' }),
+    /is not one of commit \| build-id/);
+});
+
+test('readEnvSha reports which kind of identity it read', async () => {
+  const html = '<script src="/assets/index-BA5CNMey.js"></script>';
+  const p = structuredClone(profile);
+  p.environments.qa.sha_source = {
+    url: 'https://qa.host-fake.example.com/index.html',
+    regex: 'assets/index-([A-Za-z0-9_-]+)\\.js',
+    format: 'build-id',
+  };
+  const out = await readEnvSha(p, 'qa', 'storefront', { fetchImpl: fakeFetch(html) });
+  assert.equal(out.sha, 'BA5CNMey');
+  assert.equal(out.format, 'build-id');
+});
+
+test('the identity kind defaults to commit when unstated', async () => {
+  const out = await readEnvSha(profile, 'qa', 'storefront', {
+    fetchImpl: fakeFetch(JSON.stringify({ build: { commit: SHA } })),
+  });
+  assert.equal(out.format, 'commit');
 });
 
 test('reports a missing json_path rather than guessing', () => {

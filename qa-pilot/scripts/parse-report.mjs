@@ -136,6 +136,9 @@ export function buildReport(pw, meta) {
     sha_before: meta.sha_before ?? null,
     sha_after: meta.sha_after ?? null,
     sha_source: meta.sha_source ?? null,
+    // Whether commit_sha names a git commit or only a build fingerprint. Recorded so a
+    // bundle hash is never later mistaken for a commit.
+    sha_format: meta.sha_format ?? 'commit',
     sha_mismatch: shaMismatch,
     executor: meta.executor,
     model_version: meta.model_version,

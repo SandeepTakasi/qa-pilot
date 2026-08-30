@@ -17,11 +17,12 @@ environments:                       # required, >= 1 entry
   <env-name>:                       # e.g. qa, staging
     apps:                           # required; keys must be a subset of apps{}
       <app-name>: <http(s) URL>     # base URL of that app in this environment
-    sha_source:                     # required: how the DEPLOYED build's SHA is read
+    sha_source:                     # required: how the DEPLOYED build is identified
       url: <http(s) URL>            # required, e.g. https://qa.example.com/api/version
       json_path: string             # exactly ONE of json_path | regex
       regex: string                 #   json_path: dot path, e.g. build.commit
                                     #   regex: must contain one capture group
+      format: commit | build-id     # optional, default commit. See below.
 
 auth:
   model: dev-handoff | role-accounts | mixed   # required
@@ -70,6 +71,42 @@ clickup:
     retest: string                  # needs another run
     quarantined: string             # flaky; held out, still in the denominator
 ```
+
+## Identifying the deployed build
+
+Every verdict is stamped with what was running when it was proved, and a run is blocked if
+that changes mid-flight. There are two ways to express it.
+
+**`commit` (default, preferred).** A git SHA, so a verdict names the exact source it was
+proved against. Requires the environment to serve its commit, typically a small
+`/version.json` written at image build time.
+
+```yaml
+sha_source:
+  url: https://qa.example.com/version.json
+  json_path: commit
+```
+
+**`build-id` (for a host that cannot serve a commit yet).** Any stable per-build
+fingerprint the app already serves. A bundler's content hash works, and needs no change to
+the application:
+
+```yaml
+sha_source:
+  url: https://qa.example.com/index.html
+  regex: 'assets/index-([A-Za-z0-9_-]+)\.js'
+  format: build-id
+```
+
+What you keep: mid-run deploy detection, which is the property that stops half a run
+testing one build and half another. What you give up: traceability. A build id names the
+bundle, not the commit, so tracing a report back to source means correlating through your
+release records by time or version. The profile validator warns about this, and the report
+records `sha_format` so nobody later mistakes a bundle hash for a commit.
+
+One blind spot worth knowing: with code splitting, a deploy that changes only a lazily
+loaded chunk may leave the entry hash untouched, so such a deploy would not be detected
+mid-run. Prefer `commit` once the environment can serve one.
 
 ## Status names are per-host
 

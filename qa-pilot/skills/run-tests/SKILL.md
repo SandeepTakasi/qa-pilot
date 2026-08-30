@@ -110,6 +110,7 @@ Write `testing/<feature>/runs/<run_id>/meta.json`:
   "feature": "...", "app": "...", "env_name": "...", "env_url": "...",
   "api_mode": "server | mocks",
   "sha_before": "...", "sha_after": "...", "sha_source": "<url>",
+  "sha_format": "commit | build-id",   // copy read-env-sha's `format` verbatim
   "executor": "<the developer running this>",
   "model_version": "<your model id>",
   "playwright_version": "...", "browser": "chromium-<version>",
