@@ -60,7 +60,34 @@ cross_app:                          # required when apps has > 1 entry
 clickup:
   plan_tier: free | unlimited | business | enterprise   # required (rate budget)
   space: string                     # required, ClickUp space name for QA
+  statuses:                         # optional; canonical names assumed if omitted.
+                                    # Complete if present: all seven or none.
+    case_review: string             # authored, awaiting QA design review
+    approved_for_execution: string  # design approved, never yet run
+    under_review: string            # executed, awaiting QA verdict review
+    approved: string                # verdict accepted; counts toward confidence
+    rejected: string                # the test itself is wrong
+    retest: string                  # needs another run
+    quarantined: string             # flaky; held out, still in the denominator
 ```
+
+## Status names are per-host
+
+The seven **keys** are the pipeline's lifecycle and never change. The **names** are whatever your ClickUp already calls them, because every team has its own QA vocabulary: one board's `Under Review` is another's `ready for review`.
+
+```yaml
+clickup:
+  statuses:
+    case_review: to do
+    approved_for_execution: ready to run
+    under_review: ready for review
+    approved: accepted
+    rejected: rejected
+    retest: retest
+    quarantined: skip
+```
+
+Matching is case-insensitive and trimmed. Two lifecycle states may not share one status name, since the pipeline could not tell them apart. Declaring only some keys is an error rather than a partial default: a half-applied map matches some states and silently misses others.
 
 ## Warnings (non-fatal, printed to stderr)
 

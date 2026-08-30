@@ -16,7 +16,9 @@ features stay together.
 
 ## 2. Custom statuses
 
-Set these on the Space so every feature List inherits them. **Use these exact names.**
+Set these on the Space so every feature List inherits them.
+
+**The names below are only defaults.** If your workspace already has QA statuses, keep your own wording and record the mapping in the profile's `clickup.statuses` instead. What the pipeline needs is seven *distinct* states, not seven particular words. What it cannot work without is a way to express **approval**, both of a case's design and of its verdict, so a board that only has `pass` and `fail` is recording verdicts and still needs approval states added.
 
 | Status | Suggested type |
 |---|---|

@@ -31,12 +31,17 @@ Read `testing/<feature>/clickup-map.json` and fetch each mapped task's status ov
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" \
   --cases testing/<feature>/cases.yaml \
-  --statuses testing/<feature>/runs/statuses.json
+  --statuses testing/<feature>/runs/statuses.json \
+  --profile <profile-path>
 ```
+
+Always pass `--profile`. Without it the script assumes the canonical status names, which are wrong for any host that renamed them.
 
 Run exactly the case IDs in `executable[]`. Report `held[]` with each reason, and surface every warning. Do not decide eligibility yourself from the status names.
 
-**Design approval persists across builds.** `Approved for Execution`, `Approved`, `Retest`, and `Under Review` all execute; a case QA approved re-runs on the next build, which is what makes this a regression suite rather than a one-shot. `Case Review` and `Rejected` never execute. Quarantined cases are excluded unless you pass `--include-quarantined`, which is for verifying a hardening fix.
+**Design approval persists across builds.** Four lifecycle states execute: `approved_for_execution`, `approved`, `retest`, and `under_review`. A case QA approved re-runs on the next build, which is what makes this a regression suite rather than a one-shot. `case_review` and `rejected` never execute, and `quarantined` is excluded unless you pass `--include-quarantined`, which is for verifying a hardening fix.
+
+Those are lifecycle keys, not status names. What this host calls each one lives in the profile's `clickup.statuses`, so read them from there when you talk to the user; the script does the matching. Each executable entry comes back with its `state`, so you never have to map a name yourself.
 
 Nonzero exit means nothing is eligible, so **STOP** and show `held[]`. Running unapproved cases and publishing them defeats the gate that keeps hallucinated cases out of the record.
 

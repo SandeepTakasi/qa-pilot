@@ -61,11 +61,11 @@ Skip this section entirely if the ClickUp MCP tools are unavailable. The validat
 1. Create the write flag the plugin's guard hook checks: `mkdir -p .qa-pilot && touch .qa-pilot/allow-clickup-writes` (it expires after 30 minutes, so a dead session cannot leave writes open)
 2. Read `testing/<feature>/clickup-map.json` if it exists. **Every case already in the map is updated, never recreated**, and this is what makes reruns idempotent. Never look tasks up by name.
 
-   **If you changed an existing case's steps, expected outcomes, priority, or type, move it back to `Case Review`** and say which cases you reset and why. Design approval belongs to the case QA actually read; editing the assertions of an approved case and leaving it approved walks a changed test straight past the design gate. Pure wording or title tidying that leaves the behaviour identical does not need a reset, but when in doubt, reset: a re-approval costs QA a minute, an unnoticed change costs a false verdict.
+   **If you changed an existing case's steps, expected outcomes, priority, or type, move it back to `case_review`** and say which cases you reset and why. Design approval belongs to the case QA actually read; editing the assertions of an approved case and leaving it approved walks a changed test straight past the design gate. Pure wording or title tidying that leaves the behaviour identical does not need a reset, but when in doubt, reset: a re-approval costs QA a minute, an unnoticed change costs a false verdict.
 3. For each unmapped case, create a task in the feature's list under the profile's `clickup.space`:
    - title: `<CASE-ID> <Title>`
    - description: preconditions, steps, and expected outcomes as written
-   - status: `Case Review`
+   - status: this host's name for `case_review`, from the profile's `clickup.statuses`
    - custom fields: Priority, Type, Model Version
 4. Pace the calls: one request per second, sequential. Free through Business tiers allow 100 requests per minute per token, and a full 25-case feature plus retries gets close enough to matter.
 5. Write the merged mapping back to `testing/<feature>/clickup-map.json` (`{"CASE-ID": "task-id"}`) and commit-worthy.
@@ -73,6 +73,6 @@ Skip this section entirely if the ClickUp MCP tools are unavailable. The validat
 
 ## 5. Hand off
 
-State plainly, every time: **these cases are not executable yet.** QA reviews the scenario matrix and every P0/P1 case individually, approves P2 in bulk at matrix level, and moves approved cases to `Approved for Execution`. `/qa-pilot:run-tests` refuses anything else.
+State plainly, every time: **these cases are not executable yet.** QA reviews the scenario matrix and every P0/P1 case individually, approves P2 in bulk at matrix level, and moves approved cases into `approved_for_execution`. `/qa-pilot:run-tests` refuses anything else.
 
 Then tell the user the next command: `/qa-pilot:run-tests <feature> --env <name>` once approval lands.

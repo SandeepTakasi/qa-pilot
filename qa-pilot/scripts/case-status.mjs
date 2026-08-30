@@ -7,42 +7,22 @@
 // three skills reading the same rule from prose would drift.
 //
 // Usage: node case-status.mjs --cases <cases.yaml> --statuses <statuses.json>
-//                             [--include-quarantined]
+//                             [--profile <qa-pilot.config.yaml>] [--include-quarantined]
 //   statuses.json: { "<CASE-ID>": "<ClickUp status>", ... }
+//
+// Pass --profile so the host's own status names are used. Without it the canonical names
+// apply, which is only right for a host that happens to use them.
 
 import { readFileSync } from 'node:fs';
 import { parse } from './lib/yaml.mjs';
 import { isMain } from './lib/is-main.mjs';
+import { loadProfile } from './lib/profile.mjs';
+import {
+  DEFAULT_STATUSES, EXECUTABLE_KEYS, HELD_REASONS, VERDICT_APPROVED_KEYS,
+  statusLookup, displayName,
+} from './lib/statuses.mjs';
 
-/** The canonical lifecycle. One definition so the skills cannot disagree. */
-export const STATUS = {
-  CASE_REVIEW: 'Case Review',
-  APPROVED_FOR_EXECUTION: 'Approved for Execution',
-  UNDER_REVIEW: 'Under Review',
-  APPROVED: 'Approved',
-  REJECTED: 'Rejected',
-  RETEST: 'Retest',
-  QUARANTINED: 'Quarantined',
-};
-
-// Design approval PERSISTS across runs. A case QA approved stays executable so the next
-// build regresses it. That is the whole CI story, and without it the pipeline runs
-// exactly once per feature and then deadlocks with nothing eligible.
-const EXECUTABLE = new Set([
-  STATUS.APPROVED_FOR_EXECUTION, // approved, never run
-  STATUS.APPROVED,               // approved, last verdict accepted; re-run on a new build
-  STATUS.RETEST,                 // QA or CI explicitly asked for another run
-  STATUS.UNDER_REVIEW,           // last result not yet reviewed; a newer build supersedes it
-]);
-
-const HELD_BACK = {
-  [STATUS.CASE_REVIEW]: 'awaiting QA design review; nothing executes before approval',
-  [STATUS.REJECTED]: 'QA rejected the case itself; fix it via /qa-pilot:generate-tests, which returns it to Case Review for re-approval',
-};
-
-// Only an accepted verdict counts toward confidence. "Approved for Execution" is design
-// approval, not a trusted result.
-const VERDICT_APPROVED = new Set([STATUS.APPROVED]);
+export { DEFAULT_STATUSES } from './lib/statuses.mjs';
 
 const WEIGHT = { P0: 3, P1: 2, P2: 1 };
 
@@ -66,10 +46,12 @@ export function confidence(cases, priorities) {
 
 /**
  * @param {Array<{id: string, priority: string}>} cases from cases.yaml
- * @param {Record<string,string>} statuses case id -> ClickUp status
+ * @param {Record<string,string>} statuses case id -> the status ClickUp reports
+ * @param {{includeQuarantined?: boolean, statusNames?: Record<string,string>}} opts
+ *   statusNames: the host's names per lifecycle key, from profile clickup.statuses
  * @returns partition + confidence
  */
-export function partitionCases(cases, statuses, { includeQuarantined = false } = {}) {
+export function partitionCases(cases, statuses, { includeQuarantined = false, statusNames = DEFAULT_STATUSES } = {}) {
   const executable = [];
   const held = [];
   const quarantined = [];
@@ -77,7 +59,9 @@ export function partitionCases(cases, statuses, { includeQuarantined = false } =
   const unknownStatus = [];
   const awaitingReview = [];
 
-  const known = new Set(Object.values(STATUS));
+  // The host names its own statuses; the pipeline reasons in lifecycle keys.
+  const lookup = statusLookup(statusNames);
+  const keyFor = (status) => lookup.get(String(status).trim().toLowerCase());
 
   for (const c of cases) {
     const status = statuses[c.id];
@@ -85,32 +69,39 @@ export function partitionCases(cases, statuses, { includeQuarantined = false } =
       unsynced.push({ id: c.id, priority: c.priority });
       continue;
     }
-    if (!known.has(status)) {
-      // A renamed or hand-made status is not something to guess at.
+    const key = keyFor(status);
+    if (!key) {
+      // A status the profile does not declare is not something to guess at.
       unknownStatus.push({ id: c.id, status });
       continue;
     }
-    if (status === STATUS.QUARANTINED) {
+    if (key === 'quarantined') {
       quarantined.push({ id: c.id, priority: c.priority });
-      if (includeQuarantined) executable.push({ id: c.id, priority: c.priority, status });
+      if (includeQuarantined) executable.push({ id: c.id, priority: c.priority, status, state: key });
       continue;
     }
-    if (EXECUTABLE.has(status)) {
-      executable.push({ id: c.id, priority: c.priority, status });
-      if (status === STATUS.UNDER_REVIEW) awaitingReview.push(c.id);
+    if (EXECUTABLE_KEYS.has(key)) {
+      executable.push({ id: c.id, priority: c.priority, status, state: key });
+      if (key === 'under_review') awaitingReview.push(c.id);
       continue;
     }
-    held.push({ id: c.id, priority: c.priority, status, reason: HELD_BACK[status] ?? 'not an executable status' });
+    held.push({
+      id: c.id, priority: c.priority, status, state: key,
+      reason: HELD_REASONS[key] ?? 'not an executable state',
+    });
   }
 
   const orphaned = Object.keys(statuses).filter((id) => !cases.some((c) => c.id === id));
 
   const priorities = Object.fromEntries(cases.map((c) => [c.id, c.priority]));
-  const scored = cases.map((c) => ({ id: c.id, approved: VERDICT_APPROVED.has(statuses[c.id]) }));
+  const scored = cases.map((c) => ({
+    id: c.id,
+    approved: VERDICT_APPROVED_KEYS.has(keyFor(statuses[c.id])),
+  }));
 
   const warnings = [];
   if (awaitingReview.length) {
-    warnings.push(`${awaitingReview.length} case(s) are still Under Review from a previous run; re-running replaces evidence QA has not looked at yet`);
+    warnings.push(`${awaitingReview.length} case(s) are still "${displayName(statusNames, 'under_review')}" from a previous run; re-running replaces evidence QA has not looked at yet`);
   }
   if (quarantined.length && !includeQuarantined) {
     warnings.push(`${quarantined.length} quarantined case(s) excluded. Pass --include-quarantined to run them while hardening.`);
@@ -122,7 +113,13 @@ export function partitionCases(cases, statuses, { includeQuarantined = false } =
     warnings.push(`${orphaned.length} ClickUp task(s) map to case ids absent from cases.yaml: ${orphaned.join(', ')}`);
   }
   if (unknownStatus.length) {
-    warnings.push(`${unknownStatus.length} case(s) carry a status outside the lifecycle: ${unknownStatus.map((u) => `${u.id}=${u.status}`).join(', ')}`);
+    const declared = Object.values(statusNames).filter(Boolean).join(', ');
+    warnings.push(
+      `${unknownStatus.length} case(s) carry a status the profile does not declare: ` +
+      `${unknownStatus.map((u) => `${u.id}="${u.status}"`).join(', ')}. ` +
+      `Declared in clickup.statuses: ${declared}. ` +
+      `If ClickUp is right, fix the names in the profile rather than renaming statuses in ClickUp.`
+    );
   }
 
   return {
@@ -153,15 +150,25 @@ function argValue(flag) {
 if (isMain(import.meta.url)) {
   const casesPath = argValue('--cases');
   const statusesPath = argValue('--statuses');
+  const profilePath = argValue('--profile');
   if (!casesPath || !statusesPath) {
-    console.error('usage: node case-status.mjs --cases <cases.yaml> --statuses <statuses.json> [--include-quarantined]');
+    console.error('usage: node case-status.mjs --cases <cases.yaml> --statuses <statuses.json> [--profile <qa-pilot.config.yaml>] [--include-quarantined]');
     process.exit(2);
   }
   try {
     const doc = parse(readFileSync(casesPath, 'utf8'));
     if (!Array.isArray(doc?.cases)) throw new Error(`no cases[] in ${casesPath}`);
     const statuses = JSON.parse(readFileSync(statusesPath, 'utf8'));
+    // Without a profile the canonical names apply, which is right only for a host that
+    // happens to use them, so say so rather than failing silently against the wrong names.
+    let statusNames = DEFAULT_STATUSES;
+    if (profilePath) {
+      statusNames = loadProfile(profilePath).profile.clickup?.statuses ?? DEFAULT_STATUSES;
+    } else {
+      console.error('warning: no --profile given, so the canonical status names are assumed; pass --profile to use this host\'s names');
+    }
     const out = partitionCases(doc.cases, statuses, {
+      statusNames,
       includeQuarantined: process.argv.includes('--include-quarantined'),
     });
     for (const w of out.warnings) console.error(`warning: ${w}`);

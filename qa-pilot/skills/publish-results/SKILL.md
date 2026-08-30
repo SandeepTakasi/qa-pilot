@@ -60,12 +60,12 @@ Never do this arithmetic yourself. Fetch each case's current ClickUp status, wri
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" \
-  --cases testing/<feature>/cases.yaml --statuses <statuses.json>
+  --cases testing/<feature>/cases.yaml --statuses <statuses.json> --profile <profile-path>
 ```
 
 Use its `confidence` object verbatim. **Any P0 without an accepted verdict reads "Not Ready", whatever the percentage says.** Quarantined and flaky cases stay in the denominator, and that they lower the number is the point.
 
-Read the timing honestly when you report it: this publish is about to move these cases to `Under Review`, and only `Approved` counts toward the numerator. So the score you post is the state *going into* review, and it is expected to be low, often zero on a feature's first run. It rises as QA works the queue in `/qa-pilot:qa-review`. Say that plainly rather than posting a number that looks like a failing grade with no explanation.
+Read the timing honestly when you report it: this publish is about to move these cases into `under_review`, and only `approved` counts toward the numerator. So the score you post is the state *going into* review, and it is expected to be low, often zero on a feature's first run. It rises as QA works the queue in `/qa-pilot:qa-review`. Say that plainly rather than posting a number that looks like a failing grade with no explanation.
 
 ## 5. Write to ClickUp
 
@@ -82,7 +82,7 @@ The flag expires after 30 minutes, so a session that dies mid-publish cannot lea
 **Per case**: the task ID comes from `clickup-map.json`. Never search by name: a renamed task would create a duplicate and silently split the case's history.
 
 - One `clickup_update_task` call per task, setting every field at once (see `references/clickup-fields.md` for the field-to-report mapping). Coalescing matters: the Business tier allows 100 requests per minute per token, and a 25-case feature plus attachments gets close.
-- Status: `Under Review`, except `flaky` → `Quarantined`.
+- Status: this host's name for `under_review`, except a `flaky` verdict, which goes to its name for `quarantined`. Both names come from the profile's `clickup.statuses`; never assume the canonical wording.
 - **Attach the trace, and only the trace**, with `clickup_attach_task_file`: one artifact per case per run. Do not upload the `.webm` or the console log: the trace already contains the video byte-for-byte plus the console output, so uploading them again stores the same bytes twice and splits one investigation across three files. Name the attachment `<CASE-ID>-<run_id>.zip` so a task's attachment list reads as run history.
 - If a trace exceeds 1 GB (the API's per-file cap), something is wrong with the run, not with the upload, so report it rather than working around it.
 

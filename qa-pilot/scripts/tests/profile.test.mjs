@@ -100,6 +100,40 @@ test('models.generation_approved is required and non-empty', () => {
     .some((e) => e.includes('generation_approved')));
 });
 
+// --- per-host status vocabulary ---------------------------------------------
+
+test('a complete status map is accepted', () => {
+  assert.deepEqual(validateProfile(golden()).errors, []);
+});
+
+test('a half-declared status map is rejected rather than half-applied', () => {
+  const errs = errorsFor((p) => { delete p.clickup.statuses.retest; });
+  assert.ok(errs.some((e) => /clickup\.statuses\.retest: required/.test(e)), errs.join('\n'));
+});
+
+test('an unknown lifecycle key is rejected, since a typo would silently do nothing', () => {
+  const errs = errorsFor((p) => { p.clickup.statuses.aproved = 'oops'; });
+  assert.ok(errs.some((e) => /unknown lifecycle key/.test(e)), errs.join('\n'));
+});
+
+test('two lifecycle states cannot share one ClickUp status', () => {
+  const errs = errorsFor((p) => { p.clickup.statuses.retest = p.clickup.statuses.approved; });
+  assert.ok(errs.some((e) => /each lifecycle state needs a status of its own/.test(e)), errs.join('\n'));
+});
+
+test('duplicate detection ignores case and surrounding space', () => {
+  const errs = errorsFor((p) => { p.clickup.statuses.retest = '  ACCEPTED '; });
+  assert.ok(errs.some((e) => /needs a status of its own/.test(e)), errs.join('\n'));
+});
+
+test('omitting the status map is allowed but warns that canonical names are assumed', () => {
+  const p = golden();
+  delete p.clickup.statuses;
+  const { errors, warnings } = validateProfile(p);
+  assert.deepEqual(errors, []);
+  assert.ok(warnings.some((w) => /canonical names are assumed/.test(w)), warnings.join('\n'));
+});
+
 test('unknown top-level keys are rejected', () => {
   const errs = errorsFor((p) => { p.enviroments = {}; });
   assert.ok(errs.some((e) => e.includes('unknown top-level key: enviroments')), errs.join('\n'));

@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { isMain } from './is-main.mjs';
 import { dirname, resolve } from 'node:path';
 import { parse } from './yaml.mjs';
+import { STATUS_KEYS, DEFAULT_STATUSES } from './statuses.mjs';
 
 const TOP_KEYS = ['project', 'apps', 'environments', 'auth', 'assertions', 'evidence',
   'selectors', 'models', 'sandbox', 'cross_app', 'clickup'];
@@ -225,6 +226,37 @@ export function validateProfile(raw, { profilePath = null } = {}) {
       err(`clickup.plan_tier: required, one of ${PLAN_TIERS.join(' | ')} (sets the API rate budget)`);
     }
     if (!isStr(raw.clickup.space)) err('clickup.space: required, the ClickUp space holding QA work');
+
+    // Status names are per-host: one team's "Under Review" is another's "ready for
+    // review". Optional, but complete if present, since a half-declared map would match
+    // some states and silently miss others.
+    const st = raw.clickup.statuses;
+    if (st !== undefined) {
+      if (!isObj(st)) {
+        err('clickup.statuses: must be a mapping of lifecycle key to the status name as it appears in ClickUp');
+      } else {
+        for (const k of Object.keys(st)) {
+          if (!STATUS_KEYS.includes(k)) {
+            err(`clickup.statuses.${k}: unknown lifecycle key (allowed: ${STATUS_KEYS.join(', ')})`);
+          }
+        }
+        for (const k of STATUS_KEYS) {
+          if (!isStr(st[k])) {
+            err(`clickup.statuses.${k}: required once clickup.statuses is set; name it exactly as ClickUp shows it`);
+          }
+        }
+        const seen = new Map();
+        for (const k of STATUS_KEYS) {
+          if (!isStr(st[k])) continue;
+          const norm = st[k].trim().toLowerCase();
+          if (seen.has(norm)) {
+            err(`clickup.statuses: "${st[k]}" is used for both ${seen.get(norm)} and ${k}; each lifecycle state needs a status of its own or the pipeline cannot tell them apart`);
+          } else seen.set(norm, k);
+        }
+      }
+    } else {
+      warnings.push(`clickup.statuses: not declared, so the canonical names are assumed (${STATUS_KEYS.map((k) => DEFAULT_STATUSES[k]).join(', ')}). Declare them if your ClickUp uses different wording.`);
+    }
   }
 
   return { profile: errors.length ? null : raw, errors, warnings };

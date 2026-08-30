@@ -24,8 +24,10 @@ Nonzero exit → STOP, point at `/qa-pilot:qa-init`.
 
 Ask which the user wants, or infer from what is actually waiting:
 
-- **Design review**: cases in `Case Review`, authored but not yet executable
-- **Result review**: cases in `Under Review` or `Quarantined`, executed and awaiting a verdict decision
+- **Design review**: cases in `case_review`, authored but not yet executable
+- **Result review**: cases in `under_review` or `quarantined`, executed and awaiting a verdict decision
+
+Those are lifecycle keys. Resolve each to this host's actual status name via the profile's `clickup.statuses` before you query or write, because the board uses the host's wording, not the canonical one.
 
 Use `clickup_filter_tasks` on the feature's list.
 
@@ -37,7 +39,7 @@ QA reviews the **scenario matrix first**, then individual cases. Present:
 2. **Every P0 and P1 case individually**: title, steps, expected outcomes. These are the ones whose assertions decide whether the feature reads Ready.
 3. **P2 cases in bulk**, at matrix level: one judgment across the group. Reviewing 25 cases × 5 developers individually recreates the bottleneck at the design gate, which is the thing this system is built to avoid.
 
-For each decision, move the task: `Approved for Execution`, or `Rejected` with a tagged reason. Nothing executes until it is approved.
+For each decision, move the task to this host's name for `approved_for_execution`, or for `rejected` with a tagged reason. Nothing executes until it is approved.
 
 ## 3. Result review and the sampling rules
 

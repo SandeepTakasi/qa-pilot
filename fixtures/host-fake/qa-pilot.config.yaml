@@ -63,3 +63,13 @@ cross_app:
 clickup:
   plan_tier: business
   space: QA
+  # Deliberately not the canonical names: the fixture proves the pipeline reasons in
+  # lifecycle keys rather than in whatever this host happens to call its statuses.
+  statuses:
+    case_review: to do
+    approved_for_execution: ready to run
+    under_review: ready for review
+    approved: accepted
+    rejected: rejected
+    retest: retest
+    quarantined: skip

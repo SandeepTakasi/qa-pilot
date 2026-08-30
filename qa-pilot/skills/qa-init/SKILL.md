@@ -47,6 +47,21 @@ Use `AskUserQuestion`. Ask in this order, batching related questions:
 5. **Approved generation models**: which model IDs may author test cases. Default to the current strongest available model. This list is a gate: `validate-cases.mjs` rejects cases stamped with anything else, so a model upgrade cannot silently change case quality without QA adding it here.
 6. **Cross-app propagation** (multi-app only): if a change in app A becomes visible in app B only after a delay (polling bridge, queue, cache), ask for the worst-case window in seconds, then set `propagation_window_s` to roughly 3× the observed window as a ceiling for `expect.poll`.
 7. **ClickUp**: space name holding QA work, and the plan tier (sets the API rate budget: Free through Business = 100 requests/min per token).
+8. **Status names.** The pipeline has seven lifecycle states; this host names them. Ask whether the QA space already has statuses and what they are called. Many teams already run manual QA in ClickUp and have their own vocabulary, so reusing it beats imposing new wording. Map their names onto the seven keys and write the result to `clickup.statuses`:
+
+   | Key | What it means |
+   |---|---|
+   | `case_review` | authored, awaiting QA design review |
+   | `approved_for_execution` | design approved, never yet run |
+   | `under_review` | executed, awaiting QA verdict review |
+   | `approved` | verdict accepted; counts toward confidence |
+   | `rejected` | the test itself is wrong, which is different from the test failing |
+   | `retest` | needs another run |
+   | `quarantined` | flaky; held out, still in the denominator |
+
+   Watch for one trap. A board whose statuses are `pass` and `fail` is recording a **verdict**, not a review state. QA-Pilot keeps the verdict in a custom field and uses status for approval, so `pass` is not the same thing as `approved`: a case can fail and QA can approve that the failure is real. If an existing vocabulary has no way to express approval, say so plainly and have them add statuses rather than forcing a bad mapping.
+
+   **Write the block explicitly even when the canonical names fit**, so the profile documents the board a reader is actually looking at.
 
 ## 3. Emit the profile
 

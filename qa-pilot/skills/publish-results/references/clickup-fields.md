@@ -42,8 +42,10 @@ Which statuses these are is decided by `scripts/case-status.mjs`, not by prose i
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" \
-  --cases testing/<feature>/cases.yaml --statuses <statuses.json>
+  --cases testing/<feature>/cases.yaml --statuses <statuses.json> --profile <profile-path>
 ```
+
+The table above uses the canonical names. **A host names its own statuses** in the profile's `clickup.statuses`, and the pipeline matches on lifecycle keys, so read the profile rather than assuming this wording.
 
 ## Custom fields
 
