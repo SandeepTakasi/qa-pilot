@@ -60,20 +60,36 @@ Every value comes from the validated `report.json`. Nothing here is inferred.
 | App | dropdown | `app` |
 | Executor | text or person | `executor` |
 | Run Date | date | `finished_at` |
-| Video | attachment or URL | `cases[].video` |
-| Trace | attachment or URL | `cases[].trace` |
+| Trace | **attachment** | `cases[].trace` — the one evidence artifact |
 | Flake Count | number | `cases[].retries` |
 | Model Version | text | `model_version` |
 
 `API Mode` earns its place: it is what makes "this pass came from a seeded mock backend" auditable after the fact rather than a thing someone has to remember.
 
-## Rate and size limits
+## Evidence lives in ClickUp
 
-- **100 requests per minute per token** on Free through Business; 1,000 on Business Plus; 10,000 on Enterprise. The profile's `clickup.plan_tier` records which applies.
-- One coalesced update per task. A 25-case feature is then ~25 updates plus attachments plus one comment — comfortably inside the budget, but only if calls are sequential and updates are not split per field.
-- On a 429: wait 60 seconds, resume where you stopped. Never restart the whole publish.
-- Attachments: 1 GB per file by API, but keep videos under 50 MB inline; link anything larger.
-- Retention: keep the latest run's videos plus every failure's video. Prune passing-run videos older than 14 days.
+One artifact per case per run: **`trace.zip`, attached to the case task.**
+
+A Playwright trace contains the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log. Attaching the video and console separately stores the same bytes twice and splits one investigation across three files — so the trace supersedes both.
+
+Reviewers open it by dragging it onto <https://trace.playwright.dev>. Playwright's docs are explicit that the viewer "loads the trace entirely in your browser and does not transmit any data externally" — no upload, no account, nothing leaves the reviewer's machine. `npx playwright show-trace <file>` works too.
+
+### Limits that shaped this
+
+| | |
+|---|---|
+| Storage | 60 MB on Free; **unlimited on every paid plan** — but the usage meter exists *only* on Free, so paid workspaces cannot see their own consumption |
+| Max file size | **1 GB** per attachment, via UI and API alike — far above any real trace |
+| Attachments per task | **1,000.** One trace per run against a per-*case* task is ~1,000 runs, six years at three a week. This is why evidence goes on the case task and never on the feature task, which would fill in about seven weeks |
+| Rate | **100 requests/min per token** on Free–Business; 1,000 on Business Plus; 10,000 on Enterprise. Per *token*, so give each developer their own OAuth token rather than sharing one |
+
+On a 429: wait 60 seconds and resume where you stopped. Never restart the whole publish.
+
+### Two operational requirements
+
+**Turn on Private Attachment Links** (Settings → Advanced Permissions; available on all plans, **off by default**). Without it, every attachment URL is public, unauthenticated and non-expiring — security by unguessable string alone. Traces carry application state and can carry tokens. The trade-off: `npx playwright show-trace <url>` stops working against ClickUp URLs, because it sends no auth header, so reviewers download first and then open.
+
+**Retention is manual.** ClickUp's API has no delete-attachment endpoint — deleting the parent task is the only programmatic lever, and case tasks must persist because the status lifecycle lives on them. So traces accumulate at roughly 1–5 MB per case-run and are pruned by hand from the task's attachment list. Budget a quarterly pass, oldest passing runs first; keep every failure. Nobody re-opens a passing trace once QA has approved it.
 
 ## Run-summary comment
 

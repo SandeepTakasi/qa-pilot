@@ -65,7 +65,21 @@ Specs live at `<apps.<app>.spec_dir>/<feature>/<CASE-ID>.spec.ts` and are **comm
 - Cross-app cases live in `cross_app.spec_home`'s spec dir and use `expect.poll` with `cross_app.propagation_window_s` as the ceiling. Eventual consistency is architecture, not flakiness.
 - **Never overwrite a hand-stabilized spec without asking.** If a spec file already exists and differs from what you would generate, show the difference and let the user decide. Someone probably fixed a selector by hand.
 
-Playwright config for the run — `video: 'on'`, `trace: 'on'`, `retries: 1`, JSON and HTML reporters. Video and trace are not optional: `validate-report.mjs` refuses to publish any executed case without them.
+Playwright config for the run:
+
+```js
+use: {
+  trace: { mode: 'on', sources: false },  // sources: false trims ~22% and costs a reviewer nothing
+  video: 'on',
+  screenshot: 'only-on-failure',
+},
+retries: 1,
+reporter: [['json', { outputFile: 'results.json' }], ['html', { open: 'never' }]],
+```
+
+**The trace is the evidence.** `validate-report.mjs` refuses to publish any executed case without one, because a trace carries the video byte-for-byte, the console output, the screenshot film-strip, the DOM snapshots and the network log in a single file. Keep `video: 'on'` — the trace embeds the recording only when video is being captured — but the standalone `.webm` is never uploaded anywhere; the trace supersedes it.
+
+Do not turn off `screenshots` in the trace to save space. It is roughly 95% of the file size and it is exactly what a reviewer scrubs through.
 
 ## 6. Stabilize new specs before they count
 

@@ -53,7 +53,11 @@ Not every pass needs to be watched, but the sampling must be honest and tracked:
 
 Compute the quotas from the actual queue and tell the user the numbers up front ("7 items must be watched: 2 failures, 4 P0 passes, and 1 of 3 P1 passes"). Track which have been watched as you go, and say plainly when the quota is unmet — an unmet sampling quota means the confidence number is less trustworthy than it looks.
 
-Present the queue sorted: failures first, then by priority. For each item give the case title, verdict, executor, environment and SHA, and direct links to video, trace, and console log. For a failure, show the `failure_summary` from the report — it is the Playwright error verbatim, which is what makes it triageable.
+Present the queue sorted: failures first, then by priority. For each item give the case title, verdict, executor, environment and SHA, and the trace attachment on its task. For a failure, show the `failure_summary` from the report — it is the Playwright error verbatim, which is what makes it triageable.
+
+**How to watch a case.** Download its `trace.zip` from the ClickUp task and drop it on <https://trace.playwright.dev>. The viewer runs entirely in the browser — Playwright's docs state it "does not transmit any data externally" — so nothing is uploaded and no account is needed. `npx playwright show-trace <file>` opens the same thing locally.
+
+Tell reviewers what the trace gives them, because it is more than the old video was: a scrubable film-strip of every action, the DOM at each step, the console output, and the network log, all on one timeline. "Watching the evidence" means scrubbing to the failing action and reading the DOM there — not just watching a recording and forming an impression.
 
 ## 4. Record decisions
 

@@ -73,6 +73,8 @@ Print (do not write to a file) the prerequisites this host must close before the
 | No role accounts yet | permission-type cases in `/generate-tests` |
 | ClickUp space / custom fields not created | `/publish-results` |
 | Deployed builds strip console logs | failure evidence on hosts where console output is the required evidence |
+| **Private Attachment Links not enabled in ClickUp** | evidence privacy — attachment URLs are public, unauthenticated and non-expiring by default, and traces carry application state |
+| **All developers sharing one ClickUp API token** | `/publish-results` under concurrency — the 100 req/min budget is per token, so a shared token is shared by everyone publishing at once |
 
 ## 5. Hand off
 

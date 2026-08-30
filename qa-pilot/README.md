@@ -20,12 +20,22 @@ The design rests on two ideas. **Uniformity is enforced by tooling, not discipli
 
 These are gates, not warnings. Each one exists because the alternative silently produces confidence nobody should have.
 
-- **A verdict without evidence.** Video, trace, and a deploy SHA read from the environment are required for every executed case. The publish script refuses the report; QA never has to police it.
+- **A verdict without evidence.** A Playwright trace and a deploy SHA read from the environment are required for every executed case. The publish script refuses the report; QA never has to police it.
 - **A verdict from anywhere but a committed spec run.** An agentic browser session produces no video, no trace, no machine-readable result — so it structurally cannot publish. "Claude clicked through it and it looked fine" is the claim this system exists to kill.
 - **A verdict from a local or sandbox environment.** Mock backends are seeded and always succeed. Runs against them are useful for stabilizing specs and are stamped as such, but they cannot carry a verdict.
 - **A pass that was really a retry.** Pass-on-retry is recorded `flaky`, always, derived from the attempt results rather than from Playwright's own status field so no config change can turn it green.
 - **A verdict from a case QA never approved.**
 - **A run that lost its ground truth.** If the deployed build changes mid-run, every case is `blocked` — half tested one build and half another. If more than 10% of cases are blocked, the run halts: the environment failed, not the feature.
+
+## Evidence
+
+One artifact per case per run: **`trace.zip`, attached to the case's ClickUp task.** A trace carries the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log — so it replaces uploading a video and a console log separately, which would store the same bytes twice and split one investigation across three files.
+
+Reviewers drag it onto <https://trace.playwright.dev>, which runs entirely in the browser and transmits nothing. No second storage system, no extra credentials, and the evidence sits on the task the reviewer is already looking at.
+
+Two things to set up on the ClickUp side, both covered by `/qa-init`'s gap report: turn on **Private Attachment Links** (attachment URLs are public and non-expiring by default), and give each developer their **own API token** (the 100 requests/minute budget is per token, not per person).
+
+Retention is manual — ClickUp has no delete-attachment endpoint, so traces are pruned from task attachment lists by hand. Budget a quarterly pass: oldest passing runs first, keep every failure.
 
 ## Portability
 

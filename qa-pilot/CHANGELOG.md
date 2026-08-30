@@ -9,6 +9,13 @@ First build. Implements PRD v1.0.
 - ClickUp write guard (PreToolUse hook) — the scripted path is the only write path
 - No third-party code except `scripts/lib/yaml.mjs`, a bundled copy of yaml@2 (MIT)
 
+Evidence is hosted in ClickUp as a single `trace.zip` per case per run, rather than a
+video attachment plus a linked trace plus a console log. Verified by inspecting a real
+Playwright trace: it contains the video byte-for-byte, the console output and the
+screenshot film-strip, so the three-file scheme stored the same bytes twice and split one
+investigation across three places. Reviewers open traces at trace.playwright.dev, which
+runs client-side and uploads nothing.
+
 Deviations from the PRD, each forced by a verified constraint:
 
 - Scripts are zero-dependency Node ESM (`.mjs`), not TypeScript — a plugin must not require

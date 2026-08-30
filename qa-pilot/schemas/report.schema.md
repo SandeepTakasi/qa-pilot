@@ -27,9 +27,9 @@ cases:
     verdict: pass | fail | flaky | blocked
     duration_ms: integer     # summed across attempts
     assertions: null         # Playwright's JSON reporter does not expose a count
-    video: <path>            # REQUIRED for pass | fail | flaky
-    trace: <path>            # REQUIRED for pass | fail | flaky
-    console_log: <path>      # REQUIRED where the host profile lists console_log evidence
+    trace: <path>            # REQUIRED for pass | fail | flaky — THE evidence artifact
+    video: <path>            # optional carry-through; the trace already contains it
+    console_log: <path>      # optional carry-through; the trace already contains it
     failure_summary: string  # REQUIRED for fail — the Playwright error, ANSI-stripped,
                              # capped at 500 chars. Never model prose.
     retries: integer
@@ -64,8 +64,8 @@ A case that passed only on retry is `flaky`, never `pass`. This is the rule that
 
 `validate-report.mjs` exits nonzero — and nothing is written to ClickUp — when:
 
-- a `pass`, `fail`, or `flaky` case is missing video or trace, or the artifact is absent from disk, or it is zero bytes (a crashed browser writes an empty video). Evidence is always checked on disk; `--base` only resolves relative paths and defaults to the report's own directory
-- a required `console_log` is missing on a host that declares it
+- a `pass`, `fail`, or `flaky` case is missing its **trace**, or the artifact is absent from disk, or it is zero bytes (a crashed browser writes an empty file). Evidence is always checked on disk; `--base` only resolves relative paths and defaults to the report's own directory
+- a `video` or `console_log` path *is* recorded but points at a missing or empty file — they are optional, but a broken path is still a broken path
 - `commit_sha` or `sha_source` is absent — a run with no readable build identity has no provenance
 - the deployed build changed mid-run and any case still carries a verdict. The mismatch is **recomputed** from `sha_before`/`sha_after`, never taken from the report's own `sha_mismatch` flag, and a flag that disagrees with the SHAs is itself a refusal
 - `env_name` is not registered, `env_url` is missing, or `env_url` disagrees with the registry

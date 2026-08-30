@@ -90,7 +90,9 @@ export function validateReport(report, profile, { map = null, base = null, stat 
 
   // --- cases ---
   const cases = report.cases;
-  const needConsole = (profile.evidence?.extra ?? []).includes('console_log');
+  // A host declaring `evidence.extra: [console_log]` is satisfied by the trace: Playwright
+  // records console output into it automatically, so requiring the trace requires the
+  // console. There is no separate console gate to enforce.
   if (!Array.isArray(cases) || cases.length === 0) {
     err('cases: required, at least one case');
   } else {
@@ -112,22 +114,23 @@ export function validateReport(report, profile, { map = null, base = null, stat 
       }
 
       if (EVIDENCE_REQUIRED.includes(c.verdict)) {
-        for (const artifact of ['video', 'trace']) {
-          const p = c[artifact];
-          if (!isStr(p)) {
-            err(`${at}.${artifact}: required for a ${c.verdict} verdict — an unevidenced verdict is exactly the unverifiable claim this pipeline exists to prevent`);
-            continue;
-          }
-          const problem = artifactProblem(p);
-          if (problem) err(`${at}.${artifact}: "${p}" ${problem}`);
+        // The trace is the evidence. It carries the video byte-for-byte, the console
+        // output, the screenshot film-strip, the DOM snapshots and the network log —
+        // one file a reviewer opens at trace.playwright.dev, rather than three that
+        // split one investigation and store the video twice.
+        if (!isStr(c.trace)) {
+          err(`${at}.trace: required for a ${c.verdict} verdict — an unevidenced verdict is exactly the unverifiable claim this pipeline exists to prevent`);
+        } else {
+          const problem = artifactProblem(c.trace);
+          if (problem) err(`${at}.trace: "${c.trace}" ${problem}`);
         }
-        if (needConsole) {
-          if (!isStr(c.console_log)) {
-            err(`${at}.console_log: required for a ${c.verdict} verdict — this host declares console_log evidence because its operations never reach the network tab`);
-          } else if (!c.console_log.startsWith('inline:')) {
-            const problem = artifactProblem(c.console_log);
-            if (problem) err(`${at}.console_log: "${c.console_log}" ${problem}`);
-          }
+        // video and console_log are optional carry-throughs: recorded when Playwright
+        // wrote them separately, but never a second upload and never a second gate.
+        for (const extra of ['video', 'console_log']) {
+          const p = c[extra];
+          if (!isStr(p) || p.startsWith('inline:')) continue;
+          const problem = artifactProblem(p);
+          if (problem) err(`${at}.${extra}: "${p}" ${problem}`);
         }
       }
 

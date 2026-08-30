@@ -30,12 +30,24 @@ test('golden report passes the publish gate', () => {
 
 // --- the evidence gate: the reason a Pass cannot be claimed without proof ---
 
-test('refuses a pass with no video', () => {
-  refuses((r) => { r.cases[0].video = null; }, /video: required for a pass verdict/);
+test('refuses a pass with no trace', () => {
+  refuses((r) => { r.cases[0].trace = null; }, /trace: required for a pass verdict/);
 });
 
 test('refuses a fail with no trace', () => {
   refuses((r) => { r.cases[1].trace = null; }, /trace: required for a fail verdict/);
+});
+
+test('the trace alone is sufficient evidence', () => {
+  // It carries the video byte-for-byte and the console output, so demanding those as
+  // separate uploads would store the same bytes twice for no reviewer benefit.
+  const r = golden();
+  assert.ok(r.cases.every((c) => !c.video && !c.console_log), 'fixture should be trace-only');
+  assert.deepEqual(validateReport(r, profile, { map, base: FIXTURES }).errors, []);
+});
+
+test('an optional video path that points nowhere is still refused', () => {
+  refuses((r) => { r.cases[0].video = 'test-results/gone.webm'; }, /video: .*does not exist on disk/);
 });
 
 test('refuses when a declared evidence artifact is missing on disk', () => {
@@ -43,16 +55,13 @@ test('refuses when a declared evidence artifact is missing on disk', () => {
   assert.ok(errs.some((e) => /does not exist on disk/.test(e)), errs.join('\n'));
 });
 
-test('refuses a missing console log on a host that requires it', () => {
-  refuses((r) => { r.cases[0].console_log = null; }, /console_log: required.*never reach the network tab/s);
-});
-
-test('does not require console logs on hosts that do not declare them', () => {
-  const noConsole = structuredClone(profile);
-  noConsole.evidence = { extra: [] };
+test('a host declaring console_log evidence is satisfied by the trace', () => {
+  // Playwright records console output into the trace automatically, so requiring the
+  // trace already requires the console — there is no second artifact to demand.
+  assert.deepEqual(profile.evidence.extra, ['console_log'], 'fixture host declares console evidence');
   const r = golden();
-  for (const c of r.cases) c.console_log = null;
-  assert.deepEqual(validateReport(r, noConsole, { map, base: FIXTURES }).errors, []);
+  assert.ok(r.cases.every((c) => !c.console_log));
+  assert.deepEqual(validateReport(r, profile, { map, base: FIXTURES }).errors, []);
 });
 
 test('blocked cases need no evidence — they never executed', () => {
@@ -104,12 +113,12 @@ test('refuses a report with no env_url — omitting it must not skip the registr
   refuses((r) => { delete r.env_url; }, /env_url: required/);
 });
 
-test('refuses a zero-byte artifact', () => {
-  // A crashed browser writes an empty video; presence alone is not evidence.
-  const empty = resolve(FIXTURES, 'test-results/empty-fixture.webm');
+test('refuses a zero-byte trace', () => {
+  // A crashed run writes an empty file; presence alone is not evidence.
+  const empty = resolve(FIXTURES, 'test-results/empty-fixture.zip');
   writeFileSync(empty, '');
   try {
-    refuses((r) => { r.cases[0].video = 'test-results/empty-fixture.webm'; }, /is empty \(0 bytes\)/);
+    refuses((r) => { r.cases[0].trace = 'test-results/empty-fixture.zip'; }, /is empty \(0 bytes\)/);
   } finally {
     rmSync(empty, { force: true });
   }

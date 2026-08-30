@@ -22,9 +22,7 @@
       "verdict": "pass",
       "duration_ms": 574,
       "assertions": null,
-      "video": "test-results/checkout-order-001/video.webm",
       "trace": "test-results/checkout-order-001/trace.zip",
-      "console_log": "test-results/checkout-order-001/console.log",
       "failure_summary": null,
       "retries": 0
     },
@@ -33,9 +31,7 @@
       "verdict": "fail",
       "duration_ms": 4351,
       "assertions": null,
-      "video": "test-results/checkout-order-002/video.webm",
       "trace": "test-results/checkout-order-002/trace.zip",
-      "console_log": "test-results/checkout-order-002/console.log",
       "failure_summary": "Error: expect(locator).toHaveText(expected) failed Locator: getByTestId('alert')",
       "retries": 1
     },
@@ -44,9 +40,7 @@
       "verdict": "flaky",
       "duration_ms": 402,
       "assertions": null,
-      "video": "test-results/checkout-qty-003/video.webm",
       "trace": "test-results/checkout-qty-003/trace.zip",
-      "console_log": "test-results/checkout-qty-003/console.log",
       "failure_summary": "Error: expect(received).toBeGreaterThan(expected)",
       "retries": 1
     },
@@ -55,13 +49,16 @@
       "verdict": "pass",
       "duration_ms": 812,
       "assertions": null,
-      "video": "test-results/checkout-perm-004/video.webm",
       "trace": "test-results/checkout-perm-004/trace.zip",
-      "console_log": "test-results/checkout-perm-004/console.log",
       "failure_summary": null,
       "retries": 0
     }
   ],
-  "summary": { "pass": 2, "fail": 1, "flaky": 1, "blocked": 0 },
+  "summary": {
+    "pass": 2,
+    "fail": 1,
+    "flaky": 1,
+    "blocked": 0
+  },
   "unmapped_specs": []
 }

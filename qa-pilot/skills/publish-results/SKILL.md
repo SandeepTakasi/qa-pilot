@@ -83,11 +83,12 @@ The flag expires after 30 minutes, so a session that dies mid-publish cannot lea
 
 - One `clickup_update_task` call per task, setting every field at once (see `references/clickup-fields.md` for the field-to-report mapping). Coalescing matters: the Business tier allows 100 requests per minute per token, and a 25-case feature plus attachments gets close.
 - Status: `Under Review`, except `flaky` → `Quarantined`.
-- Video: if the file is under 50 MB, attach it with `clickup_attach_task_file`; otherwise put its URL in the Video field. The API accepts up to 1 GB per file, but large attachments make tasks unusable — 50 MB is the practical line.
+- **Attach the trace, and only the trace**, with `clickup_attach_task_file` — one artifact per case per run. Do not upload the `.webm` or the console log: the trace already contains the video byte-for-byte plus the console output, so uploading them again stores the same bytes twice and splits one investigation across three files. Name the attachment `<CASE-ID>-<run_id>.zip` so a task's attachment list reads as run history.
+- If a trace exceeds 1 GB (the API's per-file cap), something is wrong with the run, not with the upload — report it rather than working around it.
 
-**Once per feature** — a single run-summary comment on the feature task (`clickup_create_task_comment`), not one comment per case. Include: run ID, environment, commit SHA, counts by verdict, blocked percentage, confidence score and readiness, and the executor. Start the comment with the run ID so a re-publish can find its own prior comment.
+**Once per feature** — a single run-summary comment on the feature task (`clickup_create_task_comment`), not one comment per case. Include: run ID, environment, commit SHA, counts by verdict, blocked percentage, confidence score and readiness, and the executor. Start the comment with the run ID so a re-publish can find its own prior comment. Add the one-line reviewer instruction: traces open at <https://trace.playwright.dev> by drag-and-drop, entirely in the browser.
 
-**Rate discipline**: sequential calls, never parallel. On a 429, wait 60 seconds and resume from where you stopped — do not restart the whole publish.
+**Rate discipline**: sequential calls, never parallel. On a 429, wait 60 seconds and resume from where you stopped — do not restart the whole publish. Note that the 100/min budget is **per token**: if several developers publish on one shared token they will exhaust it together. Per-user OAuth tokens give each executor their own budget and make the `executor` field truthful for free.
 
 ## 6. Idempotency
 
