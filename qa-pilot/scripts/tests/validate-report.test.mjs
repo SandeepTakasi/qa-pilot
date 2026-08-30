@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { loadProfile } from '../lib/profile.mjs';
-import { validateReport, confidence } from '../validate-report.mjs';
+import { validateReport } from '../validate-report.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(HERE, '../../../fixtures/host-fake');
@@ -174,24 +174,4 @@ test('halts a run where more than 10% of cases are blocked', () => {
 test('warns about flaky cases rather than silently accepting them', () => {
   const { warnings } = validateReport(golden(), profile, { map, base: FIXTURES });
   assert.ok(warnings.some((w) => /flaky/.test(w)), warnings.join('\n'));
-});
-
-// --- confidence score ---
-
-test('confidence weights P0 over P1 over P2', () => {
-  const priorities = { A: 'P0', B: 'P1', C: 'P2' };
-  const all = confidence([{ id: 'A', approved: true }, { id: 'B', approved: true }, { id: 'C', approved: true }], priorities);
-  assert.equal(all.score, 1);
-  assert.equal(all.label, '100%');
-
-  const noP2 = confidence([{ id: 'A', approved: true }, { id: 'B', approved: true }, { id: 'C', approved: false }], priorities);
-  assert.equal(noP2.score, 5 / 6);
-  assert.equal(noP2.ready, true);
-});
-
-test('any unapproved P0 forces Not Ready regardless of score', () => {
-  const priorities = { A: 'P0', B: 'P1', C: 'P2' };
-  const c = confidence([{ id: 'A', approved: false }, { id: 'B', approved: true }, { id: 'C', approved: true }], priorities);
-  assert.equal(c.ready, false);
-  assert.equal(c.label, 'Not Ready');
 });

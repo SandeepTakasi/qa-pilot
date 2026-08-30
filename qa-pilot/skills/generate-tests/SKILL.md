@@ -60,6 +60,8 @@ Skip this section entirely if the ClickUp MCP tools are unavailable — the vali
 
 1. Create the write flag the plugin's guard hook checks: `mkdir -p .qa-pilot && touch .qa-pilot/allow-clickup-writes` (it expires after 30 minutes, so a dead session cannot leave writes open)
 2. Read `testing/<feature>/clickup-map.json` if it exists. **Every case already in the map is updated, never recreated** — this is what makes reruns idempotent. Never look tasks up by name.
+
+   **If you changed an existing case's steps, expected outcomes, priority, or type, move it back to `Case Review`** and say which cases you reset and why. Design approval belongs to the case QA actually read; editing the assertions of an approved case and leaving it approved walks a changed test straight past the design gate. Pure wording or title tidying that leaves the behaviour identical does not need a reset — but when in doubt, reset: a re-approval costs QA a minute, an unnoticed change costs a false verdict.
 3. For each unmapped case, create a task in the feature's list under the profile's `clickup.space`:
    - title: `<CASE-ID> <Title>`
    - description: preconditions, steps, and expected outcomes as written

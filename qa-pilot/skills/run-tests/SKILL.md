@@ -26,12 +26,19 @@ Identify which app(s) the feature's cases target, and take their base URLs from 
 
 ## 2. Approval gate
 
-Read `testing/<feature>/clickup-map.json`. For each case, fetch its ClickUp task and check the status:
+Read `testing/<feature>/clickup-map.json` and fetch each mapped task's status over MCP. Write what you read to `testing/<feature>/runs/statuses.json` as `{"<CASE-ID>": "<status>"}` — recording it makes the gate auditable instead of remembered — then ask the script what it means:
 
-- `Approved for Execution` → include it
-- anything else → **exclude it** and list it in your output with its current status
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" \
+  --cases testing/<feature>/cases.yaml \
+  --statuses testing/<feature>/runs/statuses.json
+```
 
-If no case is approved, STOP. QA approval before execution is the gate that keeps hallucinated cases out of the record; running unapproved cases and publishing them defeats it.
+Run exactly the case IDs in `executable[]`. Report `held[]` with each reason, and surface every warning — do not decide eligibility yourself from the status names.
+
+**Design approval persists across builds.** `Approved for Execution`, `Approved`, `Retest`, and `Under Review` all execute; a case QA approved re-runs on the next build, which is what makes this a regression suite rather than a one-shot. `Case Review` and `Rejected` never execute. Quarantined cases are excluded unless you pass `--include-quarantined`, which is for verifying a hardening fix.
+
+Nonzero exit means nothing is eligible — **STOP** and show `held[]`. Running unapproved cases and publishing them defeats the gate that keeps hallucinated cases out of the record.
 
 If ClickUp is unreachable, STOP rather than assuming approval.
 

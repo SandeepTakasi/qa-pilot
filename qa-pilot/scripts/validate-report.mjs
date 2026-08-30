@@ -168,20 +168,8 @@ export function validateReport(report, profile, { map = null, base = null, stat 
   return { errors, warnings };
 }
 
-/** Confidence score for the feature, per the PRD weighting. */
-export function confidence(cases, priorities) {
-  const weight = { P0: 3, P1: 2, P2: 1 };
-  let earned = 0, total = 0;
-  let p0Unapproved = false;
-  for (const c of cases) {
-    const w = weight[priorities[c.id]] ?? 1;
-    total += w;
-    if (c.approved) earned += w;
-    else if (priorities[c.id] === 'P0') p0Unapproved = true;
-  }
-  const score = total === 0 ? 0 : earned / total;
-  return { score, ready: !p0Unapproved, label: p0Unapproved ? 'Not Ready' : `${Math.round(score * 100)}%` };
-}
+// The confidence score lives in case-status.mjs, where the ClickUp statuses it depends on
+// are already in hand.
 
 function argValue(flag) {
   const i = process.argv.indexOf(flag);
