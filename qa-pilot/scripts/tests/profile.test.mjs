@@ -100,6 +100,18 @@ test('models.generation_approved is required and non-empty', () => {
     .some((e) => e.includes('generation_approved')));
 });
 
+test('clickup.folder is accepted and optional', () => {
+  assert.deepEqual(validateProfile(golden()).errors, [], 'fixture declares a folder');
+  const p = golden();
+  delete p.clickup.folder;
+  assert.deepEqual(validateProfile(p).errors, [], 'omitting it is allowed');
+});
+
+test('clickup.folder must be a real name when set', () => {
+  const errs = errorsFor((p) => { p.clickup.folder = ''; });
+  assert.ok(errs.some((e) => /clickup\.folder/.test(e)), errs.join('\n'));
+});
+
 // --- per-host status vocabulary ---------------------------------------------
 
 test('a complete status map is accepted', () => {

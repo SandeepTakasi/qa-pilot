@@ -61,6 +61,10 @@ cross_app:                          # required when apps has > 1 entry
 clickup:
   plan_tier: free | unlimited | business | enterprise   # required (rate budget)
   space: string                     # required, ClickUp space name for QA
+  folder: string                    # optional but recommended: the folder inside that
+                                    # space holding feature lists. Name it whenever the
+                                    # space has more than one folder, or a feature list
+                                    # can be created beside unrelated manual QA work.
   statuses:                         # optional; canonical names assumed if omitted.
                                     # Complete if present: all seven or none.
     case_review: string             # authored, awaiting QA design review

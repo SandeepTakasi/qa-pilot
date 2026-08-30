@@ -234,6 +234,13 @@ export function validateProfile(raw, { profilePath = null } = {}) {
     }
     if (!isStr(raw.clickup.space)) err('clickup.space: required, the ClickUp space holding QA work');
 
+    // Optional, but name it whenever the space holds more than one folder. Without it
+    // "the feature's list in space X" is ambiguous, and a feature list can be created in
+    // the wrong place, next to unrelated manual QA work.
+    if (raw.clickup.folder !== undefined && !isStr(raw.clickup.folder)) {
+      err('clickup.folder: must be a non-empty string when set, the folder inside the space that holds feature lists');
+    }
+
     // Status names are per-host: one team's "Under Review" is another's "ready for
     // review". Optional, but complete if present, since a half-declared map would match
     // some states and silently miss others.

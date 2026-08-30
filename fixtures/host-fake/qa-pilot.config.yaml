@@ -63,6 +63,7 @@ cross_app:
 clickup:
   plan_tier: business
   space: QA
+  folder: QA-Pilot Automated   # feature lists live here, not loose in the space
   # Deliberately not the canonical names: the fixture proves the pipeline reasons in
   # lifecycle keys rather than in whatever this host happens to call its statuses.
   statuses:
