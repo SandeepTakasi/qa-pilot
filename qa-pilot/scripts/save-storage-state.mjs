@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Capture a Playwright storageState by handing a headed browser to a human to log in.
-// Captures IndexedDB as well as cookies and localStorage — Firebase Auth and friends
-// persist tokens in IndexedDB, and a profile saved without it silently fails to restore.
+// Captures IndexedDB as well as cookies and localStorage, because Firebase Auth and
+// friends persist tokens in IndexedDB and a profile saved without it fails to restore.
 // Requires Playwright >= 1.51 resolved from the HOST repo (run this from the host repo root).
 //
 // Usage: node save-storage-state.mjs --url <login-url> --out <path> [--browser chromium]
@@ -25,7 +25,7 @@ const shellQuote = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replac
 
 /**
  * This step needs a human at a keyboard: a browser opens, a person signs in, and only
- * they can say when that finished. Without a TTY the prompt below never resolves — the
+ * they can say when that finished. Without a TTY the prompt below never resolves: the
  * browser sits open, the caller's timeout eventually kills it, and nothing is saved.
  * So refuse up front, before launching anything, and hand back the exact command to run.
  */
@@ -40,13 +40,13 @@ export function ttyRefusal({ isTTY, scriptPath, url, out, browser, cwd }) {
   return [
     'save-storage-state needs an interactive terminal, and this session does not have one.',
     '',
-    'Signing in is something only you can do, and only you can say when it finished —',
+    'Signing in is something only you can do, and only you can say when it finished,',
     'so this command has to be run by you, in your own terminal, not by an agent.',
     '',
     `  cd ${shellQuote(cwd)}`,
     `  ${cmd}`,
     '',
-    'A browser will open. Sign in — including OAuth and 2FA — then press Enter there.',
+    'A browser will open. Sign in (including OAuth and 2FA), then press Enter there.',
     'Nothing was launched here, so there is no stray browser window to close.',
   ].join('\n');
 }
@@ -62,7 +62,7 @@ export function loadPlaywright(cwd) {
         const d = (parts[i] ?? 0) - MIN[i];
         if (d < 0) {
           throw new Error(
-            `${pkg} ${version} is too old — storageState({ indexedDB: true }) landed in Playwright 1.51.\n` +
+            `${pkg} ${version} is too old. storageState({ indexedDB: true }) landed in Playwright 1.51.\n` +
             `Saved profiles would omit IndexedDB, and IndexedDB-persisted auth (Firebase) would not restore.\n` +
             `Upgrade the host repo: npm i -D @playwright/test@^1.51`
           );
@@ -113,7 +113,7 @@ async function main() {
   await page.goto(url, { waitUntil: 'domcontentloaded' });
 
   console.error('');
-  console.error('  A browser window is open. Sign in there — including any OAuth or 2FA.');
+  console.error('  A browser window is open. Sign in there, including any OAuth or 2FA.');
   console.error('  Leave the browser on a signed-in page, then come back here.');
   console.error('');
 
@@ -139,8 +139,8 @@ async function main() {
     process.exit(1);
   }
   if (idbOrigins === 0) {
-    console.error('  NOTE: no IndexedDB data captured. Fine if this app stores auth in cookies or');
-    console.error('  localStorage — but if it uses Firebase Auth, the session will not restore.');
+    console.error('  NOTE: no IndexedDB data captured. Fine if this app stores auth in cookies');
+    console.error('  or localStorage, but if it uses Firebase Auth the session will not restore.');
   }
 }
 

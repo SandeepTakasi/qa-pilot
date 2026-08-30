@@ -1,4 +1,4 @@
-# Golden QA-Pilot host profile — fixture for scripts/tests. Deliberately the awkward shape:
+# Golden QA-Pilot host profile, a fixture for scripts/tests. Deliberately the awkward shape:
 # two apps, engine-dispatched operations (no network assertions), console-log evidence.
 project: host-fake
 

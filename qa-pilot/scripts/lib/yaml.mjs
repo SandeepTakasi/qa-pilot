@@ -1,4 +1,4 @@
-// Vendored bundle of yaml@2.9.0 (MIT, https://github.com/eemeli/yaml) — Copyright Eemeli Aro.
+// Vendored bundle of yaml@2.9.0 (MIT, https://github.com/eemeli/yaml). Copyright Eemeli Aro.
 // Bundled with esbuild so QA-Pilot scripts need no npm install in the host repo.
 // Exports: parse, stringify.
 // Regenerate: echo "export { parse, stringify } from 'yaml';" > entry.mjs && npx esbuild entry.mjs \

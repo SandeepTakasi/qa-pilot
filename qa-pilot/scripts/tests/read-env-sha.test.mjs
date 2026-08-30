@@ -35,7 +35,7 @@ test('accepts a short SHA and normalizes case', () => {
   assert.equal(extractSha(JSON.stringify({ c: 'A1B2C3D' }), { json_path: 'c' }), 'a1b2c3d');
 });
 
-test('rejects a value that is not a SHA — a wrong path must not stamp a fake provenance', () => {
+test('rejects a value that is not a SHA, so a wrong path cannot stamp a fake provenance', () => {
   assert.throws(() => extractSha(JSON.stringify({ build: { commit: 'v2.14.3' } }),
     { json_path: 'build.commit' }), /not a commit SHA/);
   assert.throws(() => extractSha(JSON.stringify({ build: { commit: 1234 } }),

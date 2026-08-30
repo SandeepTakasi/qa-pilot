@@ -53,7 +53,7 @@ export function extractSha(body, shaSource) {
   if (!SHA_RE.test(sha)) {
     throw new Error(
       `extracted value "${sha}" is not a commit SHA (expected 7-40 hex characters).\n` +
-      `Check sha_source — a wrong path can silently yield a version string or a build number, ` +
+      `Check sha_source: a wrong path can silently yield a version string or a build number, ` +
       `which would stamp every report with a provenance that means nothing.`
     );
   }

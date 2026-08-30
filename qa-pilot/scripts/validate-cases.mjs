@@ -19,7 +19,7 @@ const SLOT_FOR_TYPE = { happy: 'happy', negative: 'negative', edge: 'boundary', 
 
 // An expected outcome with no observable subject cannot become an assertion.
 const VAGUE_RE = /^\W*(it |the (page|app|ui|screen) )?(works|is (ok|fine|correct|right)|looks (ok|fine|right|correct)|as expected|successful(ly)?|succeeds|no (issues?|errors?|problems?)|behaves (properly|correctly)|is displayed correctly|passes)\W*$/i;
-// Network-flavoured phrasing — silently no-ops where operations never hit the network.
+// Network-flavoured phrasing, which silently no-ops where operations never hit the network.
 const NETWORK_RE = /\b(requests?|responses?|API calls?|network|payloads?|endpoints?|XHR|fetch|status\s+[1-5]\d{2}|[1-5]xx)\b/i;
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -46,9 +46,9 @@ export function validateCases(doc, profile, { featureDir = null } = {}) {
   // --- model gate ---
   const approved = profile?.models?.generation_approved ?? [];
   if (!isStr(doc.model_version)) {
-    err('model_version: required — cases must record the model that authored them');
+    err('model_version: required. Cases must record the model that authored them.');
   } else if (approved.length && !approved.includes(doc.model_version)) {
-    err(`model_version: "${doc.model_version}" is not in models.generation_approved (${approved.join(', ')}) — QA must approve a model before its cases enter the pipeline`);
+    err(`model_version: "${doc.model_version}" is not in models.generation_approved (${approved.join(', ')}). QA must approve a model before its cases enter the pipeline.`);
   }
 
   if (!isStr(doc.generated_at) || Number.isNaN(Date.parse(doc.generated_at))) {
@@ -62,7 +62,7 @@ export function validateCases(doc, profile, { featureDir = null } = {}) {
     err('cases: required, at least one case');
   } else {
     if (cases.length > MAX_CASES) {
-      err(`cases: ${cases.length} exceeds the ${MAX_CASES}-case cap — split this into sub-features rather than generating volume`);
+      err(`cases: ${cases.length} exceeds the ${MAX_CASES}-case cap. Split this into sub-features rather than generating volume.`);
     }
     const seen = new Set();
     const networkForbidden = profile?.assertions?.network_events === 'forbidden';
@@ -88,17 +88,17 @@ export function validateCases(doc, profile, { featureDir = null } = {}) {
 
       // --- assertion lint ---
       if (!strList(c.expected) || c.expected.length === 0) {
-        err(`${at}.expected: required, at least one verifiable outcome — no assertions means no test`);
+        err(`${at}.expected: required, at least one verifiable outcome, because no assertions means no test`);
       } else {
         let verifiable = 0;
         c.expected.forEach((e, j) => {
           const where = `${at}.expected[${j}]`;
           if (e.trim().length < 10 || VAGUE_RE.test(e)) {
-            err(`${where}: "${e}" states no observable outcome — name the element, text, or state a Playwright assertion could check`);
+            err(`${where}: "${e}" states no observable outcome. Name the element, text, or state a Playwright assertion could check.`);
             return;
           }
           if (networkForbidden && NETWORK_RE.test(e)) {
-            err(`${where}: "${e}" asserts on network activity, which this host forbids (assertions.network_events: forbidden) — such waits silently no-op and produce false greens; assert on rendered UI state instead`);
+            err(`${where}: "${e}" asserts on network activity, which this host forbids (assertions.network_events: forbidden). Such waits silently no-op and produce false greens; assert on rendered UI state instead.`);
             return;
           }
           verifiable++;
@@ -111,7 +111,7 @@ export function validateCases(doc, profile, { featureDir = null } = {}) {
   // --- scenario mix ---
   const mix = doc.scenario_mix;
   if (!isObj(mix)) {
-    err('scenario_mix: required — declare each of ' + MIX_SLOTS.join(', ') + ' as covered or n_a');
+    err('scenario_mix: required. Declare each of ' + MIX_SLOTS.join(', ') + ' as covered or n_a.');
   } else {
     for (const k of Object.keys(mix)) {
       if (!MIX_SLOTS.includes(k)) err(`scenario_mix.${k}: unknown slot (allowed: ${MIX_SLOTS.join(', ')})`);
@@ -119,7 +119,7 @@ export function validateCases(doc, profile, { featureDir = null } = {}) {
     const coveredSlots = new Set([...typesPresent].map((t) => SLOT_FOR_TYPE[t]).filter(Boolean));
     for (const slot of MIX_SLOTS) {
       const v = mix[slot];
-      if (v === undefined) { err(`scenario_mix.${slot}: required — mark it covered or give an n_a reason`); continue; }
+      if (v === undefined) { err(`scenario_mix.${slot}: required. Mark it covered or give an n_a reason.`); continue; }
       if (v === 'covered') {
         if (!coveredSlots.has(slot)) err(`scenario_mix.${slot}: marked covered but no case has that type`);
       } else if (isObj(v) && 'n_a' in v) {

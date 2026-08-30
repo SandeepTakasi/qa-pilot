@@ -1,4 +1,4 @@
-# `report.json` — uniform run report
+# `report.json`: uniform run report
 
 Produced by `parse-report.mjs` from a Playwright JSON report plus the run's `meta.json`. Gated by `validate-report.mjs` before anything reaches ClickUp.
 
@@ -14,7 +14,7 @@ api_mode: string             # "server" | the host's sandbox value; sandbox runs
 commit_sha: string           # the deployed build
 sha_before: string           # read from the environment before the run
 sha_after: string            # and after
-sha_source: string           # the URL it was read from — required
+sha_source: string           # required; the URL it was read from
 sha_mismatch: boolean        # true => every case must be blocked
 executor: string             # who ran it
 model_version: string        # model that authored/updated the specs
@@ -27,10 +27,10 @@ cases:
     verdict: pass | fail | flaky | blocked
     duration_ms: integer     # summed across attempts
     assertions: null         # Playwright's JSON reporter does not expose a count
-    trace: <path>            # REQUIRED for pass | fail | flaky — THE evidence artifact
+    trace: <path>            # REQUIRED for pass | fail | flaky: THE evidence artifact
     video: <path>            # optional carry-through; the trace already contains it
     console_log: <path>      # optional carry-through; the trace already contains it
-    failure_summary: string  # REQUIRED for fail — the Playwright error, ANSI-stripped,
+    failure_summary: string  # REQUIRED for fail: the Playwright error, ANSI-stripped,
                              # capped at 500 chars. Never model prose.
     retries: integer
 
@@ -42,7 +42,7 @@ unmapped_specs: [string]     # spec titles with no case-ID prefix; dropped, neve
 
 Derived from the attempt results, **not** from Playwright's own `status` field, so a config change (`retries`, `failOnFlakyTests`) cannot turn a flaky case green:
 
-A spec has one `tests[]` entry per Playwright project (chromium, firefox, a merged shard); that entry's `results[]` are its retry attempts. Verdicts are derived **per entry**, then combined — flattening the entries would make a genuine cross-browser failure look like a retry.
+A spec has one `tests[]` entry per Playwright project (chromium, firefox, a merged shard); that entry's `results[]` are its retry attempts. Verdicts are derived **per entry**, then combined. Flattening the entries would make a genuine cross-browser failure look like a retry.
 
 Per entry, from its attempts:
 
@@ -58,23 +58,23 @@ Then across entries: any `fail` → `fail`; else any `flaky` → `flaky`; else a
 
 A case that passed only on retry is `flaky`, never `pass`. This is the rule that keeps a suite's green from meaning less than it appears to.
 
-`interrupted` means the attempt never finished (the run was aborted) — that is `blocked`, not a failure. `timedOut` is a real failure. `retries` is summed per entry, so running two projects never invents a retry.
+`interrupted` means the attempt never finished (the run was aborted), which is `blocked`, not a failure. `timedOut` is a real failure. `retries` is summed per entry, so running two projects never invents a retry.
 
 ## Publish refusals
 
-`validate-report.mjs` exits nonzero — and nothing is written to ClickUp — when:
+`validate-report.mjs` exits nonzero (and nothing is written to ClickUp) when:
 
 - a `pass`, `fail`, or `flaky` case is missing its **trace**, or the artifact is absent from disk, or it is zero bytes (a crashed browser writes an empty file). Evidence is always checked on disk; `--base` only resolves relative paths and defaults to the report's own directory
-- a `video` or `console_log` path *is* recorded but points at a missing or empty file — they are optional, but a broken path is still a broken path
-- `commit_sha` or `sha_source` is absent — a run with no readable build identity has no provenance
+- a `video` or `console_log` path *is* recorded but points at a missing or empty file. They are optional, but a broken path is still a broken path
+- `commit_sha` or `sha_source` is absent: a run with no readable build identity has no provenance
 - the deployed build changed mid-run and any case still carries a verdict. The mismatch is **recomputed** from `sha_before`/`sha_after`, never taken from the report's own `sha_mismatch` flag, and a flag that disagrees with the SHAs is itself a refusal
 - `env_name` is not registered, `env_url` is missing, or `env_url` disagrees with the registry
-- `api_mode` matches the host's sandbox mode — sandbox backends are seeded and always succeed
+- `api_mode` matches the host's sandbox mode: sandbox backends are seeded and always succeed
 - a verdict is outside the enum, a case ID is not in the approved map, a `fail` has no failure summary, or the summary disagrees with the cases
-- more than 10% of cases are `blocked` — **RUN HALTED**: the environment failed, not the feature
+- more than 10% of cases are `blocked`. **RUN HALTED**: the environment failed, not the feature
 
 ## Confidence score
 
 `(approved P0 × 3 + approved P1 × 2 + approved P2 × 1) / (total, same weights)`.
 
-Any P0 not Approved displays **Not Ready** regardless of the score. Quarantined and flaky cases stay in the denominator — lowering the number is the point.
+Any P0 not Approved displays **Not Ready** regardless of the score. Quarantined and flaky cases stay in the denominator, since lowering the number is the point.

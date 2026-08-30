@@ -2,7 +2,7 @@
 
 ## The ID grammar
 
-`<FEATURE>-<SUBFEATURE>-<NNN>` — e.g. `AUTH-LOGIN-003`, `CHECKOUT-QTY-011`.
+`<FEATURE>-<SUBFEATURE>-<NNN>`, e.g. `AUTH-LOGIN-003`, `CHECKOUT-QTY-011`.
 
 Feature and subfeature are uppercase, alphanumeric, stable. The number is zero-padded to three digits and **never reused**: when a case is deleted, its number retires with it, so a case ID in an old ClickUp task or run report always means the same thing.
 
@@ -28,7 +28,7 @@ Every feature declares all five slots. Each is covered by at least one case or m
 | **permission** | A different role, tenant, or ownership relationship. | Assuming your own account's role is the only one. Needs a role account. |
 | **data-validation** | Field-level rules: format, required, length, type. | Marking `n_a` when the form does have free-text input. |
 
-`n_a` is legitimate — a read-only dashboard has no data-validation surface — but the reason must name why, not merely assert it.
+`n_a` is legitimate, since a read-only dashboard has no data-validation surface, but the reason must name why, not merely assert it.
 
 ## Writing an expected outcome
 
@@ -46,9 +46,9 @@ An expected outcome is a **claim about observable state** that a Playwright asse
 
 ## Steps
 
-Steps are what the executor does, in order, in the UI. Keep them at the level of user intent — "Set the quantity field to 11", not "click the input, select all, type 11". The spec converter fills in mechanics; over-specified steps age badly and constrain the selector strategy.
+Steps are what the executor does, in order, in the UI. Keep them at the level of user intent: "Set the quantity field to 11", not "click the input, select all, type 11". The spec converter fills in mechanics; over-specified steps age badly and constrain the selector strategy.
 
-Preconditions carry state the steps assume: who is signed in, what data exists, which role. Every precondition involving data is a hint to the executor about namespacing — five developers share one deployed environment, so cases must not assume they are alone in it.
+Preconditions carry state the steps assume: who is signed in, what data exists, which role. Every precondition involving data is a hint to the executor about namespacing, because five developers share one deployed environment, so cases must not assume they are alone in it.
 
 ## What not to generate
 

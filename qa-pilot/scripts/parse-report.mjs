@@ -25,8 +25,8 @@ function* walkSpecs(suites) {
 
 /**
  * Verdict for ONE test entry's attempts (one project/browser; results[] are its retries).
- * Derived from the attempts themselves, not from Playwright's own classification — a
- * config change (failOnFlakyTests, retries) must not be able to turn a flaky case green.
+ * Derived from the attempts themselves, not from Playwright's own classification, because
+ * a config change (failOnFlakyTests, retries) must not turn a flaky case green.
  */
 export function verdictFor(results, { shaMismatch = false } = {}) {
   if (shaMismatch) return 'blocked';
@@ -35,11 +35,11 @@ export function verdictFor(results, { shaMismatch = false } = {}) {
   if (statuses.every((s) => s === 'skipped')) return 'blocked';
 
   const passed = statuses.includes('passed');
-  // `interrupted` means the attempt never finished (run aborted) — that is a blocked
+  // `interrupted` means the attempt never finished (run aborted). That is a blocked
   // case, not a failing one, and calling it a fail also demands a failure summary
   // that does not exist.
   const failed = statuses.some((s) => s === 'failed' || s === 'timedOut');
-  if (passed && failed) return 'flaky'; // passed only on retry — never a pass
+  if (passed && failed) return 'flaky'; // passed only on retry, which is never a pass
   if (failed) return 'fail';
   if (passed) return 'pass';
   return 'blocked';
@@ -115,7 +115,7 @@ export function buildReport(pw, meta) {
       trace: attachmentPath(results, 'trace'),
       console_log: consoleLogPath(results),
       failure_summary: verdict === 'fail' || verdict === 'flaky' ? failureSummary(results) : null,
-      // Retries per project, summed — never inflated by having several projects.
+      // Retries per project, summed, so having several projects never inflates it.
       retries: entries.reduce((sum, r) => sum + Math.max(0, r.length - 1), 0),
     });
   }
@@ -145,7 +145,7 @@ export function buildReport(pw, meta) {
     finished_at: meta.finished_at ?? null,
     cases,
     summary,
-    unmapped_specs: unmapped, // spec titles with no case ID prefix — cannot be published
+    unmapped_specs: unmapped, // spec titles with no case ID prefix, so they cannot be published
   };
 }
 

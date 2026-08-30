@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
  * The naive `import.meta.url === \`file://${process.argv[1]}\`` is false whenever the two
  * spellings differ, and they differ constantly:
  *   - a path component containing a space (or any char a URL percent-encodes)
- *   - a symlinked path — on macOS /tmp is /private/tmp and tmpdir() is under /var/folders,
+ *   - a symlinked path: on macOS /tmp is /private/tmp and tmpdir() is under /var/folders,
  *     which is /private/var/folders
  * When it is wrongly false the script runs zero lines and exits 0: the publish gate
  * vacuously passes and the PreToolUse hook fails open. Silent and fail-open, so compare

@@ -43,7 +43,7 @@ test('resolves newer playwright versions', () => {
   }
 });
 
-test('rejects versions below 1.51 — the IndexedDB trap', () => {
+test('rejects versions below 1.51: the IndexedDB trap', () => {
   for (const v of ['1.50.1', '1.49.0', '1.9.0', '0.30.0']) {
     assert.throws(
       () => loadPlaywright(fakeHost({ version: v })),

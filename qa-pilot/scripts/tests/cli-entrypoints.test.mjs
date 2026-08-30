@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
 // Regression: `import.meta.url === \`file://${process.argv[1]}\`` is false whenever the
-// path percent-encodes (a space is enough), so every CLI ran zero lines and exited 0 —
+// path percent-encodes (a space is enough), so every CLI ran zero lines and exited 0:
 // the publish gate vacuously "passed" and the hook failed open. Silent and fail-open,
 // which is the worst combination, and structurally invisible to in-process unit tests.
 
@@ -39,7 +39,7 @@ for (const [script, args, pattern] of CASES) {
   test(`${script} exits nonzero on bad input from a path containing a space`, () => {
     const { status, stderr, stdout } = run(script, args);
     assert.notEqual(status, 0,
-      `${script} exited 0 — it almost certainly never ran its CLI block.\nstdout: ${stdout}\nstderr: ${stderr}`);
+      `${script} exited 0, so it almost certainly never ran its CLI block.\nstdout: ${stdout}\nstderr: ${stderr}`);
     assert.match(stderr, pattern);
   });
 }
@@ -64,5 +64,5 @@ test('the guard still denies from a path containing a space', () => {
   assert.equal(status, 0);
   const out = JSON.parse(stdout);
   assert.equal(out.hookSpecificOutput.permissionDecision, 'deny',
-    'the hook failed open from a spaced path — writes would be unguarded');
+    'the hook failed open from a spaced path, so writes would be unguarded');
 });

@@ -22,7 +22,7 @@ test('feature must match its directory', () => {
   assert.ok(errs.some((e) => e.includes('does not match its directory')), errs.join('\n'));
 });
 
-test('a case with no expected outcomes is rejected — no assertions, no test', () => {
+test('a case with no expected outcomes is rejected: no assertions, no test', () => {
   const errs = errorsFor((d) => { d.cases[0].expected = []; });
   assert.ok(errs.some((e) => e.includes('no assertions means no test')), errs.join('\n'));
 });

@@ -69,7 +69,7 @@ export function validateProfile(raw, { profilePath = null } = {}) {
     err('environments: required, must contain at least one environment');
   } else {
     if (Object.keys(raw.environments).length === 1) {
-      warnings.push('environments: only one environment registered — no QA/staging split');
+      warnings.push('environments: only one environment registered, so there is no QA/staging split');
     }
     for (const [envName, env] of Object.entries(raw.environments)) {
       if (!isObj(env)) { err(`environments.${envName}: must be a mapping`); continue; }
@@ -85,7 +85,7 @@ export function validateProfile(raw, { profilePath = null } = {}) {
       }
       const s = env.sha_source;
       if (!isObj(s)) {
-        err(`environments.${envName}.sha_source: required — a deploy SHA that cannot be read cannot be published`);
+        err(`environments.${envName}.sha_source: required. A deploy SHA that cannot be read cannot be published.`);
       } else {
         if (!isUrl(s.url)) err(`environments.${envName}.sha_source.url: required, must be an http(s) URL`);
         const hasPath = isStr(s.json_path);
@@ -119,14 +119,14 @@ export function validateProfile(raw, { profilePath = null } = {}) {
       err(`auth.playwright_min: quote the version ("${raw.auth.playwright_min}"), otherwise YAML reads it as a number and 1.60 becomes 1.6`);
     } else if (!pv) err('auth.playwright_min: required, must be a semver string (e.g. "1.51.0")');
     else if (cmpSemver(pv, PLAYWRIGHT_FLOOR) < 0) {
-      err(`auth.playwright_min: must be >= 1.51.0 — storageState({ indexedDB: true }) landed in 1.51 and IndexedDB-persisted auth (Firebase) silently fails below it`);
+      err(`auth.playwright_min: must be >= 1.51.0. storageState({ indexedDB: true }) landed in 1.51, and IndexedDB-persisted auth (Firebase) silently fails below it.`);
     }
     const ss = raw.auth.storage_state;
     if (!isObj(ss)) {
       err('auth.storage_state: required');
     } else {
       if (ss.indexed_db !== true) {
-        err('auth.storage_state.indexed_db: must be true — saved profiles omit IndexedDB otherwise and Firebase-style sessions will not restore');
+        err('auth.storage_state.indexed_db: must be true. Saved profiles omit IndexedDB otherwise, and Firebase-style sessions will not restore.');
       }
       if (ss.dir !== undefined && !isStr(ss.dir)) err('auth.storage_state.dir: must be a non-empty string when set');
     }
@@ -164,7 +164,7 @@ export function validateProfile(raw, { profilePath = null } = {}) {
     }
   }
   if (networkForbidden && evidenceExtra.length === 0) {
-    warnings.push('evidence.extra: empty while network assertions are forbidden — failures will be video-only and hard to triage');
+    warnings.push('evidence.extra: empty while network assertions are forbidden, so failures will be video-only and hard to triage');
   }
 
   // --- selectors ---
@@ -187,7 +187,7 @@ export function validateProfile(raw, { profilePath = null } = {}) {
   } else {
     const list = raw.models.generation_approved;
     if (!Array.isArray(list) || list.length === 0) {
-      err('models.generation_approved: required, at least one approved model id — case design is the highest-judgment stage and drift is silent');
+      err('models.generation_approved: required, at least one approved model id. Case design is the highest-judgment stage and drift is silent.');
     } else if (!list.every(isStr)) {
       err('models.generation_approved: every entry must be a non-empty model id string');
     }
@@ -195,7 +195,7 @@ export function validateProfile(raw, { profilePath = null } = {}) {
 
   // --- sandbox ---
   if (!isObj(raw.sandbox) || !isObj(raw.sandbox.mode)) {
-    err('sandbox.mode: required — declare the stabilization mode (env_var + value)');
+    err('sandbox.mode: required. Declare the stabilization mode (env_var + value).');
   } else {
     if (!isStr(raw.sandbox.mode.env_var)) err('sandbox.mode.env_var: required, e.g. VITE_API_MODE');
     if (!isStr(raw.sandbox.mode.value)) err('sandbox.mode.value: required, e.g. mocks');

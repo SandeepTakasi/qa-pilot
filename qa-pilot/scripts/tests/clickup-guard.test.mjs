@@ -29,7 +29,7 @@ test('write tools are allowed with the flag', () => {
   assert.equal(decide({ tool_name: SERVER + 'clickup_update_task', cwd: '/repo' }, withFlag), null);
 });
 
-test('read tools are always allowed — the guard polices writes, not ClickUp use', () => {
+test('read tools are always allowed: the guard polices writes, not ClickUp use', () => {
   for (const t of ['clickup_get_task', 'clickup_search', 'clickup_filter_tasks',
     'clickup_find_member_by_name', 'clickup_resolve_assignees', 'clickup_get_workspace_hierarchy',
     'clickup_list_document_pages', 'clickup_download_task_attachment', 'clickup_get_task_comments']) {

@@ -1,4 +1,4 @@
-# `qa-pilot.config.yaml` — host profile schema
+# `qa-pilot.config.yaml`: host profile schema
 
 The host profile lives in the **consuming repo**, is written by `/qa-pilot:qa-init`, reviewed and owned by QA, and must be committed. Every other QA-Pilot skill refuses to run without a committed, schema-valid profile.
 
@@ -17,7 +17,7 @@ environments:                       # required, >= 1 entry
   <env-name>:                       # e.g. qa, staging
     apps:                           # required; keys must be a subset of apps{}
       <app-name>: <http(s) URL>     # base URL of that app in this environment
-    sha_source:                     # required — how the DEPLOYED build's SHA is read
+    sha_source:                     # required: how the DEPLOYED build's SHA is read
       url: <http(s) URL>            # required, e.g. https://qa.example.com/api/version
       json_path: string             # exactly ONE of json_path | regex
       regex: string                 #   json_path: dot path, e.g. build.commit
@@ -29,7 +29,7 @@ auth:
                                     # QUOTE IT: unquoted, YAML reads 1.60 as the number 1.6.
   storage_state:
     dir: string                     # optional, default ".playwright/profiles"
-    indexed_db: true                # REQUIRED to be true — Firebase-style auth persists
+    indexed_db: true                # REQUIRED to be true, since Firebase-style auth persists
                                     # tokens in IndexedDB; false silently breaks profiles
 
 assertions:
@@ -48,7 +48,7 @@ models:
     - claude-fable-5                # only these models may author cases.yaml;
     - claude-opus-5                 # validate-cases.mjs fails on anything else
 
-sandbox:                            # required — stabilization-only mode, never verdict-eligible
+sandbox:                            # required: stabilization-only mode, never verdict-eligible
   mode:
     env_var: string                 # e.g. VITE_API_MODE
     value: string                   # e.g. mocks

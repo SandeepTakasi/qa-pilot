@@ -2,14 +2,14 @@
 // PreToolUse guard: ClickUp writes may only happen inside a QA-Pilot skill's write phase.
 //
 // The point is not to stop anyone from using ClickUp. It is that the QA record's write
-// path has to be the scripted, validated one — otherwise "just mark that case passed"
+// path has to be the scripted, validated one. Otherwise "just mark that case passed"
 // puts an unevidenced verdict in the record with the same authority as an evidenced one.
 //
 // Skills that legitimately write create .qa-pilot/allow-clickup-writes immediately before
 // their write phase and remove it after.
 //
-// ponytail: flag-file scoping, not QA-space scoping — checking the target space would need
-// an authenticated API call from inside a hook. Upgrade if non-QA ClickUp writes get annoying.
+// ponytail: flag-file scoping, not QA-space scoping, since checking the target space would
+// need an authenticated API call from inside a hook. Upgrade if non-QA ClickUp writes get annoying.
 
 import { statSync } from 'node:fs';
 import { isMain } from './lib/is-main.mjs';
@@ -18,13 +18,13 @@ import { join } from 'node:path';
 const FLAG = '.qa-pilot/allow-clickup-writes';
 
 // A skill that dies between creating the flag and removing it would otherwise leave the
-// guard open forever, invisibly — .qa-pilot/ is gitignored, so nothing surfaces a stale
+// guard open forever, invisibly: .qa-pilot/ is gitignored, so nothing surfaces a stale
 // flag. Generous for a 25-case publish; caps the exposure to one window.
 const FLAG_TTL_MS = 30 * 60 * 1000;
 
 // Allow-list of leading verbs, deny by default. ClickUp uses "list" as a NOUN in write
 // tool names (clickup_create_list, clickup_add_task_to_list), so matching the word
-// anywhere lets writes through — only the verb the name STARTS with is meaningful.
+// anywhere lets writes through. Only the verb the name STARTS with is meaningful.
 // Deny-by-default also means a ClickUp server that adds a new write tool is covered
 // without a code change here.
 const READ_VERBS = new Set(['get', 'list', 'search', 'filter', 'find', 'resolve', 'download', 'read']);
@@ -32,7 +32,7 @@ const READ_VERBS = new Set(['get', 'list', 'search', 'filter', 'find', 'resolve'
 const DENY_REASON =
   'QA-Pilot: ClickUp writes are restricted to the QA-Pilot publish path.\n' +
   'Verdicts enter the record through /qa-pilot:publish-results, which validates evidence ' +
-  '(video, trace, deploy SHA) before anything is written — a verdict written by hand skips that check.\n' +
+  '(video, trace, deploy SHA) before anything is written. A verdict written by hand skips that check.\n' +
   'Use /qa-pilot:publish-results to publish a run, or /qa-pilot:qa-review to record a review decision.';
 
 /** The verb a ClickUp tool name starts with: mcp__<server>__clickup_<verb>_<noun>. */
@@ -42,7 +42,7 @@ function leadingVerb(toolName) {
   return toolPart.replace(/^clickup_/i, '').split('_')[0].toLowerCase();
 }
 
-/** A flag file counts only while it is fresh — see FLAG_TTL_MS. */
+/** A flag file counts only while it is fresh; see FLAG_TTL_MS. */
 function flagIsLive(path, stat) {
   try {
     return Date.now() - stat(path).mtimeMs < FLAG_TTL_MS;

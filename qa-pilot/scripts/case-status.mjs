@@ -26,17 +26,17 @@ export const STATUS = {
 };
 
 // Design approval PERSISTS across runs. A case QA approved stays executable so the next
-// build regresses it — that is the whole CI story, and without it the pipeline runs
+// build regresses it. That is the whole CI story, and without it the pipeline runs
 // exactly once per feature and then deadlocks with nothing eligible.
 const EXECUTABLE = new Set([
   STATUS.APPROVED_FOR_EXECUTION, // approved, never run
-  STATUS.APPROVED,               // approved, last verdict accepted — re-run on a new build
+  STATUS.APPROVED,               // approved, last verdict accepted; re-run on a new build
   STATUS.RETEST,                 // QA or CI explicitly asked for another run
   STATUS.UNDER_REVIEW,           // last result not yet reviewed; a newer build supersedes it
 ]);
 
 const HELD_BACK = {
-  [STATUS.CASE_REVIEW]: 'awaiting QA design review — nothing executes before approval',
+  [STATUS.CASE_REVIEW]: 'awaiting QA design review; nothing executes before approval',
   [STATUS.REJECTED]: 'QA rejected the case itself; fix it via /qa-pilot:generate-tests, which returns it to Case Review for re-approval',
 };
 
@@ -48,8 +48,8 @@ const WEIGHT = { P0: 3, P1: 2, P2: 1 };
 
 /**
  * Confidence for a feature, per the PRD weighting.
- * Any P0 without an accepted verdict forces "Not Ready" regardless of the score —
- * a high percentage must never speak louder than an unproven critical case.
+ * Any P0 without an accepted verdict forces "Not Ready" regardless of the score,
+ * because a high percentage must never speak louder than an unproven critical case.
  */
 export function confidence(cases, priorities) {
   let earned = 0, total = 0;
@@ -113,7 +113,7 @@ export function partitionCases(cases, statuses, { includeQuarantined = false } =
     warnings.push(`${awaitingReview.length} case(s) are still Under Review from a previous run; re-running replaces evidence QA has not looked at yet`);
   }
   if (quarantined.length && !includeQuarantined) {
-    warnings.push(`${quarantined.length} quarantined case(s) excluded — pass --include-quarantined to run them while hardening`);
+    warnings.push(`${quarantined.length} quarantined case(s) excluded. Pass --include-quarantined to run them while hardening.`);
   }
   if (unsynced.length) {
     warnings.push(`${unsynced.length} case(s) have no ClickUp status; run /qa-pilot:generate-tests to sync them`);
@@ -168,7 +168,7 @@ if (isMain(import.meta.url)) {
     console.log(JSON.stringify(out, null, 2));
     // Nothing eligible is a stop condition, not an empty success.
     if (out.executable.length === 0) {
-      console.error('no case is currently executable — see held[] above');
+      console.error('no case is currently executable; see held[] above');
       process.exit(1);
     }
   } catch (e) {

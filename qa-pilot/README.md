@@ -2,7 +2,7 @@
 
 Evidence-first feature testing for Claude Code. Any developer can generate and execute feature tests in their own session; every executed case produces the same report structure with mandatory evidence; QA reviews instead of executing; ClickUp holds one live view of testing confidence per feature.
 
-The design rests on two ideas. **Uniformity is enforced by tooling, not discipline** — anything that depends on five people remembering a convention during crunch fails inside a week. And **the committed Playwright spec is the durable asset** — agentic sessions are scaffolding that authors and triages; the spec is what runs today for evidence and forever in CI.
+The design rests on two ideas. **Uniformity is enforced by tooling, not discipline**, because anything that depends on five people remembering a convention during crunch fails inside a week. And **the committed Playwright spec is the durable asset**: agentic sessions are scaffolding that authors and triages; the spec is what runs today for evidence and forever in CI.
 
 ## The pipeline
 
@@ -16,30 +16,37 @@ The design rests on two ideas. **Uniformity is enforced by tooling, not discipli
 /qa-review        →  QA's queue: approve, reject with a reason, or retest
 ```
 
-## What it refuses to do
+## What it refuses to publish
 
-These are gates, not warnings. Each one exists because the alternative silently produces confidence nobody should have.
+The publish step is a script, not a judgement call, and it rejects each of these outright. QA never has to police any of it.
 
-- **A verdict without evidence.** A Playwright trace and a deploy SHA read from the environment are required for every executed case. The publish script refuses the report; QA never has to police it.
-- **A verdict from anywhere but a committed spec run.** An agentic browser session produces no video, no trace, no machine-readable result — so it structurally cannot publish. "Claude clicked through it and it looked fine" is the claim this system exists to kill.
+- **A verdict without evidence.** Every executed case needs a Playwright trace and a deploy SHA read from the running environment. Missing, empty, or unreadable artifacts fail the report.
 - **A verdict from a local or sandbox environment.** Mock backends are seeded and always succeed. Runs against them are useful for stabilizing specs and are stamped as such, but they cannot carry a verdict.
-- **A pass that was really a retry.** Pass-on-retry is recorded `flaky`, always, derived from the attempt results rather than from Playwright's own status field so no config change can turn it green.
-- **A verdict from a case QA never approved.**
-- **A run that lost its ground truth.** If the deployed build changes mid-run, every case is `blocked` — half tested one build and half another. If more than 10% of cases are blocked, the run halts: the environment failed, not the feature.
+- **A pass that was really a retry.** Pass-on-retry is recorded `flaky`, always, derived from the attempt results rather than from Playwright's own status field, so no config change can turn it green. A failure in any browser is a failure, never a flake.
+- **A verdict for a case QA never approved.**
+- **A run that lost its ground truth.** If the deployed build changes mid-run, every case is `blocked`, because half tested one build and half another. Past 10% blocked the run halts: the environment failed, not the feature.
+
+### How strong these gates actually are
+
+Worth being precise, because "impossible" would be overselling it. The checks above are deterministic scripts, so a rushed developer cannot skip them by accident, and that is the failure mode this system is built for. What they verify is that a report is internally consistent and that its evidence exists on disk. They do not cryptographically bind a report to a Playwright run that actually happened.
+
+So someone determined to fabricate a green result could hand-write the inputs. Nothing here stops that, and the honest framing is that QA-Pilot makes the evidenced path the path of least resistance rather than the only conceivable one. The backstop for deliberate fabrication is QA's sampling: watching 100% of P0 evidence and every failure. A fake trace does not survive being opened.
+
+An agentic browser session is a good example of the same idea. It cannot produce a trace or a machine-readable result, so it has nothing to publish with, and "Claude clicked through it and it looked fine" never reaches the record by the normal route. That is a strong practical barrier, not a mathematical one.
 
 ## Evidence
 
-One artifact per case per run: **`trace.zip`, attached to the case's ClickUp task.** A trace carries the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log — so it replaces uploading a video and a console log separately, which would store the same bytes twice and split one investigation across three files.
+One artifact per case per run: **`trace.zip`, attached to the case's ClickUp task.** A trace carries the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log, so it replaces uploading a video and a console log separately, which would store the same bytes twice and split one investigation across three files.
 
 Reviewers drag it onto <https://trace.playwright.dev>, which runs entirely in the browser and transmits nothing. No second storage system, no extra credentials, and the evidence sits on the task the reviewer is already looking at.
 
-You set up the ClickUp side once, by hand — the plugin writes into it but does not create it. [SETUP-CLICKUP.md](./SETUP-CLICKUP.md) is the exact checklist: the statuses, the custom fields and their options, and the two settings that matter (**Private Attachment Links**, off by default and leaving attachment URLs public; and a **per-developer API token**, since the 100 requests/minute budget is per token, not per person). Fifteen minutes, once per workspace. `/qa-init` reminds you and fills in the host-specific dropdown values.
+You set up the ClickUp side once, by hand. The plugin writes into it but does not create it. [SETUP-CLICKUP.md](./SETUP-CLICKUP.md) is the exact checklist: the statuses, the custom fields and their options, and the two settings that matter (**Private Attachment Links**, off by default and leaving attachment URLs public; and a **per-developer API token**, since the 100 requests/minute budget is per token, not per person). Fifteen minutes, once per workspace. `/qa-init` reminds you and fills in the host-specific dropdown values.
 
-Retention is manual — ClickUp has no delete-attachment endpoint, so traces are pruned from task attachment lists by hand. Budget a quarterly pass: oldest passing runs first, keep every failure.
+Retention is manual, because ClickUp has no delete-attachment endpoint, so traces are pruned from task attachment lists by hand. Budget a quarterly pass: oldest passing runs first, keep every failure.
 
 ## Portability
 
-The plugin ships generic. Everything project-specific — environment URLs, auth mechanics, selector policy, assertion constraints, evidence requirements, propagation windows — lives in `qa-pilot.config.yaml`, committed in the consuming repo and owned by QA. Onboarding a second project is one `/qa-init` run and a profile review, with no plugin-code changes.
+The plugin ships generic. Everything project-specific (environment URLs, auth mechanics, selector policy, assertion constraints, evidence requirements, propagation windows) lives in `qa-pilot.config.yaml`, committed in the consuming repo and owned by QA. Onboarding a second project is one `/qa-init` run and a profile review, with no plugin-code changes.
 
 ## Install
 
@@ -50,7 +57,7 @@ claude plugin install qa-pilot
 
 Or for local development: `claude --plugin-dir /path/to/QAED/qa-pilot`.
 
-Requires Node ≥ 18 (scripts are zero-dependency ESM) and, in the host repo, Playwright ≥ 1.51 — `storageState({ indexedDB: true })` landed there, and IndexedDB-persisted auth such as Firebase silently fails to restore below it.
+Requires Node ≥ 18 (scripts are zero-dependency ESM) and, in the host repo, Playwright >= 1.51, because `storageState({ indexedDB: true })` landed there and IndexedDB-persisted auth such as Firebase silently fails to restore below it.
 
 ## Model fitting
 
@@ -68,7 +75,7 @@ Execution itself costs no tokens: it is `npx playwright test`.
 skills/            the five entry points plus setup-profiles
 scripts/           deterministic validators and transforms (zero deps, node --test)
 schemas/           the host profile, case, and report contracts
-hooks/             ClickUp write guard — the scripted path is the only write path
+hooks/             ClickUp write guard, so the scripted path is the only write path
 SETUP-CLICKUP.md   one-time workspace setup you do by hand
 ```
 

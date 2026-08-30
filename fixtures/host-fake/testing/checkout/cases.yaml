@@ -1,4 +1,4 @@
-# Golden cases fixture — exercises every schema rule the validator enforces.
+# Golden cases fixture: exercises every schema rule the validator enforces.
 feature: checkout
 model_version: claude-fable-5
 generated_at: 2026-08-30T09:00:00Z

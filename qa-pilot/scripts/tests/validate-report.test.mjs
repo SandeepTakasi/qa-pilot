@@ -57,14 +57,14 @@ test('refuses when a declared evidence artifact is missing on disk', () => {
 
 test('a host declaring console_log evidence is satisfied by the trace', () => {
   // Playwright records console output into the trace automatically, so requiring the
-  // trace already requires the console — there is no second artifact to demand.
+  // trace already requires the console. There is no second artifact to demand.
   assert.deepEqual(profile.evidence.extra, ['console_log'], 'fixture host declares console evidence');
   const r = golden();
   assert.ok(r.cases.every((c) => !c.console_log));
   assert.deepEqual(validateReport(r, profile, { map, base: FIXTURES }).errors, []);
 });
 
-test('blocked cases need no evidence — they never executed', () => {
+test('blocked cases need no evidence, because they never executed', () => {
   const r = golden();
   r.cases = [{ id: 'CHECKOUT-ORDER-001', verdict: 'blocked', retries: 0, video: null, trace: null, console_log: null }];
   r.summary = { pass: 0, fail: 0, flaky: 0, blocked: 1 };
@@ -109,7 +109,7 @@ test('refuses a report whose sha_mismatch flag disagrees with its own SHAs', () 
   refuses((r) => { r.sha_mismatch = true; }, /report says true but sha_before\/sha_after say false/);
 });
 
-test('refuses a report with no env_url — omitting it must not skip the registry check', () => {
+test('refuses a report with no env_url: omitting it must not skip the registry check', () => {
   refuses((r) => { delete r.env_url; }, /env_url: required/);
 });
 

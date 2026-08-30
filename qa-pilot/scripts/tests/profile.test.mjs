@@ -30,7 +30,7 @@ test('loadProfile throws for a missing file', () => {
   assert.throws(() => loadProfile(resolve(HERE, 'no-such-profile.yaml')), /not found/);
 });
 
-test('indexed_db must be true — the Firebase auth trap', () => {
+test('indexed_db must be true: the Firebase auth trap', () => {
   const errs = errorsFor((p) => { p.auth.storage_state.indexed_db = false; });
   assert.ok(errs.some((e) => e.includes('indexed_db')), errs.join('\n'));
 });
@@ -68,7 +68,7 @@ test('sha_source regex must have a capture group', () => {
   assert.ok(errs.some((e) => e.includes('capture group')), errs.join('\n'));
 });
 
-test('sha_source is required — an unreadable SHA cannot be published', () => {
+test('sha_source is required, since an unreadable SHA cannot be published', () => {
   const errs = errorsFor((p) => { delete p.environments.qa.sha_source; });
   assert.ok(errs.some((e) => e.includes('sha_source')), errs.join('\n'));
 });

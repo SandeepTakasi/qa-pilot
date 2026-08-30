@@ -37,12 +37,12 @@ page.getByTestId('checkout-submit')
 Order of preference when no test ID exists yet:
 
 1. **Add the test ID to the app source.** This is the correct fix, and doing it as features enter the pipeline is how a codebase with zero test IDs gets covered incrementally.
-2. Role + accessible name — `page.getByRole('button', { name: 'Place order' })`. Durable and it doubles as an accessibility check.
+2. Role + accessible name, as in `page.getByRole('button', { name: 'Place order' })`. Durable and it doubles as an accessibility check.
 3. Label or associated text for form fields.
 
 Never bind to CSS class names, DOM position (`div > div:nth-child(3)`), or generated IDs. Component libraries regenerate all three.
 
-**Component-library overlays.** Vuetify and MUI teleport menus, dialogs, and select dropdowns to the end of `<body>`, outside the component that opened them. Scope those queries to the overlay root rather than to the trigger's ancestor, and wait for the overlay to be visible before interacting — the trigger's click resolves before the menu is mounted.
+**Component-library overlays.** Vuetify and MUI teleport menus, dialogs, and select dropdowns to the end of `<body>`, outside the component that opened them. Scope those queries to the overlay root rather than to the trigger's ancestor, and wait for the overlay to be visible before interacting, because the trigger's click resolves before the menu is mounted.
 
 ## Assertions
 
@@ -51,15 +51,15 @@ Never bind to CSS class names, DOM position (`div > div:nth-child(3)`), or gener
 When `assertions.network_events: forbidden`:
 
 ```ts
-// WRONG on an engine-dispatched host — this never fires and never fails.
+// WRONG on an engine-dispatched host: this never fires and never fails.
 await page.waitForResponse(r => r.url().includes('/orders'));
 
-// RIGHT — assert what the user can see.
+// RIGHT: assert what the user can see.
 await expect(page.getByTestId('order-confirmation')).toBeVisible();
 await expect(page.getByTestId('order-number')).toHaveText(/\d{4,}/);
 ```
 
-Operations dispatched through an engine, a worker, or a multiplexed socket never appear as network events. `waitForResponse` on such a host resolves never — or, worse, the surrounding code proceeds and the test passes without having checked anything.
+Operations dispatched through an engine, a worker, or a multiplexed socket never appear as network events. `waitForResponse` on such a host resolves never, or, worse, the surrounding code proceeds and the test passes without having checked anything.
 
 **Assert absence as well as presence.** A negative case that only checks the error appeared can pass while the action *also* succeeded:
 
@@ -72,7 +72,7 @@ await expect(page.getByTestId('order-confirmation')).toBeHidden();
 
 ## Console evidence
 
-When the profile's `evidence.extra` includes `console_log`, attach console output to every test. On hosts where operations bypass the network, this is the only machine-readable trace of what the application actually did — and `validate-report.mjs` refuses to publish without it.
+When the profile's `evidence.extra` includes `console_log`, attach console output to every test. On hosts where operations bypass the network, this is the only machine-readable trace of what the application actually did, and `validate-report.mjs` refuses to publish without it.
 
 Put it in a fixture so every spec gets it without repeating the wiring. `<spec_dir>/fixtures.ts`:
 
@@ -110,7 +110,7 @@ await expect.poll(
 ).toBeGreaterThan(0);
 ```
 
-Use two browser contexts — one per app, each with its own storageState — rather than two tests that assume ordering. These specs live in `cross_app.spec_home`'s spec dir and run on a schedule, not per deploy.
+Use two browser contexts, one per app and each with its own storageState, rather than two tests that assume ordering. These specs live in `cross_app.spec_home`'s spec dir and run on a schedule, not per deploy.
 
 ## Test data on a shared environment
 
@@ -119,7 +119,7 @@ Five developers run against one deployment. Data collisions read as flakiness an
 - Prefix every entity a spec creates with the run ID: `qa-${runId}-project-1`.
 - Create data under the executor's own account wherever the tenancy model allows.
 - Clean up what you create in `afterEach`, and write cleanup so it succeeds even when the test failed halfway.
-- Never assert on a global count ("there are 3 projects") — someone else's run will break it. Assert on the entity you created.
+- Never assert on a global count ("there are 3 projects"), because someone else's run will break it. Assert on the entity you created.
 
 ## What makes a spec durable
 

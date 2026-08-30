@@ -1,6 +1,6 @@
 {
   "name": "qa-pilot",
-  "description": "QA-Pilot — evidence-first AI-assisted feature testing for Claude Code.",
+  "description": "QA-Pilot: evidence-first AI-assisted feature testing for Claude Code.",
   "owner": {
     "name": "Venkata Sandeep Takasi"
   },

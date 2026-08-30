@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The publish gate. A report that fails here does not reach ClickUp — which is why QA
+// The publish gate. A report that fails here does not reach ClickUp, which is why QA
 // never has to police formatting, and why a Pass without evidence cannot enter the record.
 //
 // Usage: node validate-report.mjs <report.json> --profile <config.yaml> \
@@ -25,7 +25,7 @@ export function validateReport(report, profile, { map = null, base = null, stat 
   const err = (m) => errors.push(m);
   // Evidence is checked on disk, always. `base` only resolves relative paths (real
   // Playwright reports carry absolute ones); it is never an opt-out from checking.
-  // A zero-byte artifact is a broken artifact — a crashed browser writes an empty video.
+  // A zero-byte artifact is a broken artifact: a crashed browser writes an empty video.
   const artifactProblem = (p) => {
     const full = isAbsolute(p) ? p : resolve(base ?? process.cwd(), p);
     let s;
@@ -35,7 +35,7 @@ export function validateReport(report, profile, { map = null, base = null, stat 
       return 'does not exist on disk';
     }
     if (!s.isFile?.() && s.size === undefined) return 'is not a file';
-    return s.size === 0 ? 'is empty (0 bytes) — the artifact was not written' : null;
+    return s.size === 0 ? 'is empty (0 bytes): the artifact was not written' : null;
   };
 
   if (!report || typeof report !== 'object') return { errors: ['report: must be a JSON object'], warnings };
@@ -49,10 +49,10 @@ export function validateReport(report, profile, { map = null, base = null, stat 
   if (!isStr(report.env_name)) {
     // already reported
   } else if (!envs[report.env_name]) {
-    err(`env_name: "${report.env_name}" is not a registered environment (${Object.keys(envs).join(', ') || 'none'}) — verdicts are only valid against registered deployed environments`);
+    err(`env_name: "${report.env_name}" is not a registered environment (${Object.keys(envs).join(', ') || 'none'}). Verdicts are only valid against registered deployed environments.`);
   } else if (!isStr(report.env_url)) {
     // Optional would mean a report can dodge the registry cross-check by omitting it.
-    err('env_url: required — without it the registered-URL check cannot run');
+    err('env_url: required. Without it the registered-URL check cannot run.');
   } else if (isStr(report.app)) {
     const registered = envs[report.env_name].apps?.[report.app];
     if (registered && report.env_url.replace(/\/$/, '') !== registered.replace(/\/$/, '')) {
@@ -61,10 +61,10 @@ export function validateReport(report, profile, { map = null, base = null, stat 
   }
 
   if (!isStr(report.commit_sha)) {
-    err('commit_sha: required — a run with no build identity cannot be published');
+    err('commit_sha: required. A run with no build identity cannot be published.');
   }
   if (!isStr(report.sha_source)) {
-    err('sha_source: required — the SHA must be read from the environment, not asserted by the executor');
+    err('sha_source: required. The SHA must be read from the environment, not asserted by the executor.');
   }
   // Recomputed, never trusted: the gate holds both SHAs, and not trusting the file it is
   // handed is the entire point of the gate.
@@ -83,9 +83,9 @@ export function validateReport(report, profile, { map = null, base = null, stat 
   // --- sandbox runs are never verdict-eligible ---
   const sandboxValue = profile.sandbox?.mode?.value;
   if (isStr(report.api_mode) && sandboxValue && report.api_mode === sandboxValue) {
-    err(`api_mode: "${report.api_mode}" is this host's sandbox mode — sandbox backends are seeded and always succeed, so their results are structurally false passes and cannot be published`);
+    err(`api_mode: "${report.api_mode}" is this host's sandbox mode. Sandbox backends are seeded and always succeed, so their results are structurally false passes and cannot be published.`);
   } else if (!isStr(report.api_mode)) {
-    err('api_mode: required — sandbox and deployed runs must be distinguishable in the record');
+    err('api_mode: required. Sandbox and deployed runs must be distinguishable in the record.');
   }
 
   // --- cases ---
@@ -110,16 +110,16 @@ export function validateReport(report, profile, { map = null, base = null, stat 
       }
 
       if (map && !Object.hasOwn(map, c.id)) {
-        err(`${at}: not in the approved case map — only cases QA approved may be published`);
+        err(`${at}: not in the approved case map. Only cases QA approved may be published.`);
       }
 
       if (EVIDENCE_REQUIRED.includes(c.verdict)) {
         // The trace is the evidence. It carries the video byte-for-byte, the console
-        // output, the screenshot film-strip, the DOM snapshots and the network log —
+        // output, the screenshot film-strip, the DOM snapshots and the network log. It is
         // one file a reviewer opens at trace.playwright.dev, rather than three that
         // split one investigation and store the video twice.
         if (!isStr(c.trace)) {
-          err(`${at}.trace: required for a ${c.verdict} verdict — an unevidenced verdict is exactly the unverifiable claim this pipeline exists to prevent`);
+          err(`${at}.trace: required for a ${c.verdict} verdict. An unevidenced verdict is exactly the unverifiable claim this pipeline exists to prevent.`);
         } else {
           const problem = artifactProblem(c.trace);
           if (problem) err(`${at}.trace: "${c.trace}" ${problem}`);
@@ -135,7 +135,7 @@ export function validateReport(report, profile, { map = null, base = null, stat 
       }
 
       if (c.verdict === 'fail' && !isStr(c.failure_summary)) {
-        err(`${at}.failure_summary: required for a fail verdict — take it from the Playwright error, never from prose`);
+        err(`${at}.failure_summary: required for a fail verdict. Take it from the Playwright error, never from prose.`);
       }
       if (c.verdict === 'flaky' && (c.retries ?? 0) < 1) {
         err(`${at}: verdict flaky with no retries recorded`);
@@ -158,14 +158,14 @@ export function validateReport(report, profile, { map = null, base = null, stat 
     // --- run-level halt ---
     const blocked = cases.filter((c) => c.verdict === 'blocked').length;
     if (blocked / cases.length > BLOCKED_HALT_RATIO) {
-      err(`RUN HALTED: ${blocked} of ${cases.length} cases are blocked (over ${BLOCKED_HALT_RATIO * 100}%) — the environment failed, not the feature; fix it and re-run rather than publishing`);
+      err(`RUN HALTED: ${blocked} of ${cases.length} cases are blocked (over ${BLOCKED_HALT_RATIO * 100}%). The environment failed, not the feature; fix it and re-run rather than publishing.`);
     }
 
     if (Array.isArray(report.unmapped_specs) && report.unmapped_specs.length) {
       warnings.push(`${report.unmapped_specs.length} spec(s) ran without a case-ID prefix and are absent from this report`);
     }
     const flaky = cases.filter((c) => c.verdict === 'flaky').length;
-    if (flaky) warnings.push(`${flaky} flaky case(s) — quarantine them; they stay in the confidence denominator`);
+    if (flaky) warnings.push(`${flaky} flaky case(s): quarantine them; they stay in the confidence denominator.`);
   }
 
   return { errors, warnings };
@@ -197,7 +197,7 @@ if (isMain(import.meta.url)) {
     const { errors, warnings } = validateReport(report, profile, { map, base });
     for (const w of warnings) console.error(`warning: ${w}`);
     if (errors.length) {
-      console.error(`REFUSED — this report cannot be published: ${reportPath}`);
+      console.error(`REFUSED. This report cannot be published: ${reportPath}`);
       for (const e of errors) console.error(`  - ${e}`);
       process.exit(1);
     }

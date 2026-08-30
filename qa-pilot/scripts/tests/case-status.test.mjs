@@ -15,7 +15,7 @@ const execIds = (out) => out.executable.map((e) => e.id).sort();
 
 // --- the lifecycle deadlock this fixes -------------------------------------
 
-test('a fully approved feature is still executable — the regression run', () => {
+test('a fully approved feature is still executable: the regression run', () => {
   // Regression: only "Approved for Execution" was executable, so after one full cycle
   // every case sat at Approved and no second run could ever happen.
   const out = partitionCases(cases, allAt(STATUS.APPROVED));
@@ -23,7 +23,7 @@ test('a fully approved feature is still executable — the regression run', () =
   assert.equal(out.held.length, 0);
 });
 
-test('Retest is executable — it literally means run it again', () => {
+test('Retest is executable, since it literally means run it again', () => {
   const out = partitionCases(cases, allAt(STATUS.RETEST));
   assert.equal(out.executable.length, cases.length);
 });
