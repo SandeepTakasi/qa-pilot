@@ -49,6 +49,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" \
 
 Every value comes from the validated `report.json`. Nothing here is inferred.
 
+The user creates these by hand per `../../../SETUP-CLICKUP.md`; this table is the
+report-to-field mapping for writing values. **If you change a field name or a dropdown
+option here, change it there too** — publish matches on names, so the two drifting apart
+breaks it.
+
 | Field | Type | Source |
 |---|---|---|
 | Verdict | dropdown: pass / fail / flaky / blocked | `cases[].verdict` |

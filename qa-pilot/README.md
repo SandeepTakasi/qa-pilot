@@ -33,7 +33,7 @@ One artifact per case per run: **`trace.zip`, attached to the case's ClickUp tas
 
 Reviewers drag it onto <https://trace.playwright.dev>, which runs entirely in the browser and transmits nothing. No second storage system, no extra credentials, and the evidence sits on the task the reviewer is already looking at.
 
-Two things to set up on the ClickUp side, both covered by `/qa-init`'s gap report: turn on **Private Attachment Links** (attachment URLs are public and non-expiring by default), and give each developer their **own API token** (the 100 requests/minute budget is per token, not per person).
+You set up the ClickUp side once, by hand — the plugin writes into it but does not create it. [SETUP-CLICKUP.md](./SETUP-CLICKUP.md) is the exact checklist: the statuses, the custom fields and their options, and the two settings that matter (**Private Attachment Links**, off by default and leaving attachment URLs public; and a **per-developer API token**, since the 100 requests/minute budget is per token, not per person). Fifteen minutes, once per workspace. `/qa-init` reminds you and fills in the host-specific dropdown values.
 
 Retention is manual — ClickUp has no delete-attachment endpoint, so traces are pruned from task attachment lists by hand. Budget a quarterly pass: oldest passing runs first, keep every failure.
 
@@ -65,10 +65,11 @@ Execution itself costs no tokens: it is `npx playwright test`.
 ## Layout
 
 ```
-skills/     the five entry points plus setup-profiles
-scripts/    deterministic validators and transforms (zero deps, node --test)
-schemas/    the host profile, case, and report contracts
-hooks/      ClickUp write guard — the scripted path is the only write path
+skills/            the five entry points plus setup-profiles
+scripts/           deterministic validators and transforms (zero deps, node --test)
+schemas/           the host profile, case, and report contracts
+hooks/             ClickUp write guard — the scripted path is the only write path
+SETUP-CLICKUP.md   one-time workspace setup you do by hand
 ```
 
 The only third-party code is `scripts/lib/yaml.mjs`, a bundled copy of [yaml](https://github.com/eemeli/yaml) (MIT). Node ships no YAML parser, the host profile is hand-edited by QA and needs comments (so JSON is out), and bundling keeps consuming repos install-free.

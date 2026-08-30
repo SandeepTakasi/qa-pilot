@@ -71,10 +71,20 @@ Print (do not write to a file) the prerequisites this host must close before the
 | Playwright < 1.51 | `/setup-profiles` — IndexedDB-persisted auth (Firebase) will not restore |
 | No sandbox/mock mode | spec stabilization competes for the shared deployed environment |
 | No role accounts yet | permission-type cases in `/generate-tests` |
-| ClickUp space / custom fields not created | `/publish-results` |
+| ClickUp space, statuses or custom fields not created | `/publish-results` — see below |
 | Deployed builds strip console logs | failure evidence on hosts where console output is the required evidence |
-| **Private Attachment Links not enabled in ClickUp** | evidence privacy — attachment URLs are public, unauthenticated and non-expiring by default, and traces carry application state |
-| **All developers sharing one ClickUp API token** | `/publish-results` under concurrency — the 100 req/min budget is per token, so a shared token is shared by everyone publishing at once |
+| Private Attachment Links not enabled in ClickUp | evidence privacy — attachment URLs are public, unauthenticated and non-expiring by default, and traces carry application state |
+| All developers sharing one ClickUp API token | `/publish-results` under concurrency — the 100 req/min budget is per token, so a shared token is shared by everyone publishing at once |
+
+**The plugin does not create the ClickUp structure — the user does, once.** Point them at
+`${CLAUDE_PLUGIN_ROOT}/SETUP-CLICKUP.md`, which lists the exact statuses, the exact custom
+fields and their dropdown options, and the two settings above. Names are matched literally
+by `/publish-results`, so "roughly right" fails at publish time.
+
+Two of the dropdowns (`Env`, `App`) and one option of `API Mode` are host-specific — their
+values come from the profile you just wrote. Tell the user the concrete values to create
+rather than making them derive them: list the environment names, the app names, and the
+sandbox value from this host's profile.
 
 ## 5. Hand off
 
