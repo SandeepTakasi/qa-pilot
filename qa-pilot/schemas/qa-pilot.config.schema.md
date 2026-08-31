@@ -1,6 +1,6 @@
 # `qa-pilot.config.yaml`: host profile schema
 
-The host profile lives in the **consuming repo**, is written by `/qa-pilot:qa-init`, reviewed and owned by QA, and must be committed. Every other QA-Pilot skill refuses to run without a committed, schema-valid profile.
+The host profile lives in the **consuming repo**, is written by `/qa-pilot:qa-init`, and is reviewed and owned by QA. Every other QA-Pilot skill refuses to run without a schema-valid profile, and warns (rather than refuses) when it is not committed, since a host trialling the pipeline may reasonably keep it local at first.
 
 Enforced by `scripts/lib/profile.mjs`. Unknown top-level keys are an **error** (catches typos silently changing behavior).
 
@@ -39,6 +39,7 @@ assertions:
 
 evidence:
   extra: [console_log]              # optional list; allowed values: console_log
+  capture: always | on-failure | off  # optional, default always. See below.
 
 selectors:
   testid_attribute: string          # required, e.g. data-testid
@@ -75,6 +76,29 @@ clickup:
     retest: string                  # needs another run
     quarantined: string             # flaky; held out, still in the denominator
 ```
+
+## How much evidence to capture
+
+Capturing full evidence costs about 700 KB per case and adds noticeable wall clock, so this
+is a real trade rather than a free default. Storage is the reliably measurable part; timing
+varies a lot with network latency to the environment under test.
+
+| Mode | Kept | Cost | Consequence |
+|---|---|---|---|
+| `always` (default) | every executed case | ~700 KB per case, slower runs | QA can sample passes, which is the backstop against a false pass |
+| `on-failure` | failures and flakes only | near zero on a green run | passing cases have no trace, so QA cannot sample them and a false pass is undetectable by review |
+| `off` | nothing | none | no run can be published; for iterating on specs locally |
+
+The default is `always` because evidence for **passes** is the valuable kind. A failure
+already evidences itself through its error message, whereas a pass is a claim that
+something works, and the sampling rules in `/qa-pilot:qa-review` are what test that claim.
+
+`on-failure` is a legitimate choice for a suite of mostly low-priority cases, or once a
+feature is stable and you care mainly about catching regressions. Prefer `always` while a
+feature is new or where P0 cases are involved.
+
+The gate enforces whichever mode the run recorded, so it can tell a deliberately
+uncaptured pass from a lost artifact rather than guessing.
 
 ## Identifying the deployed build
 

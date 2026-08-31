@@ -139,6 +139,9 @@ export function buildReport(pw, meta) {
     // Whether commit_sha names a git commit or only a build fingerprint. Recorded so a
     // bundle hash is never later mistaken for a commit.
     sha_format: meta.sha_format ?? 'commit',
+    // What the host chose to capture. The gate needs it to tell a deliberately
+    // uncaptured pass from a lost artifact.
+    evidence_capture: meta.evidence_capture ?? 'always',
     sha_mismatch: shaMismatch,
     executor: meta.executor,
     model_version: meta.model_version,

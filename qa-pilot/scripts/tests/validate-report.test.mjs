@@ -72,6 +72,47 @@ test('blocked cases need no evidence, because they never executed', () => {
   assert.ok(!errs.some((e) => /video|trace|console_log/.test(e)), errs.join('\n'));
 });
 
+// --- capture modes: evidence required depends on what the host chose to keep ---
+
+test('under on-failure a passing case needs no trace', () => {
+  const r = golden();
+  r.evidence_capture = 'on-failure';
+  for (const c of r.cases) if (c.verdict === 'pass') c.trace = null;
+  assert.deepEqual(validateReport(r, profile, { map, base: FIXTURES }).errors, []);
+});
+
+test('under on-failure a FAILING case still needs a trace', () => {
+  refuses((r) => {
+    r.evidence_capture = 'on-failure';
+    r.cases[1].trace = null;  // the fail
+  }, /trace: required for a fail verdict/);
+});
+
+test('on-failure warns that a false pass would be undetectable', () => {
+  const r = golden();
+  r.evidence_capture = 'on-failure';
+  const { warnings } = validateReport(r, profile, { map, base: FIXTURES });
+  assert.ok(warnings.some((w) => /false pass in this run is undetectable/.test(w)), warnings.join('\n'));
+});
+
+test('under always a passing case still needs a trace', () => {
+  refuses((r) => { r.evidence_capture = 'always'; r.cases[0].trace = null; },
+    /trace: required for a pass verdict/);
+});
+
+test('a run captured with off cannot be published at all', () => {
+  refuses((r) => { r.evidence_capture = 'off'; }, /captured no evidence/);
+});
+
+test('an unknown capture mode is refused rather than assumed', () => {
+  refuses((r) => { r.evidence_capture = 'maybe'; }, /is not one of always \| on-failure \| off/);
+});
+
+test('a report with no capture mode is treated as always', () => {
+  refuses((r) => { delete r.evidence_capture; r.cases[0].trace = null; },
+    /trace: required for a pass verdict/);
+});
+
 // --- provenance ---
 
 test('refuses an unregistered environment', () => {

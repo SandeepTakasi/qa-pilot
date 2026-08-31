@@ -43,6 +43,8 @@ For each decision, move the task to this host's name for `approved_for_execution
 
 ## 3. Result review and the sampling rules
 
+**First check what the run actually captured.** If its `evidence_capture` was `on-failure`, passing cases have no trace, so the pass quotas below cannot be met. Say that plainly rather than asking QA to sample what does not exist, and note that a false pass in that run cannot be caught by review. The failure quota still applies in full.
+
 Not every pass needs to be watched, but the sampling must be honest and tracked:
 
 | | Requirement |
@@ -73,11 +75,11 @@ rm -f .qa-pilot/allow-clickup-writes
 
 The flag expires after 30 minutes; re-`touch` it if a long review session starts getting denied.
 
-- **Approve** → status `Approved`. The case counts toward the confidence numerator, and it stays executable: the next build regresses it automatically, with no reset by anyone. That persistence is what turns this from a one-shot into a suite.
-- **Reject** → status `Rejected` **plus a reason tag**. Use a consistent vocabulary: `bad-assertion`, `env-issue`, `wrong-expected`, `insufficient-evidence`, `selector-fragile`, `test-data-collision`, `feature-actually-broken`. These tags are the feedback loop: the weekly standards review reads their distribution and edits the skills and host profile accordingly. A rejection with no tag teaches nothing.
-- **Retest** → status `Retest`. For environment problems and expired sessions, not for real failures.
+- **Approve** → this host's name for `approved`. The case counts toward the confidence numerator, and it stays executable: the next build regresses it automatically, with no reset by anyone. That persistence is what turns this from a one-shot into a suite.
+- **Reject** → its name for `rejected`, **plus a reason tag**. Use a consistent vocabulary: `bad-assertion`, `env-issue`, `wrong-expected`, `insufficient-evidence`, `selector-fragile`, `test-data-collision`, `feature-actually-broken`. These tags are the feedback loop: the weekly standards review reads their distribution and edits the skills and host profile accordingly. A rejection with no tag teaches nothing.
+- **Retest** → its name for `retest`. For environment problems and expired sessions, not for real failures.
 
-A `fail` verdict that QA confirms is a real defect: the case stays `Rejected` only if the *test* was wrong. If the test was right and the feature is broken, that is a bug. Record it as such against the feature, and do not weaken the case to make it pass.
+A `fail` verdict that QA confirms is a real defect: the case stays `rejected` only if the *test* was wrong. If the test was right and the feature is broken, that is a bug. Record it as such against the feature, and do not weaken the case to make it pass.
 
 ## 5. Close out
 

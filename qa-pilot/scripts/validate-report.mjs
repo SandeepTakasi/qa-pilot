@@ -11,8 +11,17 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { loadProfile } from './lib/profile.mjs';
 
 const VERDICTS = ['pass', 'fail', 'flaky', 'blocked'];
-const EVIDENCE_REQUIRED = ['pass', 'fail', 'flaky']; // blocked cases never executed
 const BLOCKED_HALT_RATIO = 0.1;
+
+// Which verdicts must carry a trace, given what the host chose to capture. `blocked` never
+// appears: those cases did not execute. Capturing a trace roughly doubles a run, so a host
+// may keep evidence only for failures, at the cost of QA no longer being able to sample
+// passes. The gate enforces the host's declared choice rather than guessing.
+const EVIDENCE_BY_MODE = {
+  always: ['pass', 'fail', 'flaky'],
+  'on-failure': ['fail', 'flaky'],
+  off: [],
+};
 
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 
@@ -39,6 +48,19 @@ export function validateReport(report, profile, { map = null, base = null, stat 
   };
 
   if (!report || typeof report !== 'object') return { errors: ['report: must be a JSON object'], warnings };
+
+  const capture = report.evidence_capture ?? 'always';
+  if (!Object.hasOwn(EVIDENCE_BY_MODE, capture)) {
+    err(`evidence_capture: "${capture}" is not one of ${Object.keys(EVIDENCE_BY_MODE).join(' | ')}`);
+  }
+  if (capture === 'off') {
+    err('evidence_capture: off. This run captured no evidence, so none of its verdicts can be published. That mode is for iterating on specs locally.');
+  }
+  const required = EVIDENCE_BY_MODE[capture] ?? EVIDENCE_BY_MODE.always;
+  const needsEvidence = (verdict) => required.includes(verdict);
+  if (capture === 'on-failure') {
+    warnings.push('evidence_capture: on-failure, so passing cases carry no trace and QA cannot sample them. A false pass in this run is undetectable by review.');
+  }
 
   // --- provenance ---
   for (const f of ['run_id', 'feature', 'app', 'env_name', 'executor', 'model_version']) {
@@ -113,7 +135,7 @@ export function validateReport(report, profile, { map = null, base = null, stat 
         err(`${at}: not in the approved case map. Only cases QA approved may be published.`);
       }
 
-      if (EVIDENCE_REQUIRED.includes(c.verdict)) {
+      if (needsEvidence(c.verdict)) {
         // The trace is the evidence. It carries the video byte-for-byte, the console
         // output, the screenshot film-strip, the DOM snapshots and the network log. It is
         // one file a reviewer opens at trace.playwright.dev, rather than three that

@@ -15,6 +15,7 @@ const AUTH_MODELS = ['dev-handoff', 'role-accounts', 'mixed'];
 const NETWORK_MODES = ['allowed', 'forbidden'];
 const ASSERT_STYLES = ['ui-state', 'mixed'];
 const EVIDENCE_EXTRAS = ['console_log'];
+const CAPTURE_MODES = ['always', 'on-failure', 'off'];
 const PLAN_TIERS = ['free', 'unlimited', 'business', 'enterprise'];
 const SHA_FORMATS = ['commit', 'build-id'];
 const PLAYWRIGHT_FLOOR = [1, 51, 0]; // storageState({ indexedDB: true })
@@ -171,6 +172,21 @@ export function validateProfile(raw, { profilePath = null } = {}) {
       }
     }
   }
+  // Capturing a trace roughly doubles a run's wall clock and costs ~700KB per case, so
+  // hosts may trade evidence for speed. The default stays `always`, because evidence for
+  // PASSES is the valuable kind: a failure already evidences itself through its error,
+  // whereas a pass is a claim that something works.
+  const capture = raw.evidence?.capture ?? 'always';
+  if (!CAPTURE_MODES.includes(capture)) {
+    err(`evidence.capture: must be one of ${CAPTURE_MODES.join(' | ')} (default: always)`);
+  }
+  if (capture === 'on-failure') {
+    warnings.push('evidence.capture: on-failure keeps no evidence for passing cases, so QA cannot sample passes and a false pass becomes undetectable. The sampling rules are the backstop against fabricated or shallow green runs; consider always for P0 work.');
+  }
+  if (capture === 'off') {
+    warnings.push('evidence.capture: off captures nothing, so no run can be published. Use it only while iterating on specs locally.');
+  }
+
   if (networkForbidden && evidenceExtra.length === 0) {
     warnings.push('evidence.extra: empty while network assertions are forbidden, so failures will be video-only and hard to triage');
   }

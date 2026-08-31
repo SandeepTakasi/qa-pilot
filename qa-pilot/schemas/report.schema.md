@@ -16,6 +16,7 @@ sha_before: string           # read from the environment before the run
 sha_after: string            # and after
 sha_source: string           # required; the URL it was read from
 sha_format: commit | build-id  # what commit_sha actually is; see the profile schema
+evidence_capture: always | on-failure | off  # what the host chose to keep
 sha_mismatch: boolean        # true => every case must be blocked
 executor: string             # who ran it
 model_version: string        # model that authored/updated the specs

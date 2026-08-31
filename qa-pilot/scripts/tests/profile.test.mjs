@@ -112,6 +112,31 @@ test('clickup.folder must be a real name when set', () => {
   assert.ok(errs.some((e) => /clickup\.folder/.test(e)), errs.join('\n'));
 });
 
+test('evidence.capture defaults to always and accepts the three modes', () => {
+  assert.deepEqual(validateProfile(golden()).errors, []);
+  for (const mode of ['always', 'on-failure', 'off']) {
+    assert.deepEqual(errorsFor((p) => { p.evidence.capture = mode; }), [], mode);
+  }
+});
+
+test('an unknown capture mode is rejected', () => {
+  const errs = errorsFor((p) => { p.evidence.capture = 'sometimes'; });
+  assert.ok(errs.some((e) => /evidence\.capture/.test(e)), errs.join('\n'));
+});
+
+test('on-failure warns that QA can no longer sample passes', () => {
+  const p = golden(); p.evidence.capture = 'on-failure';
+  const { errors, warnings } = validateProfile(p);
+  assert.deepEqual(errors, []);
+  assert.ok(warnings.some((w) => /cannot sample passes/.test(w)), warnings.join('\n'));
+});
+
+test('off warns that nothing can be published', () => {
+  const p = golden(); p.evidence.capture = 'off';
+  const { warnings } = validateProfile(p);
+  assert.ok(warnings.some((w) => /no run can be published/.test(w)), warnings.join('\n'));
+});
+
 // --- per-host status vocabulary ---------------------------------------------
 
 test('a complete status map is accepted', () => {

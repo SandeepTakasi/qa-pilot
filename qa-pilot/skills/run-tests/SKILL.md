@@ -72,21 +72,37 @@ Specs live at `<apps.<app>.spec_dir>/<feature>/<CASE-ID>.spec.ts` and are **comm
 - Cross-app cases live in `cross_app.spec_home`'s spec dir and use `expect.poll` with `cross_app.propagation_window_s` as the ceiling. Eventual consistency is architecture, not flakiness.
 - **Never overwrite a hand-stabilized spec without asking.** If a spec file already exists and differs from what you would generate, show the difference and let the user decide. Someone probably fixed a selector by hand.
 
-Playwright config for the run:
+Playwright config for the run, with `trace.mode` set from the profile's `evidence.capture`:
+
+| `evidence.capture` | `trace.mode` | `video` | Effect |
+|---|---|---|---|
+| `always` (default) | `'on'` | `'on'` | Every executed case is reviewable. Costs roughly 700 KB per case and noticeable wall clock. |
+| `on-failure` | `'retain-on-failure'` | `'retain-on-failure'` | A green run keeps nothing. Passing cases have no trace, so QA cannot sample them. |
+| `off` | `'off'` | `'off'` | Fastest, and nothing can be published. For iterating on specs locally. |
+
+**`video` must track the mode, not be left on `'on'`.** Playwright records and keeps videos
+according to its own setting regardless of `trace.mode`, so leaving `video: 'on'` under
+`on-failure` still records every case and still writes a `.webm` per pass, which throws away
+most of the saving. Measured on a 3-case run: 50 KB kept with `video: 'on'`, 0 KB with both
+set to `retain-on-failure`.
 
 ```js
 use: {
-  trace: { mode: 'on', sources: false },  // sources: false trims ~22% and costs a reviewer nothing
-  video: 'on',
+  trace: { mode: <from the table>, sources: false },  // sources: false trims ~22%
+  video: <from the table>,         // embedded in the trace; never uploaded separately
   screenshot: 'only-on-failure',
 },
 retries: 1,
 reporter: [['json', { outputFile: 'results.json' }], ['html', { open: 'never' }]],
 ```
 
-**The trace is the evidence.** `validate-report.mjs` refuses to publish any executed case without one, because a trace carries the video byte-for-byte, the console output, the screenshot film-strip, the DOM snapshots and the network log in a single file. Keep `video: 'on'`, because the trace embeds the recording only when video is being captured, but the standalone `.webm` is never uploaded anywhere; the trace supersedes it.
+**Record the mode in `meta.json` as `evidence_capture`.** The publish gate needs it to tell a deliberately uncaptured pass from a lost artifact, and it refuses the run outright when the mode was `off`.
 
-Do not turn off `screenshots` in the trace to save space. It is roughly 95% of the file size and it is exactly what a reviewer scrubs through.
+If the host is on `on-failure`, say so in your run summary: a false pass in that run cannot be caught by review, because there is nothing for QA to open.
+
+Do not turn off `screenshots` within the trace to save space. It is roughly 95% of the file size and it is exactly what a reviewer scrubs through. Reach for `evidence.capture` instead, which is the knob designed for this trade.
+
+**The trace is the evidence.** `validate-report.mjs` refuses to publish any executed case without one, because a trace carries the video byte-for-byte, the console output, the screenshot film-strip, the DOM snapshots and the network log in a single file. Keep `video: 'on'`, because the trace embeds the recording only when video is being captured, but the standalone `.webm` is never uploaded anywhere; the trace supersedes it.
 
 ## 6. Stabilize new specs before they count
 
@@ -113,6 +129,7 @@ Write `testing/<feature>/runs/<run_id>/meta.json`:
   "api_mode": "server | mocks",
   "sha_before": "...", "sha_after": "...", "sha_source": "<url>",
   "sha_format": "commit | build-id",   // copy read-env-sha's `format` verbatim
+  "evidence_capture": "always | on-failure | off",   // from the profile's evidence.capture
   "executor": "<the developer running this>",
   "model_version": "<your model id>",
   "playwright_version": "...", "browser": "chromium-<version>",
