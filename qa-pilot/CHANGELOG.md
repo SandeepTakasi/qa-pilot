@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### The defect path
+
+A confirmed failure now becomes a bug. Previously the pipeline produced a fully evidenced
+failure and dropped it: `qa-review` said "record it as such against the feature", which is
+prose with no mechanism behind it.
+
+- `scripts/bug-report.mjs` assembles each bug from `report.json` and `cases.yaml`. The
+  failure text is Playwright's, verbatim. A model paraphrasing an error into a ticket
+  reintroduces the unverifiable claim this pipeline exists to remove, and a developer who
+  cannot trust the error in the ticket opens the trace instead, which buys nothing.
+- Deduplicated through a committed `testing/<feature>/bugs.json` ledger, keyed by case ID
+  plus a normalized failure signature. Digits are stripped before hashing, because
+  Playwright errors carry timeouts and element counts that vary run to run while naming
+  one defect. Without this, a weekly regression run refiles every open bug every week.
+- Bugs link to their case through a native ClickUp task relationship rather than a twelfth
+  custom field: a bug's lifecycle belongs to the developers, not to QA-Pilot.
+- `clickup.bug_list` is optional. Unset, bugs land in the feature list and the script says
+  so, so a first pilot is not blocked on ClickUp admin.
+- `flaky` verdicts can be filed too, tagged `intermittent`. An intermittent product bug is
+  real, and a ticket that hides the intermittency costs the developer their first hour.
+- Removed the `feature-actually-broken` rejection tag, which contradicted the rule beneath
+  it. Rejection means the test was wrong; a real break is an approved verdict plus a bug.
+
+### Gates measure what they claim to measure
+
+- Confidence requires an approved **pass**, not just approval, and reads `Unknown` rather
+  than a number when no verdicts are in hand.
+- An unchanged spec that passes again keeps its approval, judged by a per-verdict spec
+  hash and an `approved.json` ledger.
+- The publish gate checks recorded status instead of case-map membership, and refuses
+  outright without `--statuses`.
+- The assertion lint no longer loses to padding, and no longer flags "request form".
+- Production environments are refused unless `allow_production` is set.
+
 ## 0.1.0 (2026-08-30)
 
 First build. Implements PRD v1.0.

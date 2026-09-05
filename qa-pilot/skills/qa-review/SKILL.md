@@ -1,6 +1,6 @@
 ---
 name: qa-review
-description: The QA reviewer's cockpit. Pull the Under Review queue for a feature from ClickUp, sorted by priority with failures first and evidence links attached, enforce the evidence sampling rules, and record Approve, Reject-with-reason, or Retest decisions back to ClickUp. Also runs design review on freshly authored cases awaiting approval. Use when the user says "qa review", "review the run", "review the cases", or "/qa-review <feature>".
+description: The QA reviewer's cockpit. Pull the Under Review queue for a feature from ClickUp, sorted by priority with failures first and evidence links attached, enforce the evidence sampling rules, and record Approve, Reject-with-reason, or Retest decisions back to ClickUp, and file a linked bug for every failure QA confirms is a real defect. Also runs design review on freshly authored cases awaiting approval. Use when the user says "qa review", "review the run", "review the cases", or "/qa-review <feature>".
 argument-hint: "<feature>"
 ---
 
@@ -78,13 +78,50 @@ The flag expires after 30 minutes; re-`touch` it if a long review session starts
 - **Approve** → this host's name for `approved`. The case counts toward the confidence numerator only when its verdict was also a pass, and it stays executable: the next build regresses it automatically. If the spec is unchanged and passes again, the approval carries forward untouched, which is what turns this from a one-shot into a suite. Record the accepted spec hash in `testing/<feature>/approved.json` (`/qa-pilot:publish-results` writes it from the run's `report.json`) and commit it, because approval means approved-for-this-spec: an edited spec sends the case back here rather than inheriting a verdict it never earned.
 
   Approving a **confirmed real failure** is the right call: it records that a human looked and agreed the feature is broken, not that the feature works. It does not raise the score, since only an approved pass counts, so file the bug and say plainly that the feature is Not Ready.
-- **Reject** → its name for `rejected`, **plus a reason tag**. Use a consistent vocabulary: `bad-assertion`, `env-issue`, `wrong-expected`, `insufficient-evidence`, `selector-fragile`, `test-data-collision`, `feature-actually-broken`. These tags are the feedback loop: the weekly standards review reads their distribution and edits the skills and host profile accordingly. A rejection with no tag teaches nothing.
+- **Reject** → its name for `rejected`, **plus a reason tag**. Use a consistent vocabulary: `bad-assertion`, `env-issue`, `wrong-expected`, `insufficient-evidence`, `selector-fragile`, `test-data-collision`. There is deliberately no tag for a broken feature: rejection means the *test* was wrong, and a real break is an approved verdict plus a bug (step 5). These tags are the feedback loop: the weekly standards review reads their distribution and edits the skills and host profile accordingly. A rejection with no tag teaches nothing.
 - **Retest** → its name for `retest`. For environment problems and expired sessions, not for real failures.
 
-A `fail` verdict that QA confirms is a real defect: the case stays `rejected` only if the *test* was wrong. If the test was right and the feature is broken, that is a bug. Record it as such against the feature, and do not weaken the case to make it pass.
+## 5. File the confirmed defects
 
-## 5. Close out
+A `fail` verdict has two possible readings, and they get opposite treatment:
 
-Report: how many were reviewed, the decisions taken, whether the sampling quotas were met, the updated confidence score, and whether the feature reads Ready or Not Ready. **Any P0 not Approved means Not Ready regardless of score**, so say it explicitly rather than letting a high percentage speak for itself.
+| What QA concluded | Case status | Bug |
+|---|---|---|
+| the test was wrong | `rejected` plus a reason tag | none |
+| the test was right, the feature is broken | `approved` (the verdict is accepted) | **file one** |
+
+Never weaken a case to make it pass. A test edited until it goes green is worse than no test, because it now certifies the broken behavior.
+
+Collect the case IDs QA confirmed as real defects, then build the bug reports:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/bug-report.mjs" \
+  --report testing/<feature>/runs/<run_id>/report.json \
+  --cases testing/<feature>/cases.yaml \
+  --confirmed <CASE-ID,CASE-ID> \
+  --specs testing/<feature>/runs/<run_id>/specs.json \
+  --bugs testing/<feature>/bugs.json \
+  --profile <profile-path>
+```
+
+**Do not write the bug description yourself.** The script assembles it from the report and the cases file, and the failure text in it is Playwright's, verbatim. A summarized error is one a developer cannot trust, so they open the trace instead and the ticket has bought nothing. Post what the script returns, unedited.
+
+It returns three lists:
+
+- **`create[]`**: file each as a new task. Use `title` and `body` as given, apply `tags`, set the priority from `priority`, and link it to the case task with `clickup_add_task_link`. Native task links rather than a custom field: a bug has its own lifecycle owned by the developers, not by QA-Pilot. If `supersedes` is set, say so in a comment on the older bug rather than closing it, since only a human should decide the old one is dead.
+- **`comment[]`**: this failure is already filed. Post the comment on the existing bug instead of creating a second one. A weekly regression run against an unfixed bug would otherwise file it every week.
+- **`skipped[]`**: report each with its reason. A case is skipped when it passed, when it is missing from the run or the cases file, or when it has no recorded error, and each of those means the bug could not have been evidenced.
+
+Where they land: `clickup.bug_list` in the profile, if it is set. If it is not, they land in the feature list beside the case tasks and the script warns; name a bug list to keep the case board readable.
+
+**Write `ledger` back to `testing/<feature>/bugs.json` and commit it**, filling in each new task's `task_id` from the ClickUp response. That file is what makes deduplication work on the next run. Without it, every regression run refiles every open bug.
+
+The bug body tells the reader the trace is a credential, because it is: it carries the session token that authenticated the run. See "What a trace contains" in `SETUP-CLICKUP.md`.
+
+## 6. Close out
+
+Report: how many were reviewed, the decisions taken, the bugs filed and the bugs that were already open, whether the sampling quotas were met, the updated confidence score, and whether the feature reads Ready or Not Ready.
+
+**Any P0 that is not an approved pass means Not Ready regardless of score**, so say it explicitly rather than letting a percentage speak for itself. Approving a confirmed failure is the correct action and does not raise the score: it records that a human looked and agreed the feature is broken. A feature can therefore be fully reviewed, with every verdict accepted, and still read Not Ready, which is the pipeline working rather than failing.
 
 Then flag anything that should feed the weekly standards edit: repeated rejection reasons, cases that flake across runs, selectors that keep breaking.

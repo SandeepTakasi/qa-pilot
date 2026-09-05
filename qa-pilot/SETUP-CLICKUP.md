@@ -63,6 +63,10 @@ The last three dropdowns are host-specific: their options come from your
 
 There is no Trace field. Traces are **attachments** on the case task, not a field value.
 
+There is no Bug field either. A confirmed defect becomes its own task, linked to the case
+with a native ClickUp task relationship, so there is nothing to create here for it. Point
+`clickup.bug_list` in your profile at the list your developers already work from.
+
 ## 4. Two settings that matter
 
 **Turn on Private Attachment Links.** Settings → Advanced Permissions. Available on every

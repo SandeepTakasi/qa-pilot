@@ -274,6 +274,11 @@ export function validateProfile(raw, { profilePath = null } = {}) {
     // Optional, but name it whenever the space holds more than one folder. Without it
     // "the feature's list in space X" is ambiguous, and a feature list can be created in
     // the wrong place, next to unrelated manual QA work.
+    // Optional: the list bugs are filed into. Unset is legal, so a first pilot is not
+    // blocked on ClickUp admin, but then bugs land beside the case tasks.
+    if (raw.clickup.bug_list !== undefined && !isStr(raw.clickup.bug_list)) {
+      err('clickup.bug_list: must be a non-empty string when set, the list confirmed defects are filed into');
+    }
     if (raw.clickup.folder !== undefined && !isStr(raw.clickup.folder)) {
       err('clickup.folder: must be a non-empty string when set, the folder inside the space that holds feature lists');
     }

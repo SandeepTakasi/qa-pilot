@@ -13,7 +13,8 @@ The design rests on two ideas. **Uniformity is enforced by tooling, not discipli
       ↓  QA approves the scenario matrix and the cases
 /run-tests        →  committed specs run against a deployed env, with evidence
 /publish-results  →  validate, then write verdicts and evidence to ClickUp
-/qa-review        →  QA's queue: approve, reject with a reason, or retest
+/qa-review        →  QA's queue: approve, reject with a reason, or retest,
+                     and file a linked bug for every confirmed defect
 ```
 
 ## What it refuses to publish
@@ -23,7 +24,7 @@ The publish step is a script, not a judgement call, and it rejects each of these
 - **A verdict without evidence.** Every executed case needs a Playwright trace and a deploy SHA read from the running environment. Missing, empty, or unreadable artifacts fail the report.
 - **A verdict from a local or sandbox environment.** Mock backends are seeded and always succeed. Runs against them are useful for stabilizing specs and are stamped as such, but they cannot carry a verdict.
 - **A pass that was really a retry.** Pass-on-retry is recorded `flaky`, always, derived from the attempt results rather than from Playwright's own status field, so no config change can turn it green. A failure in any browser is a failure, never a flake.
-- **A verdict for a case QA never approved.**
+- **A verdict for a case QA never approved.** Checked against the case's recorded ClickUp status at the time of the run, not against the case map: every generated case is in the map from the moment it is created, so map membership proves nothing about approval.
 - **A run that lost its ground truth.** If the deployed build changes mid-run, every case is `blocked`, because half tested one build and half another. Past 10% blocked the run halts: the environment failed, not the feature.
 
 ### How strong these gates actually are

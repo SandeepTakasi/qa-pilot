@@ -64,6 +64,9 @@ cross_app:                          # required when apps has > 1 entry
 clickup:
   plan_tier: free | unlimited | business | enterprise   # required (rate budget)
   space: string                     # required, ClickUp space name for QA
+  bug_list: string                  # optional: the list confirmed defects are filed into
+                                    # by /qa-pilot:qa-review. Unset is legal; bugs then
+                                    # land in the feature list beside the case tasks.
   folder: string                    # optional but recommended: the folder inside that
                                     # space holding feature lists. Name it whenever the
                                     # space has more than one folder, or a feature list
@@ -152,6 +155,20 @@ records `sha_format` so nobody later mistakes a bundle hash for a commit.
 One blind spot worth knowing: with code splitting, a deploy that changes only a lazily
 loaded chunk may leave the entry hash untouched, so such a deploy would not be detected
 mid-run. Prefer `commit` once the environment can serve one.
+
+## Where bugs go
+
+When QA confirms a failure is a real defect rather than a broken test,
+`/qa-pilot:qa-review` files a bug and links it to the case task. `clickup.bug_list` names
+the list those go into.
+
+Leaving it unset is legal, so a first pilot is not blocked on ClickUp admin, but bugs then
+land in the feature list next to the case tasks and the script warns each time. Point it at
+whatever list your developers already work from: a bug has its own lifecycle, owned by
+them, and QA-Pilot deliberately does not try to own it.
+
+The link is a native ClickUp task relationship, not a custom field, so there is nothing
+extra to create in ClickUp for this.
 
 ## Status names are per-host
 

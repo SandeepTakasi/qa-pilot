@@ -231,3 +231,10 @@ test('allow_production accepts the risk and records it as a warning', () => {
   assert.deepEqual(errors.filter((e) => /looks like production/.test(e)), []);
   assert.equal(warnings.some((w) => /live session tokens/.test(w)), true, warnings.join('\n'));
 });
+
+test('clickup.bug_list is optional but must be a real name when set', () => {
+  assert.deepEqual(errorsFor((d) => { d.clickup.bug_list = 'Storefront Bugs'; }), []);
+  assert.deepEqual(errorsFor((d) => { delete d.clickup.bug_list; }), []);
+  const errs = errorsFor((d) => { d.clickup.bug_list = ''; });
+  assert.equal(errs.some((e) => /bug_list/.test(e)), true);
+});
