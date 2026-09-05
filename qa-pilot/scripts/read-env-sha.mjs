@@ -130,14 +130,17 @@ export async function readEnvSha(profile, envName, appName, { timeoutMs = DEFAUL
 if (isMain(import.meta.url)) {
   const [profilePath, envName, appName] = process.argv.slice(2);
   if (!profilePath || !envName) {
-    console.error('usage: node read-env-sha.mjs <profile> <env-name> [app-name] [--timeout-ms 10000]');
+    console.error('usage: node read-env-sha.mjs <profile> <env-name> [app-name] [--timeout-ms 10000] [--sha-only]');
     process.exit(2);
   }
   const tIdx = process.argv.indexOf('--timeout-ms');
   const timeoutMs = tIdx === -1 ? DEFAULT_TIMEOUT_MS : Number(process.argv[tIdx + 1]);
   try {
     const { profile } = loadProfile(profilePath);
-    console.log(JSON.stringify(await readEnvSha(profile, envName, appName, { timeoutMs }), null, 2));
+    const read = await readEnvSha(profile, envName, appName, { timeoutMs });
+    // --sha-only keeps a CI step to one line. The full object stays the default, because
+    // `format` matters and a bare string invites treating a build id as a commit.
+    console.log(process.argv.includes('--sha-only') ? read.sha : JSON.stringify(read, null, 2));
   } catch (e) {
     console.error(e.message);
     process.exit(1);

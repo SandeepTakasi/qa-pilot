@@ -2,7 +2,7 @@
 
 Evidence-first feature testing for Claude Code. Any developer can generate and execute feature tests in their own session; every executed case produces the same report structure with mandatory evidence; QA reviews instead of executing; ClickUp holds one live view of testing confidence per feature.
 
-The design rests on two ideas. **Uniformity is enforced by tooling, not discipline**, because anything that depends on five people remembering a convention during crunch fails inside a week. And **the committed Playwright spec is the durable asset**: agentic sessions are scaffolding that authors and triages; the spec is what runs today for evidence and forever in CI.
+The design rests on two ideas. **Uniformity is enforced by tooling, not discipline**, because anything that depends on five people remembering a convention during crunch fails inside a week. And **the committed Playwright spec is the durable asset**: agentic sessions are scaffolding that authors and triages; the spec is what runs today for evidence and, once QA approves it, unattended in CI ([SETUP-CI.md](./SETUP-CI.md)).
 
 ## The pipeline
 
@@ -79,6 +79,8 @@ schemas/           the host profile, case, and report contracts
 hooks/             ClickUp write guard, so the scripted path is the only write path
 SETUP-CLICKUP.md   one-time workspace setup you do by hand
 DECISIONS.md       what this plugin enforces on a host, and what swapping it would cost
+SETUP-CI.md        running the approved suite unattended, and what CI cannot do
+templates/         a GitHub Actions workflow to copy into a host repo
 ```
 
 [DECISIONS.md](./DECISIONS.md) is worth reading before adopting this anywhere new. Short version: Playwright is a deliberate hard dependency because the trace *is* the evidence model, while ClickUp is surface-level, since no script ever calls it and swapping trackers is mostly prose.

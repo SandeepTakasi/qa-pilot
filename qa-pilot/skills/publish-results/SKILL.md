@@ -26,7 +26,7 @@ Nonzero exit → STOP, print errors, point at `/qa-pilot:qa-init`.
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/parse-report.mjs" <playwright-report.json> <meta.json> \
-  --specs testing/<feature>/runs/<run_id>/specs.json -o report.json
+  --specs testing/<feature>/specs.json -o report.json
 ```
 
 `specs.json` is the `{"<CASE-ID>": "<path to its spec file>"}` map `/qa-pilot:run-tests` wrote. It makes each verdict record `spec_sha`, the hash of the spec that produced it. Without it approval cannot carry forward, because there is no way to tell an unchanged spec from a rewritten one, and every passing case goes back for review.

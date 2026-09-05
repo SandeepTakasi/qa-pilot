@@ -1,0 +1,132 @@
+# QA-Pilot regression run. Copy to .github/workflows/ in your repo and edit the marked
+# lines. Full explanation, including the two prerequisites, in SETUP-CI.md.
+#
+# This runs the specs QA approved against a DEPLOYED environment. It is a post-deploy and
+# nightly check, not a pull request check: a PR run would test whatever happens to be
+# deployed to the shared environment, not the PR's code, and produce a red or green that
+# means nothing. Trigger it from your deploy job, or on a schedule.
+
+name: QA-Pilot regression
+
+on:
+  schedule:
+    - cron: '0 3 * * 1-5'    # weekday mornings, before people start
+  workflow_dispatch:          # and on demand
+  # Preferred, if your deploy workflow can signal completion:
+  # workflow_run:
+  #   workflows: ["Deploy to QA"]
+  #   types: [completed]
+
+concurrency:
+  # One run at a time per environment. Two suites against one QA environment fight over
+  # the same records and produce failures that are neither a regression nor reproducible.
+  group: qa-pilot-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FEATURE: checkout                       # EDIT: the feature to regress
+      QA_ENV: qa                              # EDIT: an environment key from your profile
+      APP: storefront                         # EDIT: an app key from your profile
+      PROFILE: qa-pilot.config.yaml           # EDIT if your profile lives elsewhere
+      PLUGIN: .qa-pilot-plugin/qa-pilot/scripts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The plugin is installed in Claude Code, not in your repo, so CI checks it out
+      # separately. Pin a tag or SHA: an unpinned ref means a change to QA-Pilot can turn
+      # your build red overnight with nothing in your own history to explain it.
+      - name: Check out QA-Pilot
+        uses: actions/checkout@v4
+        with:
+          repository: <owner>/<qa-pilot-repo>   # EDIT
+          ref: v0.1.0                            # EDIT: pin a tag or SHA
+          path: .qa-pilot-plugin
+          # token: ${{ secrets.QA_PILOT_REPO_TOKEN }}   # only if that repo is private
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install the browser
+        run: npx playwright install --with-deps chromium
+
+      # PREREQUISITE 1. CI has no interactive terminal, so the /setup-profiles handoff
+      # cannot run here. Provide a non-interactive login that writes the same storage
+      # state file the specs expect. See SETUP-CI.md; this is host-specific, so it is a
+      # placeholder rather than something QA-Pilot can write for you.
+      - name: Sign in
+        env:
+          QA_USER: ${{ secrets.QA_USER }}
+          QA_PASSWORD: ${{ secrets.QA_PASSWORD }}
+        run: node scripts/ci-login.mjs        # EDIT: your own login script
+
+      # PREREQUISITE 2. The runner must be able to reach the deployed environment. If it
+      # is behind a VPN or an IP allowlist, add the runner to it, or run this on a
+      # self-hosted runner inside the network.
+      - name: Read the deployed build, before
+        run: |
+          echo "SHA_BEFORE=$(node $PLUGIN/read-env-sha.mjs $PROFILE $QA_ENV $APP --sha-only)" >> $GITHUB_ENV
+          # Taken from the profile, never from a workflow variable. Two places to record
+          # one URL is one place to get it wrong, and the publish gate refuses a report
+          # whose env_url disagrees with the profile.
+          echo "QA_URL=$(node $PLUGIN/lib/profile.mjs $PROFILE | jq -r ".environments.$QA_ENV.apps.$APP")" >> $GITHUB_ENV
+
+      # Runs exactly what QA approved, and only while the spec still matches what they
+      # approved. No ClickUp call: approved.json is committed.
+      - name: Select the approved specs
+        run: |
+          echo "SPECS=$(node $PLUGIN/ci-gate.mjs select \
+            --approved testing/$FEATURE/approved.json \
+            --specs testing/$FEATURE/specs.json)" >> $GITHUB_ENV
+
+      - name: Run
+        run: npx playwright test $SPECS --reporter=json > playwright-report.json
+        continue-on-error: true    # the verdict step decides, so the report is built first
+
+      - name: Read the deployed build, after
+        run: |
+          echo "SHA_AFTER=$(node $PLUGIN/read-env-sha.mjs $PROFILE $QA_ENV $APP --sha-only)" >> $GITHUB_ENV
+
+      - name: Build the report
+        run: |
+          cat > meta.json <<JSON
+          {
+            "run_id": "${{ github.run_id }}-$FEATURE",
+            "feature": "$FEATURE", "app": "$APP", "env_name": "$QA_ENV",
+            "env_url": "$QA_URL", "api_mode": "server",
+            "sha_before": "$SHA_BEFORE", "sha_after": "$SHA_AFTER",
+            "sha_source": "$PROFILE:$QA_ENV", "sha_format": "commit",
+            "evidence_capture": "on-failure",
+            "executor": "github-actions", "model_version": "none (CI regression run)",
+            "started_at": "$(date -u +%FT%TZ)", "finished_at": "$(date -u +%FT%TZ)"
+          }
+          JSON
+          node $PLUGIN/parse-report.mjs playwright-report.json meta.json \
+            --specs testing/$FEATURE/specs.json -o report.json
+
+      # Keep the evidence whatever the outcome. A red build with no trace is a red build
+      # someone re-runs instead of reading.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-pilot-${{ github.run_id }}
+          path: |
+            report.json
+            test-results/
+          retention-days: 14
+
+      - name: Verdict
+        run: node $PLUGIN/ci-gate.mjs verdict --report report.json
+
+# This job does not publish to ClickUp, by design. Publishing writes to the tracker as a
+# person and runs through the approval gate over MCP, neither of which a build runner has.
+# When a regression needs to be in ClickUp, download report.json from the artifacts and
+# run /qa-pilot:publish-results against it.

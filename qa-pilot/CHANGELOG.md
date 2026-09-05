@@ -25,6 +25,29 @@ prose with no mechanism behind it.
 - Removed the `feature-actually-broken` rejection tag, which contradicted the rule beneath
   it. Rejection means the test was wrong; a real break is an approved verdict plus a bug.
 
+### CI runs the approved suite
+
+The committed specs were only ever run by a human typing `/run-tests`, so the claim that
+regression coverage accumulates as a side effect of normal work had nothing behind it.
+
+- `scripts/ci-gate.mjs select` decides what CI runs from `approved.json` alone. CI cannot
+  reach ClickUp (the lifecycle is driven over MCP by a model, and a build runner is
+  neither) and now does not need to: the ledger is committed, names every case QA
+  accepted, and carries the hash of the spec they accepted.
+- A spec that no longer matches its approved hash is excluded rather than run. A green CI
+  run against an unreviewed spec claims a human stands behind something no human read.
+- `select` exits nonzero when nothing is runnable. A suite that passes having executed
+  zero tests is the most expensive kind of false confidence.
+- `ci-gate.mjs verdict` separates a regression from a broken environment, since paging the
+  feature team because the QA box is down burns the credibility of the whole signal.
+  `flaky` fails the build, like everywhere else here.
+- `templates/qa-pilot-ci.yml` plus `SETUP-CI.md`, which is explicit that CI does not
+  publish, that this is a post-deploy and nightly check rather than a PR check, and that a
+  non-interactive login is host-specific work the plugin cannot do for you.
+- `specs.json` moved from per-run to `testing/<feature>/specs.json` and is committed: the
+  mapping does not vary per run, and CI reads it from the repo.
+- `read-env-sha.mjs --sha-only`, so a CI step stays one line.
+
 ### Gates measure what they claim to measure
 
 - Confidence requires an approved **pass**, not just approval, and reads `Unknown` rather

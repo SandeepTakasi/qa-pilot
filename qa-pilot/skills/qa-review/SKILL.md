@@ -99,7 +99,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/bug-report.mjs" \
   --report testing/<feature>/runs/<run_id>/report.json \
   --cases testing/<feature>/cases.yaml \
   --confirmed <CASE-ID,CASE-ID> \
-  --specs testing/<feature>/runs/<run_id>/specs.json \
+  --specs testing/<feature>/specs.json \
   --bugs testing/<feature>/bugs.json \
   --profile <profile-path>
 ```

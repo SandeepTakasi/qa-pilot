@@ -23,8 +23,14 @@ Last verified 2026-08-30, against the commands in the final section.
 Worth stating, because it is the longer list and people assume otherwise.
 
 No frontend framework assumption: nothing in the plugin knows or cares about Vue, React, or
-anything else. No CI system. No test-id attribute name. No assertion style. No mock-mode
-mechanism. No status vocabulary. No spec directory layout. No environment naming.
+anything else. No test-id attribute name. No assertion style. No mock-mode mechanism. No
+status vocabulary. No spec directory layout. No environment naming.
+
+No CI system either, with one qualification worth being exact about. `ci-gate.mjs` is plain
+Node and knows nothing about any runner; it answers "what did QA approve" and "what does
+this run mean for the build", and the runner invokes the tests. What ships GitHub-shaped is
+`templates/qa-pilot-ci.yml`, a file hosts copy and edit. Porting it is a translation of six
+steps, not a change to the plugin.
 
 All of those live in the committed host profile, which is the whole portability premise:
 onboarding a second project is one `/qa-init` run, not a fork.
@@ -100,11 +106,14 @@ grep -rn 'api\.clickup\|clickup\.com' qa-pilot/scripts/ | grep -v yaml.mjs
 #    Expected output: qa-pilot/scripts/clickup-guard.mjs, and nothing else.
 grep -rl 'mcp__' qa-pilot/scripts/*.mjs qa-pilot/scripts/lib/*.mjs | grep -v yaml.mjs
 
-# 3. Where Playwright coupling lives. Expected exactly these four:
+# 3. Where Playwright coupling lives. Expected exactly these five:
 #      lib/profile.mjs          version floor check only
 #      parse-report.mjs         the real one: parses the JSON reporter format
 #      save-storage-state.mjs   the other real one: uses the Playwright API
 #      validate-report.mjs      mentions it in messages only
+#      bug-report.mjs           mentions it in the bug text only
+#    ci-gate.mjs must NOT appear: it reasons about approval and verdicts, and
+#    the runner is what knows how to invoke a test.
 grep -rl 'playwright' qa-pilot/scripts/*.mjs qa-pilot/scripts/lib/*.mjs \
   | grep -v yaml.mjs | sort
 ```

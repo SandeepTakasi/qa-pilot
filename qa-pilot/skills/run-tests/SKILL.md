@@ -139,15 +139,17 @@ Write `testing/<feature>/runs/<run_id>/meta.json`:
 }
 ```
 
-Also write `testing/<feature>/runs/<run_id>/specs.json`, mapping each case ID to the spec file that ran:
+Also update `testing/<feature>/specs.json`, mapping each case ID to the spec file that ran, and **commit it**:
 
 ```json
 { "CHECKOUT-ORDER-001": "e2e/checkout/CHECKOUT-ORDER-001.spec.ts" }
 ```
 
-`parse-report.mjs` hashes those files so each verdict records the spec that produced it. That hash is what lets an approved case keep its approval when it passes again unchanged, and what sends it back for review when someone edited the spec.
+It lives at the feature level rather than under the run, because the mapping does not change from run to run and CI reads it from the repo. Merge into it rather than replacing it: a run of three cases must not drop the other twenty.
 
-Copy the Playwright JSON report next to it. `/qa-pilot:publish-results` reads all three.
+`parse-report.mjs` hashes those files so each verdict records the spec that produced it. That hash is what lets an approved case keep its approval when it passes again unchanged, what sends it back for review when someone edited the spec, and what CI uses to run only what QA actually approved.
+
+Copy the Playwright JSON report next to `meta.json`. `/qa-pilot:publish-results` reads them together.
 
 ## 9. Apply the flake protocol
 
