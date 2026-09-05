@@ -189,3 +189,45 @@ test('warns when forbidden network assertions have no console evidence', () => {
   const { warnings } = validateProfile(p);
   assert.ok(warnings.some((w) => w.includes('video-only')), warnings.join('\n'));
 });
+
+// --- production environments -------------------------------------------------
+
+test('a production URL is refused unless the host says so explicitly', () => {
+  const errs = errorsFor((d) => {
+    const env = Object.values(d.environments)[0];
+    env.apps[Object.keys(env.apps)[0]] = 'https://prod.example.com';
+  });
+  assert.equal(errs.some((e) => /looks like production/.test(e)), true, errs.join('\n'));
+});
+
+test('a bare apex domain reads as production', () => {
+  const errs = errorsFor((d) => {
+    const env = Object.values(d.environments)[0];
+    env.apps[Object.keys(env.apps)[0]] = 'https://example.com';
+  });
+  assert.equal(errs.some((e) => /looks like production/.test(e)), true);
+});
+
+test('qa and staging hostnames are never mistaken for production', () => {
+  // A false refusal here blocks legitimate work, which is how a check gets bypassed.
+  for (const url of [
+    'https://qa.example.com', 'https://staging.example.com',
+    'https://qa-thing.example.com', 'https://dev.example.com', 'http://localhost:5173',
+  ]) {
+    const errs = errorsFor((d) => {
+      const env = Object.values(d.environments)[0];
+      env.apps[Object.keys(env.apps)[0]] = url;
+    });
+    assert.deepEqual(errs.filter((e) => /looks like production/.test(e)), [], url);
+  }
+});
+
+test('allow_production accepts the risk and records it as a warning', () => {
+  const d = golden();
+  const env = Object.values(d.environments)[0];
+  env.apps[Object.keys(env.apps)[0]] = 'https://prod.example.com';
+  env.allow_production = true;
+  const { errors, warnings } = validateProfile(d);
+  assert.deepEqual(errors.filter((e) => /looks like production/.test(e)), []);
+  assert.equal(warnings.some((w) => /live session tokens/.test(w)), true, warnings.join('\n'));
+});

@@ -99,3 +99,56 @@ test('an edge-type case satisfies the boundary slot', () => {
 test('steps are required', () => {
   assert.ok(errorsFor((d) => { d.cases[0].steps = []; }).some((e) => e.includes('at least one step')));
 });
+
+// --- assertion lint ----------------------------------------------------------
+
+const expectationErrors = (text) => {
+  const d = golden();
+  d.cases[0].expected = [text];
+  return validateCases(d, profile).filter((e) => /expected\[/.test(e));
+};
+
+test('padding no longer smuggles a vague expectation past the lint', () => {
+  // The rule was anchored to the whole string, so "It works" was refused while
+  // "Verify that the page works as expected" sailed through, which is the phrasing
+  // a model actually writes.
+  for (const vague of [
+    'It works',
+    'Verify that the page works as expected',
+    'Confirm the checkout screen looks correct after submitting',
+    'Everything is fine and there are no errors',
+    'The operation completes successfully',
+  ]) {
+    assert.equal(expectationErrors(vague).length > 0, true, `should refuse: ${vague}`);
+  }
+});
+
+test('ordinary UI wording is not mistaken for a network assertion', () => {
+  // "request" and "fetch" are ordinary product nouns. Refusing them taught the team the
+  // linter was wrong, which is worse than the rule being absent.
+  for (const fine of [
+    'The request form appears with a Submit button',
+    'The fetch button is disabled while the row loads',
+    'The "Saved" toast appears above the table',
+  ]) {
+    assert.deepEqual(expectationErrors(fine), [], `should allow: ${fine}`);
+  }
+});
+
+test('real network phrasing is still refused where the host forbids it', () => {
+  for (const wire of [
+    'The API response returns status 200',
+    'The page waits for the response before showing the row',
+    'A POST request is sent to the orders endpoint',
+  ]) {
+    assert.equal(expectationErrors(wire).length > 0, true, `should refuse: ${wire}`);
+  }
+});
+
+test('an expectation with nothing to bind to warns rather than refusing', () => {
+  const d = golden();
+  d.cases[0].expected = ['The state persists after a reload'];
+  const errs = validateCases(d, profile);
+  assert.deepEqual(errs.filter((e) => /expected\[/.test(e)), [], 'never a refusal');
+  assert.equal(errs.warnings.some((w) => /bind to/.test(w)), true);
+});

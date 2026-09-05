@@ -75,7 +75,9 @@ rm -f .qa-pilot/allow-clickup-writes
 
 The flag expires after 30 minutes; re-`touch` it if a long review session starts getting denied.
 
-- **Approve** → this host's name for `approved`. The case counts toward the confidence numerator, and it stays executable: the next build regresses it automatically, with no reset by anyone. That persistence is what turns this from a one-shot into a suite.
+- **Approve** → this host's name for `approved`. The case counts toward the confidence numerator only when its verdict was also a pass, and it stays executable: the next build regresses it automatically. If the spec is unchanged and passes again, the approval carries forward untouched, which is what turns this from a one-shot into a suite. Record the accepted spec hash in `testing/<feature>/approved.json` (`/qa-pilot:publish-results` writes it from the run's `report.json`) and commit it, because approval means approved-for-this-spec: an edited spec sends the case back here rather than inheriting a verdict it never earned.
+
+  Approving a **confirmed real failure** is the right call: it records that a human looked and agreed the feature is broken, not that the feature works. It does not raise the score, since only an approved pass counts, so file the bug and say plainly that the feature is Not Ready.
 - **Reject** → its name for `rejected`, **plus a reason tag**. Use a consistent vocabulary: `bad-assertion`, `env-issue`, `wrong-expected`, `insufficient-evidence`, `selector-fragile`, `test-data-collision`, `feature-actually-broken`. These tags are the feedback loop: the weekly standards review reads their distribution and edits the skills and host profile accordingly. A rejection with no tag teaches nothing.
 - **Retest** → its name for `retest`. For environment problems and expired sessions, not for real failures.
 

@@ -7,8 +7,13 @@
 // three skills reading the same rule from prose would drift.
 //
 // Usage: node case-status.mjs --cases <cases.yaml> --statuses <statuses.json>
-//                             [--profile <qa-pilot.config.yaml>] [--include-quarantined]
+//                             [--profile <qa-pilot.config.yaml>] [--verdicts <report.json>]
+//                             [--include-quarantined]
+//        node case-status.mjs --transitions --cases <cases.yaml> --statuses <statuses.json>
+//                             --verdicts <report.json> --approved <approved.json> --profile <p>
 //   statuses.json: { "<CASE-ID>": "<ClickUp status>", ... }
+//   --verdicts accepts a report.json, or a plain { "<CASE-ID>": "pass|fail|..." } map.
+//   Without it the confidence score reads Unknown, since approval alone is not a pass.
 //
 // Pass --profile so the host's own status names are used. Without it the canonical names
 // apply, which is only right for a host that happens to use them.
@@ -27,31 +32,115 @@ export { DEFAULT_STATUSES } from './lib/statuses.mjs';
 const WEIGHT = { P0: 3, P1: 2, P2: 1 };
 
 /**
- * Confidence for a feature, per the PRD weighting.
- * Any P0 without an accepted verdict forces "Not Ready" regardless of the score,
- * because a high percentage must never speak louder than an unproven critical case.
+ * Confidence for a feature.
+ *
+ * A case counts toward the numerator only when QA accepted its verdict AND that verdict
+ * was a pass. Status alone is not enough: qa-review correctly tells QA that a confirmed
+ * real failure is a bug rather than a broken test, so the honest path for a failing P0 is
+ * to APPROVE the verdict. Counting status alone therefore made a feature read Ready
+ * precisely because QA had confirmed its P0s were broken.
+ *
+ * Verdicts come from the run. Without them the score is unknowable rather than zero, and
+ * saying so is better than printing a number that means something else.
+ *
+ * @param {Array<{id: string, approved: boolean, passed: boolean|null}>} cases
+ * @param {Record<string,string>} priorities case id -> P0|P1|P2
  */
 export function confidence(cases, priorities) {
+  const haveVerdicts = cases.some((c) => c.passed !== null && c.passed !== undefined);
+  if (!haveVerdicts) {
+    return {
+      score: null, ready: false, label: 'Unknown',
+      why: 'no verdicts supplied, so nothing has been proved yet. Pass --verdicts once a run has published.',
+    };
+  }
   let earned = 0, total = 0;
-  let p0Unapproved = false;
+  let p0Blocking = false;
   for (const c of cases) {
     const w = WEIGHT[priorities[c.id]] ?? 1;
     total += w;
-    if (c.approved) earned += w;
-    else if (priorities[c.id] === 'P0') p0Unapproved = true;
+    const counts = Boolean(c.approved && c.passed);
+    if (counts) earned += w;
+    else if (priorities[c.id] === 'P0') p0Blocking = true;
   }
   const score = total === 0 ? 0 : earned / total;
-  return { score, ready: !p0Unapproved, label: p0Unapproved ? 'Not Ready' : `${Math.round(score * 100)}%` };
+  return {
+    score, ready: !p0Blocking,
+    label: p0Blocking ? 'Not Ready' : `${Math.round(score * 100)}%`,
+    why: p0Blocking ? 'at least one P0 case is not an approved pass' : undefined,
+  };
+}
+
+// What publishing a run should do to each case's status. Deterministic, because letting a
+// model decide would reintroduce exactly the drift the lifecycle exists to prevent.
+const TRANSITION_RULES = {
+  flaky: 'quarantined',
+  fail: 'under_review',
+  blocked: null,          // never executed to a verdict; leave the status alone
+};
+
+/**
+ * Per-case target lifecycle key for a publish.
+ *
+ * The rule that matters: an unchanged spec passing again on a new build KEEPS its
+ * approval. Sending every case back to review on every run means a weekly re-review of
+ * the whole suite by one person, which at a few hundred cases guarantees either abandoned
+ * regressions or rubber-stamping.
+ *
+ * "Unchanged" is judged by spec hash. If either the run's hash or the approved hash is
+ * missing, the spec is treated as changed, so the conservative path is the default.
+ */
+export function publishTransitions(cases, statuses, verdicts, {
+  statusNames = DEFAULT_STATUSES, specHashes = {}, approvedHashes = {},
+} = {}) {
+  const lookup = statusLookup(statusNames);
+  const keyFor = (status) => lookup.get(String(status).trim().toLowerCase());
+  const out = [];
+  for (const c of cases) {
+    const verdict = verdicts[c.id];
+    if (!verdict) continue;                       // not in this run
+    const from = keyFor(statuses[c.id]);
+    let to;
+    let reason;
+    if (verdict === 'pass') {
+      const wasApproved = from === 'approved';
+      const ranHash = specHashes[c.id];
+      const okHash = approvedHashes[c.id];
+      const specUnchanged = Boolean(ranHash && okHash && ranHash === okHash);
+      if (wasApproved && specUnchanged) {
+        to = 'approved';
+        reason = 'unchanged spec passed again, so the existing approval carries forward';
+      } else {
+        to = 'under_review';
+        reason = wasApproved
+          ? 'passed, but the spec changed since QA approved it, so the approval does not carry'
+          : 'passed and has not been approved yet';
+      }
+    } else if (Object.hasOwn(TRANSITION_RULES, verdict)) {
+      to = TRANSITION_RULES[verdict];
+      reason = verdict === 'flaky'
+        ? 'passed only on retry, so it is quarantined for hardening'
+        : verdict === 'fail'
+          ? 'failed, so QA must look at it'
+          : 'blocked, so the status is left alone';
+    }
+    if (to) out.push({ id: c.id, from: from ?? null, to, verdict, reason });
+  }
+  return out;
 }
 
 /**
  * @param {Array<{id: string, priority: string}>} cases from cases.yaml
  * @param {Record<string,string>} statuses case id -> the status ClickUp reports
- * @param {{includeQuarantined?: boolean, statusNames?: Record<string,string>}} opts
+ * @param {{includeQuarantined?: boolean, statusNames?: Record<string,string>,
+ *           verdicts?: Record<string,string>}} opts
  *   statusNames: the host's names per lifecycle key, from profile clickup.statuses
+ *   verdicts: case id -> pass|fail|flaky|blocked from the latest published run.
+ *             Without it the confidence score reports Unknown rather than a number,
+ *             because approval alone does not mean the case passed.
  * @returns partition + confidence
  */
-export function partitionCases(cases, statuses, { includeQuarantined = false, statusNames = DEFAULT_STATUSES } = {}) {
+export function partitionCases(cases, statuses, { includeQuarantined = false, statusNames = DEFAULT_STATUSES, verdicts = {} } = {}) {
   const executable = [];
   const held = [];
   const quarantined = [];
@@ -94,9 +183,12 @@ export function partitionCases(cases, statuses, { includeQuarantined = false, st
   const orphaned = Object.keys(statuses).filter((id) => !cases.some((c) => c.id === id));
 
   const priorities = Object.fromEntries(cases.map((c) => [c.id, c.priority]));
+  const hasVerdicts = Object.keys(verdicts).length > 0;
   const scored = cases.map((c) => ({
     id: c.id,
     approved: VERDICT_APPROVED_KEYS.has(keyFor(statuses[c.id])),
+    // null when this case was not in the run, so an absent verdict never counts as a pass.
+    passed: hasVerdicts ? verdicts[c.id] === 'pass' : null,
   }));
 
   const warnings = [];
@@ -152,7 +244,7 @@ if (isMain(import.meta.url)) {
   const statusesPath = argValue('--statuses');
   const profilePath = argValue('--profile');
   if (!casesPath || !statusesPath) {
-    console.error('usage: node case-status.mjs --cases <cases.yaml> --statuses <statuses.json> [--profile <qa-pilot.config.yaml>] [--include-quarantined]');
+    console.error('usage: node case-status.mjs --cases <cases.yaml> --statuses <statuses.json> [--profile <qa-pilot.config.yaml>] [--verdicts <report.json>] [--include-quarantined]');
     process.exit(2);
   }
   try {
@@ -167,8 +259,48 @@ if (isMain(import.meta.url)) {
     } else {
       console.error('warning: no --profile given, so the canonical status names are assumed; pass --profile to use this host\'s names');
     }
+    // A report.json or a bare id->verdict map; both are accepted so a caller can pass
+    // whichever it already has to hand.
+    let verdicts = {};
+    const verdictsPath = argValue('--verdicts');
+    if (verdictsPath) {
+      const raw = JSON.parse(readFileSync(verdictsPath, 'utf8'));
+      verdicts = Array.isArray(raw?.cases)
+        ? Object.fromEntries(raw.cases.map((c) => [c.id, c.verdict]))
+        : raw;
+    }
+    // --transitions: what publishing this run should do to each status, and the updated
+    // approval ledger. Printed rather than applied, since the writes go over MCP.
+    if (process.argv.includes('--transitions')) {
+      if (!verdictsPath) throw new Error('--transitions needs --verdicts <report.json>');
+      const report = JSON.parse(readFileSync(verdictsPath, 'utf8'));
+      const specHashes = Array.isArray(report?.cases)
+        ? Object.fromEntries(report.cases.filter((c) => c.spec_sha).map((c) => [c.id, c.spec_sha]))
+        : {};
+      const ledgerPath = argValue('--approved');
+      let approvedHashes = {};
+      if (ledgerPath) {
+        try { approvedHashes = JSON.parse(readFileSync(ledgerPath, 'utf8')); }
+        catch { console.error(`warning: no approval ledger at ${ledgerPath}; every passing case will go back for review`); }
+      } else {
+        console.error('warning: no --approved ledger given, so no approval can carry forward');
+      }
+      const transitions = publishTransitions(doc.cases, statuses, verdicts, {
+        statusNames, specHashes, approvedHashes,
+      });
+      // The ledger records the spec hash QA accepted, so a later edit to that spec is
+      // detectable. Only cases landing in `approved` belong in it.
+      const nextLedger = { ...approvedHashes };
+      for (const t of transitions) {
+        if (t.to === 'approved' && specHashes[t.id]) nextLedger[t.id] = specHashes[t.id];
+        else if (t.to !== 'approved') delete nextLedger[t.id];
+      }
+      console.log(JSON.stringify({ transitions, approved_ledger: nextLedger }, null, 2));
+      process.exit(0);
+    }
+
     const out = partitionCases(doc.cases, statuses, {
-      statusNames,
+      statusNames, verdicts,
       includeQuarantined: process.argv.includes('--include-quarantined'),
     });
     for (const w of out.warnings) console.error(`warning: ${w}`);

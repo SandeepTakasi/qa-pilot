@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { parse } from '../lib/yaml.mjs';
 import { loadProfile } from '../lib/profile.mjs';
-import { partitionCases, confidence } from '../case-status.mjs';
+import { partitionCases, confidence, publishTransitions } from '../case-status.mjs';
 import { DEFAULT_STATUSES } from '../lib/statuses.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -19,7 +19,11 @@ const { profile } = loadProfile(resolve(FIXTURES, 'qa-pilot.config.yaml'));
 const NAMES = profile.clickup.statuses;
 const STATUS = Object.fromEntries(Object.entries(NAMES).map(([k, v]) => [k.toUpperCase(), v]));
 
-const partition = (statuses, opts = {}) => partitionCases(cases, statuses, { statusNames: NAMES, ...opts });
+// These tests are about status handling, so they default to a run where everything
+// passed. Confidence-specific tests pass their own verdicts.
+const allPass = () => Object.fromEntries(ids.map((id) => [id, 'pass']));
+const partition = (statuses, opts = {}) =>
+  partitionCases(cases, statuses, { statusNames: NAMES, verdicts: allPass(), ...opts });
 const allAt = (status) => Object.fromEntries(ids.map((id) => [id, status]));
 const execIds = (out) => out.executable.map((e) => e.id).sort();
 
@@ -157,18 +161,18 @@ test('a fully approved feature scores 100% and reads Ready', () => {
 
 test('confidence weights P0 over P1 over P2', () => {
   const priorities = { A: 'P0', B: 'P1', C: 'P2' };
-  const all = confidence([{ id: 'A', approved: true }, { id: 'B', approved: true }, { id: 'C', approved: true }], priorities);
+  const all = confidence([{ id: 'A', approved: true, passed: true }, { id: 'B', approved: true, passed: true }, { id: 'C', approved: true, passed: true }], priorities);
   assert.equal(all.score, 1);
   assert.equal(all.label, '100%');
 
-  const noP2 = confidence([{ id: 'A', approved: true }, { id: 'B', approved: true }, { id: 'C', approved: false }], priorities);
+  const noP2 = confidence([{ id: 'A', approved: true, passed: true }, { id: 'B', approved: true, passed: true }, { id: 'C', approved: false, passed: true }], priorities);
   assert.equal(noP2.score, 5 / 6);
   assert.equal(noP2.ready, true);
 });
 
 test('any unapproved P0 forces Not Ready regardless of score', () => {
   const priorities = { A: 'P0', B: 'P1', C: 'P2' };
-  const c = confidence([{ id: 'A', approved: false }, { id: 'B', approved: true }, { id: 'C', approved: true }], priorities);
+  const c = confidence([{ id: 'A', approved: false, passed: true }, { id: 'B', approved: true, passed: true }, { id: 'C', approved: true, passed: true }], priorities);
   assert.equal(c.ready, false);
   assert.equal(c.label, 'Not Ready');
 });
@@ -178,4 +182,78 @@ test('one unapproved P0 sinks an otherwise-approved feature', () => {
   const out = partition({ ...allAt(STATUS.APPROVED), [p0.id]: STATUS.UNDER_REVIEW });
   assert.equal(out.confidence.ready, false);
   assert.equal(out.confidence.label, 'Not Ready');
+});
+
+test('an approved case that FAILED does not count toward confidence', () => {
+  // The bug this replaced: qa-review tells QA that a confirmed real failure is a bug rather
+  // than a broken test, so the honest action on a failing P0 is to approve the verdict.
+  // Scoring on status alone therefore read "100% Ready" precisely when QA had just
+  // confirmed the feature was broken.
+  const priorities = { A: 'P0', B: 'P1' };
+  const c = confidence(
+    [{ id: 'A', approved: true, passed: false }, { id: 'B', approved: true, passed: true }],
+    priorities,
+  );
+  assert.equal(c.ready, false);
+  assert.equal(c.label, 'Not Ready');
+  assert.match(c.why, /approved pass/);
+});
+
+test('without verdicts the score is Unknown, never a number', () => {
+  const out = partitionCases(cases, allAt(STATUS.APPROVED), { statusNames: NAMES });
+  assert.equal(out.confidence.score, null);
+  assert.equal(out.confidence.label, 'Unknown');
+  assert.equal(out.confidence.ready, false);
+});
+
+test('a case absent from the run never counts as a pass', () => {
+  const p0 = cases.find((c) => c.priority === 'P0');
+  const verdicts = allPass();
+  delete verdicts[p0.id];
+  const out = partition(allAt(STATUS.APPROVED), { verdicts });
+  assert.equal(out.confidence.ready, false, 'an unrun P0 is not a proved P0');
+});
+
+// --- publish transitions -----------------------------------------------------
+
+test('an unchanged spec that passes again keeps its approval', () => {
+  // Otherwise every regression run resets the whole feature to unreviewed, which at a few
+  // hundred cases means one person re-reviewing everything weekly: abandoned or rubber-stamped.
+  const [t] = publishTransitions(
+    [{ id: 'X-1' }], { 'X-1': NAMES.approved }, { 'X-1': 'pass' },
+    { statusNames: NAMES, specHashes: { 'X-1': 'abc123' }, approvedHashes: { 'X-1': 'abc123' } },
+  );
+  assert.equal(t.to, 'approved');
+  assert.match(t.reason, /carries forward/);
+});
+
+test('a spec edited since approval goes back for review even when it passes', () => {
+  const [t] = publishTransitions(
+    [{ id: 'X-1' }], { 'X-1': NAMES.approved }, { 'X-1': 'pass' },
+    { statusNames: NAMES, specHashes: { 'X-1': 'new456' }, approvedHashes: { 'X-1': 'abc123' } },
+  );
+  assert.equal(t.to, 'under_review');
+  assert.match(t.reason, /spec changed/);
+});
+
+test('a missing spec hash is treated as changed', () => {
+  const [t] = publishTransitions(
+    [{ id: 'X-1' }], { 'X-1': NAMES.approved }, { 'X-1': 'pass' }, { statusNames: NAMES },
+  );
+  assert.equal(t.to, 'under_review', 'unknown provenance takes the conservative path');
+});
+
+test('failures and flakes route by verdict, and blocked is left alone', () => {
+  const out = publishTransitions(
+    [{ id: 'A' }, { id: 'B' }, { id: 'C' }],
+    { A: NAMES.approved, B: NAMES.approved, C: NAMES.approved },
+    { A: 'fail', B: 'flaky', C: 'blocked' },
+    { statusNames: NAMES },
+  );
+  assert.deepEqual(out.map((t) => [t.id, t.to]), [['A', 'under_review'], ['B', 'quarantined']]);
+});
+
+test('a case that did not run is not transitioned', () => {
+  const out = publishTransitions([{ id: 'A' }], { A: NAMES.approved }, {}, { statusNames: NAMES });
+  assert.equal(out.length, 0);
 });

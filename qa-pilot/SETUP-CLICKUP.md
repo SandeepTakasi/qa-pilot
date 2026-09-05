@@ -67,8 +67,33 @@ There is no Trace field. Traces are **attachments** on the case task, not a fiel
 
 **Turn on Private Attachment Links.** Settings → Advanced Permissions. Available on every
 plan, **off by default**. Without it, every attachment URL is public, unauthenticated and
-non-expiring, secured by an unguessable string alone. Test traces carry application state
-and can carry tokens.
+non-expiring, secured by an unguessable string alone. That matters more than it sounds,
+because of what is actually inside a trace.
+
+### What a trace contains
+
+A Playwright trace is a full recording of the session, not a screenshot of it. Every trace
+QA-Pilot uploads carries:
+
+- **The session credential.** Whatever authenticated the run: the `Authorization` header,
+  the session cookie, the Firebase ID token in local storage. Network requests and storage
+  snapshots are both recorded, so the token is in there in more than one place.
+- Every request and response body the run touched, including any personal data in the
+  fixtures.
+- DOM snapshots of every page state, so anything rendered on screen is in the file.
+- The video, byte for byte, and the console output.
+
+Two things follow.
+
+**Treat an attachment link as the credential itself.** Anyone holding the URL holds the
+session that ran the test. Private Attachment Links is what makes this a link your team
+can hold rather than one anybody can. Turn it on before the first publish, not after.
+
+**Use short-lived, low-privilege test accounts.** The right fix is that a leaked trace
+leaks a token that expires and could not do much anyway. Never run QA-Pilot as an admin
+account, and never against production: the profile validator refuses a production-looking
+URL for exactly this reason, and overriding it with `allow_production: true` means
+accepting that live tokens for real users will be uploaded to the tracker.
 
 Consequence to know: `npx playwright show-trace <url>` stops working against ClickUp URLs
 because it sends no auth header. Reviewers download the trace first, then open it.

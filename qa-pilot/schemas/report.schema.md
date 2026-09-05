@@ -35,6 +35,10 @@ cases:
     failure_summary: string  # REQUIRED for fail: the Playwright error, ANSI-stripped,
                              # capped at 500 chars. Never model prose.
     retries: integer
+    spec_sha: string | null  # hash of the spec file that produced this verdict, from
+                             # parse-report's --specs map. null means the spec was not
+                             # hashed, which is treated as "changed": a passing case with
+                             # no hash goes back for review rather than keeping approval.
 
 summary: { pass, fail, flaky, blocked }
 unmapped_specs: [string]     # spec titles with no case-ID prefix; dropped, never guessed at
@@ -72,11 +76,17 @@ A case that passed only on retry is `flaky`, never `pass`. This is the rule that
 - the deployed build changed mid-run and any case still carries a verdict. The mismatch is **recomputed** from `sha_before`/`sha_after`, never taken from the report's own `sha_mismatch` flag, and a flag that disagrees with the SHAs is itself a refusal
 - `env_name` is not registered, `env_url` is missing, or `env_url` disagrees with the registry
 - `api_mode` matches the host's sandbox mode: sandbox backends are seeded and always succeed
-- a verdict is outside the enum, a case ID is not in the approved map, a `fail` has no failure summary, or the summary disagrees with the cases
+- `--statuses` was not passed. It is the statuses recorded at the start of the run, and it is the only thing that proves each case was approved. A gate that can be skipped by omitting a flag is not a gate
+- a case was not in an approved state when it ran. Executable states are `approved_for_execution`, `approved`, `retest`, `under_review` and `quarantined`; `case_review` and `rejected` are refused. Matching uses this host's names from `clickup.statuses`, so a status the profile does not declare is a refusal rather than a guess
+- a verdict is outside the enum, a case ID is not in the case map, a `fail` has no failure summary, or the summary disagrees with the cases
 - more than 10% of cases are `blocked`. **RUN HALTED**: the environment failed, not the feature
 
 ## Confidence score
 
-`(approved P0 × 3 + approved P1 × 2 + approved P2 × 1) / (total, same weights)`.
+A case counts toward the numerator only when QA **approved** its verdict **and** that verdict was a **pass**, weighted P0 x 3, P1 x 2, P2 x 1 over the same weighted total.
 
-Any P0 not Approved displays **Not Ready** regardless of the score. Quarantined and flaky cases stay in the denominator, since lowering the number is the point.
+Both halves are required. `/qa-pilot:qa-review` correctly tells QA that a confirmed real failure is a bug rather than a broken test, so the honest action on a failing P0 is to approve the verdict. Scoring on approval alone therefore read a feature as 100% Ready precisely when QA had just confirmed its P0s were broken.
+
+Any P0 that is not an approved pass displays **Not Ready** regardless of the score. A case with no verdict never counts, so a case that did not run is not a proved case. With no verdicts at all the score is **Unknown**, not zero: nothing has been proved either way, and saying so beats printing a number that means something else.
+
+Quarantined and flaky cases stay in the denominator, since lowering the number is the point.

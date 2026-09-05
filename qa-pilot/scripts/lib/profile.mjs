@@ -17,6 +17,11 @@ const ASSERT_STYLES = ['ui-state', 'mixed'];
 const EVIDENCE_EXTRAS = ['console_log'];
 const CAPTURE_MODES = ['always', 'on-failure', 'off'];
 const PLAN_TIERS = ['free', 'unlimited', 'business', 'enterprise'];
+// Hostnames that mean production to a person reading them. Deliberately narrow: it must
+// not fire on qa.example.com or staging.example.com, since a false refusal here blocks
+// legitimate work and teaches people to bypass the check.
+const PROD_HOST_RE = /^https?:\/\/(www\.)?(?!(qa|staging|stage|stg|test|testing|dev|develop|development|uat|sandbox|preview|demo|local)[.-])[^/]*\b(prod|production|live)\b[^/]*\/?|^https?:\/\/(www\.)?[a-z0-9-]+\.(com|io|app|net|org|co|ai|dev)\/?$/i;
+
 const SHA_FORMATS = ['commit', 'build-id'];
 const PLAYWRIGHT_FLOOR = [1, 51, 0]; // storageState({ indexedDB: true })
 
@@ -86,6 +91,22 @@ export function validateProfile(raw, { profilePath = null } = {}) {
           if (!isUrl(url)) err(`environments.${envName}.apps.${appName}: must be an http(s) URL`);
         }
       }
+      // Production is not a place to run this. Specs create and mutate real records under
+      // stored credentials, and every run writes a trace containing those credentials
+      // (see "What a trace contains" in the ClickUp setup guide). A host that genuinely
+      // must point at a production hostname can say so explicitly with
+      // `allow_production: true`, which keeps the decision recorded in the profile rather
+      // than made silently by whoever typed the URL.
+      if (env.allow_production !== true) {
+        for (const [appName, url] of Object.entries(isObj(env.apps) ? env.apps : {})) {
+          if (typeof url === 'string' && PROD_HOST_RE.test(url)) {
+            err(`environments.${envName}.apps.${appName}: "${url}" looks like production. QA-Pilot specs create and mutate real data, and each run writes a trace containing session tokens that is then uploaded to the tracker. Point this at a QA or staging deployment, or set environments.${envName}.allow_production: true to accept that.`);
+          }
+        }
+      } else {
+        warnings.push(`environments.${envName}: allow_production is set. Runs against it will create real records, and their traces will carry live session tokens into the tracker.`);
+      }
+
       const s = env.sha_source;
       if (!isObj(s)) {
         err(`environments.${envName}.sha_source: required. A deploy SHA that cannot be read cannot be published.`);

@@ -3,12 +3,13 @@
 // never has to police formatting, and why a Pass without evidence cannot enter the record.
 //
 // Usage: node validate-report.mjs <report.json> --profile <config.yaml> \
-//          [--map <clickup-map.json>] [--base <dir for relative artifact paths>]
+//          --statuses <statuses.json> [--map <clickup-map.json>] [--base <dir>]
 
 import { readFileSync, statSync } from 'node:fs';
 import { isMain } from './lib/is-main.mjs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { loadProfile } from './lib/profile.mjs';
+import { EXECUTABLE_KEYS, DEFAULT_STATUSES, statusLookup } from './lib/statuses.mjs';
 
 const VERDICTS = ['pass', 'fail', 'flaky', 'blocked'];
 const BLOCKED_HALT_RATIO = 0.1;
@@ -28,7 +29,7 @@ const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 /**
  * @returns {{ errors: string[], warnings: string[] }} errors non-empty === do not publish
  */
-export function validateReport(report, profile, { map = null, base = null, stat = statSync } = {}) {
+export function validateReport(report, profile, { map = null, base = null, stat = statSync, statuses = null } = {}) {
   const errors = [];
   const warnings = [];
   const err = (m) => errors.push(m);
@@ -132,7 +133,18 @@ export function validateReport(report, profile, { map = null, base = null, stat 
       }
 
       if (map && !Object.hasOwn(map, c.id)) {
-        err(`${at}: not in the approved case map. Only cases QA approved may be published.`);
+        err(`${at}: not in the case map, so it was never synced to the tracker`);
+      }
+      // Map membership only proves a task exists; every generated case is in the map from
+      // the moment it is created. Approval is a STATUS, so check the status.
+      if (statuses) {
+        const key = statusLookup(profile.clickup?.statuses ?? DEFAULT_STATUSES)
+          .get(String(statuses[c.id] ?? '').trim().toLowerCase());
+        if (!key) {
+          err(`${at}: no recorded status from the run, so approval cannot be verified. Record statuses.json during /run-tests.`);
+        } else if (!EXECUTABLE_KEYS.has(key) && key !== 'quarantined') {
+          err(`${at}: was "${statuses[c.id]}" (${key}) when the run happened, which is not an approved state. Only cases QA approved may be published.`);
+        }
       }
 
       if (needsEvidence(c.verdict)) {
@@ -205,7 +217,7 @@ if (isMain(import.meta.url)) {
   const reportPath = process.argv[2];
   const profilePath = argValue('--profile');
   if (!reportPath || !profilePath) {
-    console.error('usage: node validate-report.mjs <report.json> --profile <config.yaml> [--map <clickup-map.json>] [--base <dir>]');
+    console.error('usage: node validate-report.mjs <report.json> --profile <config.yaml> --statuses <statuses.json> [--map <clickup-map.json>] [--base <dir>]');
     process.exit(2);
   }
   try {
@@ -213,10 +225,18 @@ if (isMain(import.meta.url)) {
     const report = JSON.parse(readFileSync(reportPath, 'utf8'));
     const mapPath = argValue('--map');
     const map = mapPath ? JSON.parse(readFileSync(mapPath, 'utf8')) : null;
+    const statusesPath = argValue('--statuses');
+    if (!statusesPath) {
+      // Not a warning. Approval is the gate's whole purpose, and a gate that can be
+      // skipped by leaving off a flag is one that gets skipped.
+      console.error('REFUSED: --statuses is required. It is the statuses.json recorded at the start of the run, and it is what proves each case was approved. Without it the gate cannot tell an approved case from an unapproved one.');
+      process.exit(1);
+    }
+    const statuses = JSON.parse(readFileSync(statusesPath, 'utf8'));
     // Relative artifact paths resolve against the report's own directory unless told
     // otherwise. Never null: evidence is always checked on disk.
     const base = argValue('--base') ?? dirname(resolve(reportPath));
-    const { errors, warnings } = validateReport(report, profile, { map, base });
+    const { errors, warnings } = validateReport(report, profile, { map, base, statuses });
     for (const w of warnings) console.error(`warning: ${w}`);
     if (errors.length) {
       console.error(`REFUSED. This report cannot be published: ${reportPath}`);

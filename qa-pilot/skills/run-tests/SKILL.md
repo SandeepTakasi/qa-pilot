@@ -47,6 +47,8 @@ Those are lifecycle keys, not status names. What this host calls each one lives 
 
 Nonzero exit means nothing is eligible, so **STOP** and show `held[]`. Running unapproved cases and publishing them defeats the gate that keeps hallucinated cases out of the record.
 
+**Keep `statuses.json`.** `/qa-pilot:publish-results` passes it to the publish gate, which is what actually enforces approval. This step is a courtesy that saves a wasted run; the gate is the enforcement, because a step written only in prose is one a hurried session skips.
+
 If ClickUp is unreachable, STOP rather than assuming approval.
 
 ## 3. Sandbox or deployed?
@@ -137,7 +139,15 @@ Write `testing/<feature>/runs/<run_id>/meta.json`:
 }
 ```
 
-Copy the Playwright JSON report next to it. `/qa-pilot:publish-results` reads both.
+Also write `testing/<feature>/runs/<run_id>/specs.json`, mapping each case ID to the spec file that ran:
+
+```json
+{ "CHECKOUT-ORDER-001": "e2e/checkout/CHECKOUT-ORDER-001.spec.ts" }
+```
+
+`parse-report.mjs` hashes those files so each verdict records the spec that produced it. That hash is what lets an approved case keep its approval when it passes again unchanged, and what sends it back for review when someone edited the spec.
+
+Copy the Playwright JSON report next to it. `/qa-pilot:publish-results` reads all three.
 
 ## 9. Apply the flake protocol
 

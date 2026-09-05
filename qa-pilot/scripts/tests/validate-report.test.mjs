@@ -173,7 +173,7 @@ test('evidence is checked on disk even when no base is given', () => {
 });
 
 test('prototype keys cannot satisfy the approved-case map', () => {
-  refuses((r) => { r.cases[0].id = 'constructor'; }, /not in the approved case map/, { map });
+  refuses((r) => { r.cases[0].id = 'constructor'; }, /not in the case map/, { map });
 });
 
 // --- sandbox runs are never verdict-eligible ---
@@ -193,7 +193,7 @@ test('refuses a verdict outside the enum', () => {
 });
 
 test('refuses a case QA never approved', () => {
-  refuses((r) => { r.cases[0].id = 'CHECKOUT-GHOST-099'; }, /not in the approved case map/, { map });
+  refuses((r) => { r.cases[0].id = 'CHECKOUT-GHOST-099'; }, /not in the case map/, { map });
 });
 
 test('refuses a fail with no failure summary', () => {
@@ -224,4 +224,38 @@ test('halts a run where more than 10% of cases are blocked', () => {
 test('warns about flaky cases rather than silently accepting them', () => {
   const { warnings } = validateReport(golden(), profile, { map, base: FIXTURES });
   assert.ok(warnings.some((w) => /flaky/.test(w)), warnings.join('\n'));
+});
+
+// --- approval is a status, not map membership --------------------------------
+
+const NAMES = profile.clickup.statuses;
+const allAt = (name) => Object.fromEntries(golden().cases.map((c) => [c.id, name]));
+
+test('a case that was not approved when it ran cannot be published', () => {
+  // The hole this closes: the map is not an approval list. Every generated case is in it
+  // from the moment it is created, so checking membership let a hand-run of unapproved
+  // specs publish cleanly.
+  refuses(() => {}, /not an approved state/, { map, statuses: allAt(NAMES.case_review) });
+});
+
+test('a rejected case cannot be published either', () => {
+  refuses(() => {}, /not an approved state/, { map, statuses: allAt(NAMES.rejected) });
+});
+
+test('every executable state publishes', () => {
+  for (const name of [NAMES.approved, NAMES.approved_for_execution, NAMES.retest, NAMES.under_review, NAMES.quarantined]) {
+    assert.deepEqual(
+      validateReport(golden(), profile, { map, base: FIXTURES, statuses: allAt(name) }).errors,
+      [], `${name} should publish`,
+    );
+  }
+});
+
+test('a case with no recorded status is refused, never assumed approved', () => {
+  refuses(() => {}, /approval cannot be verified/, { map, statuses: {} });
+});
+
+test('the host status names decide, not the canonical ones', () => {
+  // "Approved" is not a name this host uses, so it proves nothing.
+  refuses(() => {}, /approval cannot be verified/, { map, statuses: allAt('Approved') });
 });

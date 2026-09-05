@@ -18,9 +18,22 @@ const MIX_SLOTS = ['happy', 'negative', 'boundary', 'permission', 'data-validati
 const SLOT_FOR_TYPE = { happy: 'happy', negative: 'negative', edge: 'boundary', permission: 'permission', 'data-validation': 'data-validation' };
 
 // An expected outcome with no observable subject cannot become an assertion.
-const VAGUE_RE = /^\W*(it |the (page|app|ui|screen) )?(works|is (ok|fine|correct|right)|looks (ok|fine|right|correct)|as expected|successful(ly)?|succeeds|no (issues?|errors?|problems?)|behaves (properly|correctly)|is displayed correctly|passes)\W*$/i;
-// Network-flavoured phrasing, which silently no-ops where operations never hit the network.
-const NETWORK_RE = /\b(requests?|responses?|API calls?|network|payloads?|endpoints?|XHR|fetch|status\s+[1-5]\d{2}|[1-5]xx)\b/i;
+// Phrasing that describes a feeling about the screen rather than something a spec can
+// check. Deliberately NOT anchored to the whole string: anchoring meant "Verify that the
+// page works as expected" sailed through, since the padding stopped it matching, which is
+// how a lint gets a reputation for catching nothing.
+const VAGUE_RE = /\b(works|working) (fine|correctly|properly|as expected)\b|\bas expected\b|\blooks? (ok|okay|fine|right|correct|good)\b|\bis (ok|okay|fine|correct)\b|\bsuccessful(ly)?\b|\bno (issues?|errors?|problems?)\b|\bbehaves? (properly|correctly)\b|\bdisplayed correctly\b|\bworks\b/i;
+
+// What makes an expectation easy to bind to: literal text, a number, or a named piece of
+// UI. This is a WARNING, never a refusal. Deciding by keyword whether a sentence names
+// something observable is a guess, and a gate that wrongly refuses good work is one people
+// route around, which costs more than the vague expectations it catches.
+const ANCHOR_RE = /"[^"]+"|'[^']+'|\u201c[^\u201d]+\u201d|\d|\b(button|link|field|input|dialog|modal|toast|banner|panel|section|form|row|column|table|list|badge|chip|icon|menu|tab|card|header|label|message|error|tooltip|checkbox|dropdown|url|route|title|heading|count|total|number|value|text|item|entry|summary)s?\b/i;
+
+// Only phrasing that really means the wire. Bare `request`/`response`/`fetch` were banned
+// before, which flagged "the request form appears" and "the fetch button is disabled":
+// ordinary UI wording, and false positives are what teach a team to ignore a linter.
+const NETWORK_RE = /\b(API (call|request|response)s?|network (request|response|call|activity|tab)s?|HTTP (request|response|call|status)s?|payloads?|endpoints?|XHR|status\s+[1-5]\d{2}|\b[1-5]xx)\b|\b(waits? for|intercepts?|mocks?|stubs?) (the )?(request|response|fetch|call)s?\b|\b(request|response) (is |was )?(sent|returned|received|made)\b/i;
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
@@ -32,11 +45,19 @@ const strList = (v) => Array.isArray(v) && v.every(isStr);
  * @param {{ featureDir?: string }} opts
  * @returns {string[]} errors (empty === valid)
  */
+/**
+ * @returns {string[]} errors, with a `warnings` property carrying non-fatal notes.
+ *   Kept as an array so `errors.length` still reads as "is this publishable".
+ */
 export function validateCases(doc, profile, { featureDir = null } = {}) {
   const errors = [];
+  const warnings = [];
   const err = (m) => errors.push(m);
+  const warn = (m) => warnings.push(m);
+  const withWarnings = (list) => Object.defineProperty(list, 'warnings', { value: warnings });
+  const done = () => withWarnings(errors);
 
-  if (!isObj(doc)) return ['cases file: must be a YAML mapping'];
+  if (!isObj(doc)) return withWarnings(['cases file: must be a YAML mapping']);
 
   if (!isStr(doc.feature)) err('feature: required, non-empty string');
   else if (featureDir && doc.feature !== featureDir) {
@@ -93,6 +114,9 @@ export function validateCases(doc, profile, { featureDir = null } = {}) {
         let verifiable = 0;
         c.expected.forEach((e, j) => {
           const where = `${at}.expected[${j}]`;
+          if (!ANCHOR_RE.test(e)) {
+            warn(`${where}: "${e}" names nothing obvious for a spec to bind to. Exact text in quotes, a number, or a named element makes it unambiguous, and without one the spec author picks a selector on your behalf.`);
+          }
           if (e.trim().length < 10 || VAGUE_RE.test(e)) {
             err(`${where}: "${e}" states no observable outcome. Name the element, text, or state a Playwright assertion could check.`);
             return;
@@ -131,7 +155,7 @@ export function validateCases(doc, profile, { featureDir = null } = {}) {
     }
   }
 
-  return errors;
+  return done();
 }
 
 function argValue(flag) {
@@ -152,6 +176,7 @@ if (isMain(import.meta.url)) {
     const doc = parse(readFileSync(casesPath, 'utf8'));
     const featureDir = basename(dirname(resolve(casesPath)));
     const errors = validateCases(doc, profile, { featureDir });
+    for (const w of errors.warnings ?? []) console.error(`warning: ${w}`);
     if (errors.length) {
       console.error(`cases file is invalid: ${casesPath}`);
       for (const e of errors) console.error(`  - ${e}`);

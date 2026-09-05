@@ -17,6 +17,8 @@ environments:                       # required, >= 1 entry
   <env-name>:                       # e.g. qa, staging
     apps:                           # required; keys must be a subset of apps{}
       <app-name>: <http(s) URL>     # base URL of that app in this environment
+    allow_production: true          # optional. Required to register a production-looking
+                                    # URL; see "Never point this at production" below.
     sha_source:                     # required: how the DEPLOYED build is identified
       url: <http(s) URL>            # required, e.g. https://qa.example.com/api/version
       json_path: string             # exactly ONE of json_path | regex
@@ -99,6 +101,21 @@ feature is new or where P0 cases are involved.
 
 The gate enforces whichever mode the run recorded, so it can tell a deliberately
 uncaptured pass from a lost artifact rather than guessing.
+
+## Never point this at production
+
+The validator refuses an environment whose URL looks like production (an apex domain, or a
+`prod`/`production`/`live` hostname). Two reasons, both concrete:
+
+- Specs create and mutate real records. A QA suite run weekly against production is a
+  weekly stream of junk orders, junk users and junk payments in real data.
+- Every run writes a trace containing the session credential that authenticated it, and
+  that trace is uploaded to the tracker. See "What a trace contains" in `SETUP-CLICKUP.md`.
+
+`qa`, `staging`, `dev`, `uat`, `sandbox`, `preview` and `localhost` hostnames pass. A host
+that genuinely must target a production hostname sets `allow_production: true` on that
+environment, which turns the refusal into a recorded warning. Use short-lived,
+low-privilege test accounts if you do.
 
 ## Identifying the deployed build
 

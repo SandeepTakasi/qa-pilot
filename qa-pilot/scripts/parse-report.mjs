@@ -7,6 +7,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { isMain } from './lib/is-main.mjs';
+import { createHash } from 'node:crypto';
 
 const FAILURE_SUMMARY_MAX = 500;
 const CASE_ID_RE = /^([A-Z0-9]+-[A-Z0-9]+-\d{3})\b/;
@@ -93,7 +94,12 @@ function failureSummary(results) {
  * @param {object} meta run metadata written by /run-tests
  * @returns {object} report.json
  */
-export function buildReport(pw, meta) {
+/** sha256 of a spec file, so approval can be bound to the exact test that ran. */
+export function hashSpec(source) {
+  return createHash('sha256').update(source, 'utf8').digest('hex').slice(0, 16);
+}
+
+export function buildReport(pw, meta, { specHashes = {} } = {}) {
   const shaMismatch = Boolean(meta.sha_before && meta.sha_after && meta.sha_before !== meta.sha_after);
 
   const cases = [];
@@ -117,6 +123,10 @@ export function buildReport(pw, meta) {
       failure_summary: verdict === 'fail' || verdict === 'flaky' ? failureSummary(results) : null,
       // Retries per project, summed, so having several projects never inflates it.
       retries: entries.reduce((sum, r) => sum + Math.max(0, r.length - 1), 0),
+      // Hash of the spec that produced this verdict. QA approves a case, but a spec is
+      // what runs; without this binding a spec could be rewritten after approval and its
+      // results would still publish as approved.
+      spec_sha: specHashes[m[1]] ?? null,
     });
   }
 
@@ -163,13 +173,24 @@ function argValue(flag) {
 if (isMain(import.meta.url)) {
   const [pwPath, metaPath] = process.argv.slice(2);
   if (!pwPath || !metaPath) {
-    console.error('usage: node parse-report.mjs <playwright-report.json> <meta.json> [-o report.json]');
+    console.error('usage: node parse-report.mjs <playwright-report.json> <meta.json> [--specs <specs.json>] [-o report.json]');
     process.exit(2);
   }
   try {
     const pw = JSON.parse(readFileSync(pwPath, 'utf8'));
     const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
-    const report = buildReport(pw, meta);
+    // Optional: a { "<CASE-ID>": "<path to spec>" } map, so each verdict records the hash
+    // of the spec that produced it.
+    let specHashes = {};
+    const specsPath = argValue('--specs');
+    if (specsPath) {
+      const map = JSON.parse(readFileSync(specsPath, 'utf8'));
+      for (const [id, file] of Object.entries(map)) {
+        try { specHashes[id] = hashSpec(readFileSync(file, 'utf8')); }
+        catch { console.error(`warning: cannot hash spec for ${id}: ${file}`); }
+      }
+    }
+    const report = buildReport(pw, meta, { specHashes });
     const out = argValue('-o');
     const json = JSON.stringify(report, null, 2);
     if (out) {
