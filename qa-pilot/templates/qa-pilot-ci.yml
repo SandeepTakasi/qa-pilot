@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: <owner>/<qa-pilot-repo>   # EDIT
-          ref: v0.1.0                            # EDIT: pin a tag or SHA
+          ref: v0.2.0                            # EDIT: pin a tag or SHA
           path: .qa-pilot-plugin
           # token: ${{ secrets.QA_PILOT_REPO_TOKEN }}   # only if that repo is private
 

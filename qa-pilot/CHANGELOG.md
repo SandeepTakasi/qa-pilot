@@ -1,6 +1,24 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-09-23)
+
+### Upgrading from 0.1.0
+
+Three changes will stop an existing setup working until you act on them. All three are
+deliberate: each one closes a gate that could previously be walked past.
+
+1. **`validate-report.mjs` now requires `--statuses`.** Pass the statuses file recorded at
+   the start of the run. Without it the gate cannot tell an approved case from an
+   unapproved one, and a gate that can be skipped by omitting a flag is not a gate.
+2. **A profile registering a production-looking URL no longer validates.** Point the
+   environment at QA or staging, or set `allow_production: true` on it to accept that runs
+   will mutate real records and that traces carrying live session tokens will be uploaded
+   to your tracker.
+3. **The confidence score reads `Unknown` until you pass `--verdicts`.** Approval alone
+   never meant the feature worked, and the old number said it did.
+
+Nothing else requires action. `approved.json`, `specs.json` and `bugs.json` are new files
+the skills write as you go.
 
 ### The defect path
 
@@ -12,7 +30,7 @@ prose with no mechanism behind it.
   failure text is Playwright's, verbatim. A model paraphrasing an error into a ticket
   reintroduces the unverifiable claim this pipeline exists to remove, and a developer who
   cannot trust the error in the ticket opens the trace instead, which buys nothing.
-- Deduplicated through a committed `testing/<feature>/bugs.json` ledger, keyed by case ID
+- Deduplicated through a `testing/<feature>/bugs.json` ledger, keyed by case ID
   plus a normalized failure signature. Digits are stripped before hashing, because
   Playwright errors carry timeouts and element counts that vary run to run while naming
   one defect. Without this, a weekly regression run refiles every open bug every week.
@@ -44,8 +62,8 @@ regression coverage accumulates as a side effect of normal work had nothing behi
 - `templates/qa-pilot-ci.yml` plus `SETUP-CI.md`, which is explicit that CI does not
   publish, that this is a post-deploy and nightly check rather than a PR check, and that a
   non-interactive login is host-specific work the plugin cannot do for you.
-- `specs.json` moved from per-run to `testing/<feature>/specs.json` and is committed: the
-  mapping does not vary per run, and CI reads it from the repo.
+- `specs.json` moved from per-run to `testing/<feature>/specs.json`: the mapping does not
+  vary per run, and CI reads it from the repo.
 - `read-env-sha.mjs --sha-only`, so a CI step stays one line.
 
 ### Gates measure what they claim to measure
@@ -58,6 +76,19 @@ regression coverage accumulates as a side effect of normal work had nothing behi
   outright without `--statuses`.
 - The assertion lint no longer loses to padding, and no longer flags "request form".
 - Production environments are refused unless `allow_production` is set.
+
+### Committing QA artifacts is a choice
+
+Nothing is required to be committed, and no skill refuses over it. Keeping specs and
+`testing/` out of a repo is a legitimate decision, so `/qa-pilot:qa-init` now prices each
+file rather than forbidding it, and names the two coherent modes:
+
+- **Local-only.** Approved cases, evidenced verdicts and the ClickUp record still work.
+  CI, cross-machine reproduction and approval carry-forward do not.
+- **Committed.** Ignore only `testing/*/runs/`, and everything works.
+
+CI is the one part with a hard requirement, because it reads the specs and ledgers out of
+the checkout and has no other source.
 
 ## 0.1.0 (2026-08-30)
 
