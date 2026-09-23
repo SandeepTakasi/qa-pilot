@@ -257,3 +257,17 @@ test('a case that did not run is not transitioned', () => {
   const out = publishTransitions([{ id: 'A' }], { A: NAMES.approved }, {}, { statusNames: NAMES });
   assert.equal(out.length, 0);
 });
+
+test('a feature with no P0 case is not Ready just because nothing can veto it', () => {
+  // The P0 veto cannot fire when there is no P0, so on its own it reported a feature
+  // where every case failed as Ready.
+  const c = confidence([{ id: 'A', approved: true, passed: false }], { A: 'P1' });
+  assert.equal(c.ready, false);
+  assert.equal(c.label, 'Not Ready');
+});
+
+test('a feature with no P0 case says so even when it passes', () => {
+  const c = confidence([{ id: 'A', approved: true, passed: true }], { A: 'P1' });
+  assert.equal(c.ready, true);
+  assert.match(c.why, /no P0 case/);
+});

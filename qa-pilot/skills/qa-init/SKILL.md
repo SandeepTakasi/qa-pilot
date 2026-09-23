@@ -105,4 +105,24 @@ sandbox value from this host's profile.
 
 Recommend **committing the profile**, because an uncommitted one means five developers end up testing against five different definitions of the truth. The other skills warn rather than refuse when it is uncommitted, so a host that deliberately gitignores it while trialling the pipeline still works. Say plainly that it must be committed before the team relies on it.
 
+**Say what must never be gitignored.** Gitignoring `testing/` is a tempting way to keep a trial tidy, and it breaks three things silently rather than loudly:
+
+| Path | What it holds | What is lost if it is ignored |
+|---|---|---|
+| `testing/<feature>/cases.yaml` | the approved case set | nobody else can run the feature |
+| `testing/<feature>/specs.json` | case ID to spec path | verdicts carry no `spec_sha`, so approval never carries forward |
+| `testing/<feature>/approved.json` | the spec hash QA accepted | every run resets the feature to unreviewed, and CI can run nothing |
+| `testing/<feature>/bugs.json` | filed bugs per case | every regression run refiles every open bug |
+
+Run artifacts under `testing/<feature>/runs/` are a different matter and are fine to ignore: they are large, per-run, and reproducible. The same goes for the spec directory, which must be committed, because a committed spec is the whole durable asset.
+
+Offer the precise entries rather than a blanket rule:
+
+```gitignore
+testing/*/runs/
+.playwright/
+test-results/
+playwright-report/
+```
+
 Then state the next step: `/qa-pilot:setup-profiles` to save auth profiles, then `/qa-pilot:generate-tests <feature>` for the pilot feature.

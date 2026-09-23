@@ -71,29 +71,45 @@ jobs:
       # PREREQUISITE 2. The runner must be able to reach the deployed environment. If it
       # is behind a VPN or an IP allowlist, add the runner to it, or run this on a
       # self-hosted runner inside the network.
+      # Assign first, THEN echo. `echo "X=$(cmd)"` returns echo's exit status, so a
+      # failing command would leave X empty and let the job carry on green.
       - name: Read the deployed build, before
         run: |
-          echo "SHA_BEFORE=$(node $PLUGIN/read-env-sha.mjs $PROFILE $QA_ENV $APP --sha-only)" >> $GITHUB_ENV
+          SHA_BEFORE=$(node $PLUGIN/read-env-sha.mjs $PROFILE $QA_ENV $APP --sha-only)
           # Taken from the profile, never from a workflow variable. Two places to record
           # one URL is one place to get it wrong, and the publish gate refuses a report
           # whose env_url disagrees with the profile.
-          echo "QA_URL=$(node $PLUGIN/lib/profile.mjs $PROFILE | jq -r ".environments.$QA_ENV.apps.$APP")" >> $GITHUB_ENV
+          QA_URL=$(node $PLUGIN/lib/profile.mjs $PROFILE | jq -er ".environments.$QA_ENV.apps.$APP")
+          echo "SHA_BEFORE=$SHA_BEFORE" >> $GITHUB_ENV
+          echo "QA_URL=$QA_URL" >> $GITHUB_ENV
 
       # Runs exactly what QA approved, and only while the spec still matches what they
       # approved. No ClickUp call: approved.json is committed.
       - name: Select the approved specs
         run: |
-          echo "SPECS=$(node $PLUGIN/ci-gate.mjs select \
+          SPECS=$(node $PLUGIN/ci-gate.mjs select \
             --approved testing/$FEATURE/approved.json \
-            --specs testing/$FEATURE/specs.json)" >> $GITHUB_ENV
+            --specs testing/$FEATURE/specs.json)
+          # Belt and braces. An empty SPECS would make the next step
+          # `npx playwright test` with no arguments, which runs every spec in the repo,
+          # including ones QA never approved, and calls the result a regression pass.
+          if [ -z "$SPECS" ]; then
+            echo "select returned no specs; refusing to run the whole suite" >&2
+            exit 1
+          fi
+          echo "SPECS=$SPECS" >> $GITHUB_ENV
 
+      # $SPECS is intentionally unquoted: it is a space-separated list of spec paths.
+      # Spec paths must therefore not contain spaces. `select --json` gives a structured
+      # list if you ever need one.
       - name: Run
         run: npx playwright test $SPECS --reporter=json > playwright-report.json
         continue-on-error: true    # the verdict step decides, so the report is built first
 
       - name: Read the deployed build, after
         run: |
-          echo "SHA_AFTER=$(node $PLUGIN/read-env-sha.mjs $PROFILE $QA_ENV $APP --sha-only)" >> $GITHUB_ENV
+          SHA_AFTER=$(node $PLUGIN/read-env-sha.mjs $PROFILE $QA_ENV $APP --sha-only)
+          echo "SHA_AFTER=$SHA_AFTER" >> $GITHUB_ENV
 
       - name: Build the report
         run: |

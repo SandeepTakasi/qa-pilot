@@ -147,6 +147,14 @@ Also update `testing/<feature>/specs.json`, mapping each case ID to the spec fil
 
 It lives at the feature level rather than under the run, because the mapping does not change from run to run and CI reads it from the repo. Merge into it rather than replacing it: a run of three cases must not drop the other twenty.
 
+**It has to be tracked by git**, and a host that gitignores `testing/` will silently lose it:
+
+```bash
+git ls-files --error-unmatch testing/<feature>/specs.json
+```
+
+If that fails, warn the user directly. Without this file, `parse-report.mjs` records no `spec_sha`, so every passing case goes back for review on every run and CI can run nothing at all. It fails quietly, which is why it is worth checking rather than assuming.
+
 `parse-report.mjs` hashes those files so each verdict records the spec that produced it. That hash is what lets an approved case keep its approval when it passes again unchanged, what sends it back for review when someone edited the spec, and what CI uses to run only what QA actually approved.
 
 Copy the Playwright JSON report next to `meta.json`. `/qa-pilot:publish-results` reads them together.

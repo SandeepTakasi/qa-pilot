@@ -92,7 +92,15 @@ It returns each case's target lifecycle key with a reason, plus the updated appr
 
 **A case whose spec has not changed and which passed again keeps its approval.** Only cases that failed, went flaky, or ran from an edited spec go back to `under_review`. Sending the whole feature back on every run means one person re-reviewing several hundred cases weekly, which ends in either abandoned regression runs or rubber-stamping, and both are worse than no review.
 
-`approved.json` is the record of which spec QA accepted, as `{"<CASE-ID>": "<spec_sha>"}`. Commit it: it is what makes "approved" mean approved-for-this-spec rather than approved-once-forever.
+`approved.json` is the record of which spec QA accepted, as `{"<CASE-ID>": "<spec_sha>"}`. Commit it: it is what makes "approved" mean approved-for-this-spec rather than approved-once-forever, and it is the only thing CI reads to decide what it may run.
+
+Check that it is actually tracked, because a host that gitignores `testing/` loses it without any error:
+
+```bash
+git ls-files --error-unmatch testing/<feature>/approved.json
+```
+
+If that fails, tell the user plainly: approval will not carry forward, every regression run will send the whole feature back to review, and the CI job will refuse to run anything.
 
 ## 6. Write to ClickUp
 

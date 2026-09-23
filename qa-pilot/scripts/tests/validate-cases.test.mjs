@@ -152,3 +152,21 @@ test('an expectation with nothing to bind to warns rather than refusing', () => 
   assert.deepEqual(errs.filter((e) => /expected\[/.test(e)), [], 'never a refusal');
   assert.equal(errs.warnings.some((w) => /bind to/.test(w)), true);
 });
+
+test('"successful" as an adjective is not vague phrasing', () => {
+  // "a successful payment shows the receipt number" is perfectly checkable. Refusing it
+  // is the false positive that teaches a team the linter is wrong.
+  for (const fine of [
+    'A successful payment shows the receipt number',
+    'A successful login redirects to the dashboard',
+    'The order works out to 3 items in the cart',
+  ]) {
+    assert.deepEqual(expectationErrors(fine), [], `should allow: ${fine}`);
+  }
+});
+
+test('"successful" as a predicate still is vague', () => {
+  for (const vague of ['The save completes successfully', 'The login was successful']) {
+    assert.equal(expectationErrors(vague).length > 0, true, `should refuse: ${vague}`);
+  }
+});

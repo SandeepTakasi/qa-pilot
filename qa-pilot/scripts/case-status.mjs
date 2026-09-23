@@ -64,10 +64,21 @@ export function confidence(cases, priorities) {
     else if (priorities[c.id] === 'P0') p0Blocking = true;
   }
   const score = total === 0 ? 0 : earned / total;
+
+  // The P0 veto cannot fire on a feature that has no P0 case, so on its own it would
+  // report a feature where every case failed as Ready. `ready` is the field callers act
+  // on, so it needs a floor of its own.
+  const noP0 = !Object.values(priorities).includes('P0');
+  let why;
+  if (p0Blocking) why = 'at least one P0 case is not an approved pass';
+  else if (score === 0) why = 'no case is an approved pass yet';
+  else if (noP0) why = 'this feature has no P0 case, so nothing here can veto a release. Check that the case set is right.';
+
+  const ready = !p0Blocking && score > 0;
   return {
-    score, ready: !p0Blocking,
-    label: p0Blocking ? 'Not Ready' : `${Math.round(score * 100)}%`,
-    why: p0Blocking ? 'at least one P0 case is not an approved pass' : undefined,
+    score, ready,
+    label: ready ? `${Math.round(score * 100)}%` : 'Not Ready',
+    why,
   };
 }
 

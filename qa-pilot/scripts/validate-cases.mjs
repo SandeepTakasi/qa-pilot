@@ -19,10 +19,13 @@ const SLOT_FOR_TYPE = { happy: 'happy', negative: 'negative', edge: 'boundary', 
 
 // An expected outcome with no observable subject cannot become an assertion.
 // Phrasing that describes a feeling about the screen rather than something a spec can
-// check. Deliberately NOT anchored to the whole string: anchoring meant "Verify that the
+// check. `successful` is matched only as a predicate ("the save was successful") and as
+// the adverb, never as an adjective: "a successful payment shows the receipt number" is a
+// perfectly checkable expectation, and refusing it is the kind of false positive that
+// teaches a team the linter is wrong. Deliberately NOT anchored to the whole string: anchoring meant "Verify that the
 // page works as expected" sailed through, since the padding stopped it matching, which is
 // how a lint gets a reputation for catching nothing.
-const VAGUE_RE = /\b(works|working) (fine|correctly|properly|as expected)\b|\bas expected\b|\blooks? (ok|okay|fine|right|correct|good)\b|\bis (ok|okay|fine|correct)\b|\bsuccessful(ly)?\b|\bno (issues?|errors?|problems?)\b|\bbehaves? (properly|correctly)\b|\bdisplayed correctly\b|\bworks\b/i;
+const VAGUE_RE = /\b(works|working) (fine|correctly|properly|as expected)\b|\bas expected\b|\blooks? (ok|okay|fine|right|correct|good)\b|\bis (ok|okay|fine|correct)\b|\b(is|was|are|were) successful\b|\bsuccessfully\b|\bno (issues?|errors?|problems?)\b|\bbehaves? (properly|correctly)\b|\bdisplayed correctly\b|\bworks\b(?!\s+(out|with|like|around)\b)/i;
 
 // What makes an expectation easy to bind to: literal text, a number, or a named piece of
 // UI. This is a WARNING, never a refusal. Deciding by keyword whether a sentence names

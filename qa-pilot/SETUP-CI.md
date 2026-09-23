@@ -5,8 +5,8 @@ that pile into regression coverage, and it is the one step that keeps paying aft
 feature ships.
 
 Copy `templates/qa-pilot-ci.yml` into `.github/workflows/`, edit the lines marked `EDIT`,
-and read the two prerequisites below before you expect it to go green. On another CI
-system the same six steps port directly; nothing here is GitHub-specific except the YAML.
+and read the four prerequisites below before you expect it to go green. On another CI
+system the same steps port directly; nothing here is GitHub-specific except the YAML.
 
 ## What the CI job does, and what it deliberately does not
 
@@ -82,7 +82,21 @@ inside the network.
 The blocked-ratio rule turns that into a clear message rather than a wall of failures: over
 10% blocked reports the environment failed, not the feature.
 
-## Prerequisite 3: something has to be approved first
+## Prerequisite 3: the ledgers have to be in git
+
+CI reads `testing/<feature>/approved.json` and `testing/<feature>/specs.json` out of the
+checkout. There is no other source: that is what makes the job work without a ClickUp
+token.
+
+If your repository gitignores `testing/`, which is a common way to keep a trial tidy, both
+files exist on the machine that wrote them and nowhere else. The job then fails at
+selection with "no approved spec is runnable", which is the right outcome and a confusing
+one if you do not know to look at `.gitignore` first.
+
+Ignore `testing/*/runs/` if you want to keep run artifacts out of the repository. Do not
+ignore the directory above it.
+
+## Prerequisite 4: something has to be approved first
 
 `ci-gate.mjs select` refuses when no approved spec is runnable, and the job fails rather
 than reporting green having run nothing. That is deliberate: a suite that passes because it
