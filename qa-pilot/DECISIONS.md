@@ -13,7 +13,7 @@ Last verified 2026-08-30, against the commands in the final section.
 | Claude Code | Absolute | It is a plugin. There is no version of this that runs elsewhere. |
 | Playwright | Hard, deliberate | The deepest coupling in the system, and the one worth having. See below. |
 | Node 18 or newer | Trivial | Scripts are zero-dependency ESM. Any machine running Vite already qualifies. |
-| Git | Trivial | The host profile must be committed, so five developers share one definition of the truth rather than five local ones. |
+| Git | Trivial | Nothing is required to be committed. Committing the profile, the specs and the per-feature ledgers is what makes the pipeline work for a team rather than one machine, and CI needs them, but every skill warns and continues instead of refusing. |
 | ClickUp | Surface only | Much shallower than the name suggests. See below. |
 | YAML for config | Cosmetic | One file, one vendored parser. Chosen over JSON because the profile is hand-edited by QA and needs comments. |
 | Deployed environments with a readable build SHA | Hard, but it is process rather than technology | Applies whatever tracker or runner you use. A verdict that cannot be pinned to a build is not a verdict. |

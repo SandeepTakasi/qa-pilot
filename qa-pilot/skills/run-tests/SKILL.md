@@ -149,13 +149,13 @@ Also update `testing/<feature>/specs.json`, mapping each case ID to the spec fil
 
 It lives at the feature level rather than under the run, because the mapping does not change from run to run and CI reads it from the repo. Merge into it rather than replacing it: a run of three cases must not drop the other twenty.
 
-**It has to be tracked by git**, and a host that gitignores `testing/` will silently lose it:
+Check whether it is tracked, the same way you checked the profile:
 
 ```bash
 git ls-files --error-unmatch testing/<feature>/specs.json
 ```
 
-If that fails, warn the user directly. Without this file, `parse-report.mjs` records no `spec_sha`, so every passing case goes back for review on every run and CI can run nothing at all. It fails quietly, which is why it is worth checking rather than assuming.
+If it is not, **say so once and continue**. A host running in local-only mode has ignored `testing/` on purpose, which is a legitimate choice. What it costs is worth stating plainly rather than assuming they know: without this file `parse-report.mjs` records no `spec_sha`, so approval never carries forward and every passing case returns to review on the next run. Do not nag about it on every run.
 
 `parse-report.mjs` hashes those files so each verdict records the spec that produced it. That hash is what lets an approved case keep its approval when it passes again unchanged, what sends it back for review when someone edited the spec, and what CI uses to run only what QA actually approved.
 

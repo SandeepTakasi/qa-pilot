@@ -105,24 +105,47 @@ sandbox value from this host's profile.
 
 Recommend **committing the profile**, because an uncommitted one means five developers end up testing against five different definitions of the truth. The other skills warn rather than refuse when it is uncommitted, so a host that deliberately gitignores it while trialling the pipeline still works. Say plainly that it must be committed before the team relies on it.
 
-**Say what must never be gitignored.** Gitignoring `testing/` is a tempting way to keep a trial tidy, and it breaks three things silently rather than loudly:
+**Say what each file costs to gitignore.** Keeping QA artifacts out of the repo is a
+legitimate choice, and some teams have good reasons for it: a trial they do not want in the
+history, an app repo they keep free of test code, a policy about generated files. It is not
+a mistake. But each one buys tidiness by turning off a specific capability, quietly, so the
+trade should be made deliberately rather than discovered three months later.
 
-| Path | What it holds | What is lost if it is ignored |
+| Path | Ignoring it still leaves you | What stops working |
 |---|---|---|
-| `testing/<feature>/cases.yaml` | the approved case set | nobody else can run the feature |
-| `testing/<feature>/specs.json` | case ID to spec path | verdicts carry no `spec_sha`, so approval never carries forward |
-| `testing/<feature>/approved.json` | the spec hash QA accepted | every run resets the feature to unreviewed, and CI can run nothing |
-| `testing/<feature>/bugs.json` | filed bugs per case | every regression run refiles every open bug |
+| `testing/<feature>/runs/` | everything | nothing. Ignore this one: large, per-run, reproducible |
+| `qa-pilot.config.yaml` | a working pipeline for whoever holds it | five developers can test against five definitions of the truth |
+| `<spec_dir>/` (the specs) | local runs, evidence, publishing, review | CI, and anyone else reproducing a verdict |
+| `testing/<feature>/cases.yaml` | runs by whoever holds the file | anyone else running the feature |
+| `testing/<feature>/specs.json` | runs, evidence, publishing | `spec_sha` recording, so approval never carries forward |
+| `testing/<feature>/approved.json` | runs, evidence, publishing, review | approval carry-forward, and CI can select nothing |
+| `testing/<feature>/bugs.json` | filing bugs | deduplication, so every run refiles every open bug |
 
-Run artifacts under `testing/<feature>/runs/` are a different matter and are fine to ignore: they are large, per-run, and reproducible. The same goes for the spec directory, which must be committed, because a committed spec is the whole durable asset.
+Nothing refuses to run because of any of these. The skills warn at the moment it matters and
+carry on, which is the same treatment an uncommitted profile gets.
 
-Offer the precise entries rather than a blanket rule:
+Two degraded modes are coherent enough to name, so a host can pick one on purpose:
+
+- **Local-only.** Ignore the specs and all of `testing/`. You still get QA-approved cases,
+  evidenced verdicts and a ClickUp record. You give up CI, cross-machine reproduction, and
+  approval carry-forward, so every run returns the feature to review.
+- **Committed.** Ignore only `testing/*/runs/`. Everything works, and the repo carries the
+  specs and three small JSON files per feature.
+
+Recommend **Committed**, and say what Local-only costs rather than arguing. Offer the
+precise entries either way:
 
 ```gitignore
+# Committed mode (recommended)
 testing/*/runs/
 .playwright/
 test-results/
 playwright-report/
+
+# Local-only mode adds:
+# <spec_dir>/
+# testing/
+# qa-pilot.config.yaml
 ```
 
 Then state the next step: `/qa-pilot:setup-profiles` to save auth profiles, then `/qa-pilot:generate-tests <feature>` for the pilot feature.

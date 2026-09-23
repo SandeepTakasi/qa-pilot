@@ -82,19 +82,21 @@ inside the network.
 The blocked-ratio rule turns that into a clear message rather than a wall of failures: over
 10% blocked reports the environment failed, not the feature.
 
-## Prerequisite 3: the ledgers have to be in git
+## Prerequisite 3: the specs and ledgers are in the checkout
 
-CI reads `testing/<feature>/approved.json` and `testing/<feature>/specs.json` out of the
-checkout. There is no other source: that is what makes the job work without a ClickUp
-token.
+CI reads `testing/<feature>/approved.json`, `testing/<feature>/specs.json` and the spec
+files themselves out of the checkout. There is no other source, and that is exactly what
+lets the job run without a ClickUp token.
 
-If your repository gitignores `testing/`, which is a common way to keep a trial tidy, both
-files exist on the machine that wrote them and nowhere else. The job then fails at
-selection with "no approved spec is runnable", which is the right outcome and a confusing
-one if you do not know to look at `.gitignore` first.
+So this is the one part of QA-Pilot with a hard requirement about your repository. Running
+in local-only mode, where the specs and `testing/` are gitignored, is a legitimate way to
+use the rest of the pipeline, and CI is simply not available in that mode: the files exist
+on the machine that wrote them and nowhere else. The job fails at selection with "no
+approved spec is runnable", which is the correct outcome and a puzzling one if `.gitignore`
+is not the first place you look.
 
-Ignore `testing/*/runs/` if you want to keep run artifacts out of the repository. Do not
-ignore the directory above it.
+If you want CI, commit the spec directory and `testing/`, and ignore `testing/*/runs/` to
+keep the bulky per-run artifacts out.
 
 ## Prerequisite 4: something has to be approved first
 
