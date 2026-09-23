@@ -47,7 +47,9 @@ Those are lifecycle keys, not status names. What this host calls each one lives 
 
 Nonzero exit means nothing is eligible, so **STOP** and show `held[]`. Running unapproved cases and publishing them defeats the gate that keeps hallucinated cases out of the record.
 
-**Keep `statuses.json`.** `/qa-pilot:publish-results` passes it to the publish gate, which is what actually enforces approval. This step is a courtesy that saves a wasted run; the gate is the enforcement, because a step written only in prose is one a hurried session skips.
+**Keep `statuses.json`, and file it with the run in step 8.** `/qa-pilot:publish-results` passes it to the publish gate, which is what actually enforces approval. This step is a courtesy that saves a wasted run; the gate is the enforcement, because a step written only in prose is one a hurried session skips.
+
+It is written here, before the run, because approval has to be read before anything executes. The run ID is not known until the deploy SHA is read, so step 8 copies it into the run directory, where it becomes the record of what was approved **at the time of that run** rather than whatever the board says later.
 
 If ClickUp is unreachable, STOP rather than assuming approval.
 
@@ -157,7 +159,14 @@ If that fails, warn the user directly. Without this file, `parse-report.mjs` rec
 
 `parse-report.mjs` hashes those files so each verdict records the spec that produced it. That hash is what lets an approved case keep its approval when it passes again unchanged, what sends it back for review when someone edited the spec, and what CI uses to run only what QA actually approved.
 
-Copy the Playwright JSON report next to `meta.json`. `/qa-pilot:publish-results` reads them together.
+Copy two more files into `testing/<feature>/runs/<run_id>/` next to `meta.json`:
+
+- the Playwright JSON report
+- `statuses.json` from step 2, so the run carries the approval state it actually ran under
+
+`/qa-pilot:publish-results` reads all three. A statuses file left only at
+`testing/<feature>/runs/statuses.json` is overwritten by the next run, so a report published
+later would be gated against approvals that did not exist when it ran.
 
 ## 9. Apply the flake protocol
 

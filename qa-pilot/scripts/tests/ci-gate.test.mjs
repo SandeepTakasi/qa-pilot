@@ -113,3 +113,13 @@ test('a run with no cases is never green', () => {
   assert.equal(v.ok, false);
   assert.match(v.reason, /nothing was proved/);
 });
+
+test('a spec path with whitespace is refused, not shell-split into two missing files', () => {
+  // The default output is a space-separated list. A path with a space would arrive at the
+  // runner as two paths that do not exist, and the error would read as a missing file.
+  const { run, skipped } = selectSpecs(
+    { 'X-A-001': hashSpec(SPEC) }, { 'X-A-001': 'e2e/my feature/a.spec.ts' }, reader({ 'e2e/my feature/a.spec.ts': SPEC }),
+  );
+  assert.deepEqual(run, []);
+  assert.match(skipped[0].reason, /whitespace/);
+});

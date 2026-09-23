@@ -100,8 +100,8 @@ jobs:
           echo "SPECS=$SPECS" >> $GITHUB_ENV
 
       # $SPECS is intentionally unquoted: it is a space-separated list of spec paths.
-      # Spec paths must therefore not contain spaces. `select --json` gives a structured
-      # list if you ever need one.
+      # `select` refuses any path containing whitespace for that reason, so the split here
+      # is safe. `select --json` gives a structured list if you need one.
       - name: Run
         run: npx playwright test $SPECS --reporter=json > playwright-report.json
         continue-on-error: true    # the verdict step decides, so the report is built first

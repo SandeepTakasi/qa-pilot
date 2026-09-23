@@ -46,6 +46,14 @@ export function selectSpecs(approved, specPaths, readSpec) {
       skipped.push({ id, reason: 'no spec path recorded for this case, so there is nothing to run' });
       continue;
     }
+    // The default output is a space-separated list a shell splits on, so a path with
+    // whitespace would reach the runner as two paths that do not exist. Refused at the
+    // source rather than documented as a caveat, because every caller gets it wrong the
+    // same way and the failure reads as a missing file.
+    if (/\s/.test(path)) {
+      skipped.push({ id, path, reason: 'the spec path contains whitespace, which a shell splits into separate arguments. Rename the file or directory.' });
+      continue;
+    }
     const source = readSpec(path);
     if (source === null) {
       skipped.push({ id, path, reason: 'the spec file is missing from the repo, though QA approved it. Commit it, or re-approve the case.' });

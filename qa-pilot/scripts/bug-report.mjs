@@ -198,6 +198,12 @@ export function buildBugs(report, cases, confirmed, {
       first_seen_run: report.run_id,
       last_seen_run: report.run_id,
       seen_count: 1,
+      // A changed failure does not mean the old defect was fixed, and that bug may still
+      // be open. Keeping its id is the only remaining link once this entry replaces the
+      // old one.
+      superseded: known?.task_id && known.signature !== signature
+        ? [...(known.superseded ?? []), known.task_id]
+        : known?.superseded,
     };
   }
 

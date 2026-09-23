@@ -47,12 +47,16 @@ tracker-agnostic:
 
 - `case-status.mjs` consumes a plain `{"CASE-ID": "status"}` JSON produced by the model. It
   has no idea where those statuses came from.
-- `validate-report.mjs --map` checks key membership in a JSON object, nothing more.
+- `validate-report.mjs` takes two plain JSON objects: `--map` for key membership, and
+  `--statuses` for the status each case carried when it ran. It resolves those status
+  names through `clickup.statuses` in the profile, which is a host's own vocabulary rather
+  than anything ClickUp-shaped, and it never learns where the names came from.
 - `report.json` contains no tracker-specific field at all.
 
 Real coupling is confined to three places: the `clickup-guard.mjs` hook and its matcher in
-`hooks.json`, the skill prose that names ClickUp MCP tools, and three profile fields
-(`plan_tier`, `space`, `statuses`).
+`hooks.json`, the skill prose that names ClickUp MCP tools, and five profile fields
+(`plan_tier`, `space`, `folder`, `bug_list`, `statuses`). Of those five, only `plan_tier`
+is genuinely ClickUp-shaped; the rest name a place and a vocabulary that any tracker has.
 
 **Cost to support Jira, Linear, or GitHub Issues: roughly a day, almost entirely prose.**
 Rename `clickup-map.json` to `tracker-map.json`, rename the profile block to `tracker:` with

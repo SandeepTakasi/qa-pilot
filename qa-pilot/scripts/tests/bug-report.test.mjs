@@ -170,3 +170,17 @@ test('with no bug list the bug still files, and says where it landed', () => {
 test('no warning about the bug list when nothing is being filed', () => {
   assert.deepEqual(build([PASS]).warnings, []);
 });
+
+test('a superseded bug keeps its task id in the ledger', () => {
+  // A changed failure does not mean the old defect was fixed, and that bug may still be
+  // open. Once the new entry replaces the old one, the ledger is the only link left.
+  const ledger = { [FAIL]: { task_id: 'abc123', signature: 'somethingelse', seen_count: 1 } };
+  const out = build([FAIL], { ledger });
+  assert.deepEqual(out.ledger[FAIL].superseded, ['abc123']);
+});
+
+test('superseded ids accumulate rather than replacing each other', () => {
+  const ledger = { [FAIL]: { task_id: 'second', signature: 'other', superseded: ['first'] } };
+  const out = build([FAIL], { ledger });
+  assert.deepEqual(out.ledger[FAIL].superseded, ['first', 'second']);
+});
