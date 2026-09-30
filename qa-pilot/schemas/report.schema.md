@@ -9,7 +9,10 @@ run_id: <ISO timestamp>-<feature>-<short sha>
 feature: string
 app: string                  # which frontend, on multi-app hosts
 env_name: string             # must be a registered environment
+env_kind: qa | staging | production  # from meta.json; the gate recomputes it from the profile
 env_url: string              # must match the registry for this app+env
+mutation_policy: read-only | scoped-write | unrestricted | null  # from meta.json
+mutation_prefix: string | null  # from meta.json; non-null only under scoped-write
 api_mode: string             # "server" | the host's sandbox value; sandbox runs cannot publish
 commit_sha: string           # the deployed build
 sha_before: string           # read from the environment before the run
@@ -29,7 +32,12 @@ cases:
     verdict: pass | fail | flaky | blocked
     duration_ms: integer     # summed across attempts
     assertions: null         # Playwright's JSON reporter does not expose a count
-    trace: <path>            # REQUIRED for pass | fail | flaky: THE evidence artifact
+    trace: <path>            # REQUIRED for pass | fail | flaky: THE evidence artifact.
+                             # Relative to the run dir (see "Where the report lives").
+    trace_sha256: string | null  # sha256 of the trace file, 64 hex chars, computed by the
+                             # parse-report CLI; null when there is no trace
+    writes: <writes> | null  # the write guard's record, below; null when no attempt
+                             # attached a writes.json
     video: <path>            # optional carry-through; the trace already contains it
     console_log: <path>      # optional carry-through; the trace already contains it
     failure_summary: string  # REQUIRED for fail: the Playwright error, ANSI-stripped,
@@ -40,9 +48,105 @@ cases:
                              # hashed, which is treated as "changed": a passing case with
                              # no hash goes back for review rather than keeping approval.
 
-summary: { pass, fail, flaky, blocked }
-unmapped_specs: [string]     # spec titles with no case-ID prefix; dropped, never guessed at
+fixtures:                    # one entry per fixture spec that ran; [] when none did
+  - name: string             # from the title: FIXTURE <name> | FIXTURE <name> teardown
+    phase: setup | teardown
+    verdict: pass | fail | flaky | blocked   # derived exactly as for cases
+    trace: <path> | null     # relative to the run dir
+    trace_sha256: string | null
+    writes: <writes> | null
+
+summary: { pass, fail, flaky, blocked }   # cases only; fixtures are not counted
+unmapped_specs: [string]     # spec titles with neither a case-ID prefix nor a FIXTURE title;
+                             # dropped, never guessed at
 ```
+
+`<writes>` is the aggregate of every `writes.json` the case's (or fixture's) attempts attached,
+across all retries and all projects, because a write on a failed first attempt is still a write:
+
+```yaml
+paths: [<path>]              # every writes.json, relative to the run dir, in attempt order
+installed: boolean           # true only when EVERY attempt attached a writes.json with
+                             # installed: true; an attempt with no writes.json counts as false
+policy: string | null        # the policy every file recorded; null when they disagree
+prefix: string | null        # likewise
+write_signatures: integer    # the smallest count any file recorded
+routed_requests: integer     # summed
+blocked: integer             # summed
+observed: integer            # summed
+```
+
+Events are not copied into the report. They stay in the `writes.json` files, inside the run
+directory, and are never sent to the tracker.
+
+## Run metadata
+
+`/qa-pilot:run-tests` writes `testing/<feature>/runs/<run_id>/meta.json`. On top of the 0.2.0
+fields it records:
+
+| Field | Value |
+|---|---|
+| `env_kind` | the environment's `kind` from the host profile |
+| `mutation_policy` | `cases.yaml` `mutation.policy`, or `unrestricted` when the file has no `mutation` |
+| `mutation_prefix` | `cases.yaml` `mutation.prefix` under `scoped-write`, `null` otherwise |
+
+`parse-report.mjs` copies all three into the report, as `null` when meta lacks them (a 0.2.0
+run). The gate never takes `env_kind` on trust: it recomputes it from the profile.
+
+## Where the report lives
+
+The run directory is `dirname(meta.json)`, that is `testing/<feature>/runs/<run_id>/`.
+`parse-report.mjs` writes `report.json` there by default, and every `trace` and `writes.paths`
+entry is relative to it, so `validate-report.mjs`'s default `--base` (the report's own
+directory) resolves them. Paths use `/` separators.
+
+`trace_sha256` is computed by the parse-report CLI from the trace file's bytes and injected into
+`buildReport`, as `spec_sha` is, so `buildReport` stays free of I/O. It is the full 64-character
+hex digest. A trace the CLI cannot read gets `null` and a warning.
+
+## Environment the write guard reads
+
+`/qa-pilot:run-tests` (and the CI template) set these for the Playwright process:
+
+| Variable | Value | Unset |
+|---|---|---|
+| `QA_PILOT_MUTATION` | JSON `{"policy": "<policy>", "prefix": "<prefix>"}`, from `cases.yaml`; `prefix` only under `scoped-write` | the guard runs `read-only`. It never falls back to `unrestricted` |
+| `QA_PILOT_MUTATION_CONFIG` | the host profile's `mutation` block, as JSON, uncompiled | the guard uses its generic control defaults and has no write signatures, which it records as `write_signatures: 0` |
+| `QA_PILOT_FIXTURE_DIR` | absolute path of `testing/<feature>/runs/<run_id>/fixtures/` | a fixture setup or dependent throws |
+
+`QA_PILOT_MUTATION` that is not valid JSON, names a policy outside the enum, or lacks a
+`prefix` under `scoped-write` makes the guard throw before the test starts, so every test fails
+rather than running unguarded.
+
+## The write guard's record: `writes.json`
+
+The guard fixture writes one `writes.json` per test attempt to `testInfo.outputPath('writes.json')`
+and attaches it **by path** (attachment name `writes.json`, content type `application/json`). It
+lives inside the run directory and never leaves the executor's machine.
+
+```yaml
+installed: boolean           # true once the page-side guard has reported in (a heartbeat
+                             # from the init script); false or absent means it never ran
+policy: read-only | scoped-write | unrestricted   # what the guard actually enforced
+prefix: string | null        # the scoped-write prefix it enforced
+scope_urls: [string]         # every scope URL regex the spec set with setScope, in order
+write_signatures: integer    # how many write signatures the guard compiled
+routed_requests: integer     # requests the network route saw
+blocked: integer             # controls and requests the guard stopped
+observed: integer            # write requests it let through and recorded (scoped-write)
+events:
+  - kind: control | request
+    action: block | observe
+    reason: string           # why: the deny rule, signature or scope check that decided it
+    label: string            # control only: innerText, aria-label or title
+    method: string           # request only
+    url: string              # request only
+    at: ISO 8601
+```
+
+`blocked` and `observed` equal the number of `events` with that `action`. A worker that dies
+before the fixture's teardown writes no `writes.json`, and the gate reads that attempt as not
+installed.
 
 ## Verdict derivation
 
@@ -80,6 +184,81 @@ A case that passed only on retry is `flaky`, never `pass`. This is the rule that
 - a case was not in an approved state when it ran. Executable states are `approved_for_execution`, `approved`, `retest`, `under_review` and `quarantined`; `case_review` and `rejected` are refused. Matching uses this host's names from `clickup.statuses`, so a status the profile does not declare is a refusal rather than a guess
 - a verdict is outside the enum, a case ID is not in the case map, a `fail` has no failure summary, or the summary disagrees with the cases
 - more than 10% of cases are `blocked`. **RUN HALTED**: the environment failed, not the feature
+
+### Mutation, fixture and production refusals
+
+The gate reads three things from the profile rather than from the report: the environment's
+`kind`, its effective `evidence_upload`, and its `mutation` block. A report whose `env_kind`
+disagrees with the profile's kind for `env_name` is refused.
+
+`--cases <cases.yaml>` passes the feature's cases file. The **effective policy** is its
+`mutation.policy` (`unrestricted` when absent) when `--cases` is passed; otherwise the report's
+`mutation_policy`; otherwise `unrestricted`. On a production environment `--cases` is required,
+so the last two fallbacks apply only to `qa` and `staging`. "Executed" below means a verdict of
+`pass`, `fail` or `flaky`. Each refusal message starts with its rule number.
+
+1. **Policy matches the declaration.** When `--cases` is passed, the report's `mutation_policy`
+   and `mutation_prefix`, and the `policy` and `prefix` of every `writes` in the report, must
+   equal the cases file's (a `null` equals nothing). On a production environment `--cases` is
+   required, and an effective policy of `unrestricted` is refused.
+   **1b. The record matches the disk.** Every `writes` in the report must equal the aggregate
+   recomputed from its `paths`, each re-read from disk (a missing or unparseable file reads as
+   not installed). The report is the file the gate is handed, so it is never the source.
+2. **The guard was live.** On a production environment, or under `read-only`, every executed case
+   and every executed fixture needs a non-null `writes` with `installed: true` and
+   `routed_requests > 0`. On a production environment its `write_signatures` must also equal the
+   number of `write_signatures` in the profile, so a run whose guard never received the host's
+   signatures cannot pass as clean.
+3. **Read-only wrote nothing.** Under `read-only`, any case or fixture whose `writes` has
+   `blocked + observed > 0` is refused: "read-only run recorded N write(s)".
+4. **Scoped-write stayed in scope.** Under `scoped-write`, any case or fixture whose `writes` has
+   `blocked > 0` is refused.
+5. **Fixtures are consistent.** Requires `--cases`; skipped without it on `qa` and `staging`.
+   A `fixtures` entry whose name the cases file does not declare is refused. A declared fixture
+   that some executed case names must have a `setup` entry. A `setup` whose verdict is not `pass`
+   requires every case naming that fixture to be `blocked`, and is refused otherwise. Under
+   `teardown: delete`, a `teardown` entry whose verdict is not `pass`, or a passing setup with no
+   `teardown` entry, is a **warning** naming the fixture and the environment, because an entity
+   was left behind.
+6. **Local evidence is pinned.** When the effective `evidence_upload` is `local`, every case or
+   fixture that has a `trace` needs `trace_sha256`; the gate re-hashes the file and refuses a
+   mismatch. The `trace` must also be a relative path that stays inside the run directory (no
+   leading `/`, no `..` segment), because that path is what the tracker receives.
+
+Fixtures follow the same trace requirement as cases under the recorded `evidence_capture`.
+
+## What the tracker receives
+
+`scripts/publish-payload.mjs` computes everything a publish sends to the tracker; the skill
+posts only what it prints. What it prints depends on the environment's effective
+`evidence_upload`:
+
+**`tracker`** (the 0.2.0 behaviour): the field set in `skills/publish-results/references/clickup-fields.md`,
+with the trace attached to each case task, and the run summary comment as before.
+
+**`local`**, which every production environment is: no host application data. Per case, exactly:
+
+| Field | From |
+|---|---|
+| case id | `cases[].id` |
+| verdict | `cases[].verdict` |
+| target status | `case-status.mjs --transitions` |
+| env name | `env_name` |
+| build id | `commit_sha` |
+| run id | `run_id` |
+| trace path | `cases[].trace`, run-dir relative |
+| trace sha256 | `cases[].trace_sha256` |
+
+The run summary carries exactly: run id, env name, build id, counts by verdict, blocked
+percentage, confidence score and readiness. Nothing else is sent: no attachment, no
+`failure_summary`, no console text, no absolute path, no executor. A bug filed from such a run
+names the case id, run id, env name, build id, trace path and trace sha256, and no failure text.
+A reviewer finds the evidence by opening that path on the executor's machine and checking it with
+the sha256.
+
+**`tracker: none`**: nothing is sent anywhere. The payload is a plan of local writes: status
+transitions applied to `testing/<feature>/statuses.json`, the run summary written into the run
+directory, and bugs written to `testing/<feature>/runs/<run_id>/bugs/<CASE-ID>.md`.
 
 ## Confidence score
 
