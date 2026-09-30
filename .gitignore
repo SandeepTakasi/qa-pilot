@@ -7,3 +7,7 @@ playwright-report/
 .qa-pilot/
 .DS_Store
 *.log
+
+# Local planning and execution artifacts, never published
+.drydock/
+docs/plans/
