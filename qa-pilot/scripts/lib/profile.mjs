@@ -9,17 +9,19 @@ import { dirname, resolve } from 'node:path';
 import { parse } from './yaml.mjs';
 import { STATUS_KEYS, DEFAULT_STATUSES } from './statuses.mjs';
 
-const TOP_KEYS = ['project', 'apps', 'environments', 'auth', 'assertions', 'evidence',
-  'selectors', 'models', 'sandbox', 'cross_app', 'clickup'];
+const TOP_KEYS = ['project', 'apps', 'environments', 'stabilization', 'auth', 'assertions',
+  'evidence', 'selectors', 'models', 'sandbox', 'cross_app', 'clickup'];
+const ENV_KINDS = ['qa', 'staging', 'production'];
+const EVIDENCE_UPLOADS = ['tracker', 'local'];
 const AUTH_MODELS = ['dev-handoff', 'role-accounts', 'mixed'];
 const NETWORK_MODES = ['allowed', 'forbidden'];
 const ASSERT_STYLES = ['ui-state', 'mixed'];
 const EVIDENCE_EXTRAS = ['console_log'];
 const CAPTURE_MODES = ['always', 'on-failure', 'off'];
 const PLAN_TIERS = ['free', 'unlimited', 'business', 'enterprise'];
-// Hostnames that mean production to a person reading them. Deliberately narrow: it must
-// not fire on qa.example.com or staging.example.com, since a false refusal here blocks
-// legitimate work and teaches people to bypass the check.
+// Hostnames that mean production to a person reading them. Only ever a warning now: an
+// environment declares its kind, and the guess missed the commonest shape (app.<domain>).
+// Still narrow, so it does not nag about qa.example.com or staging.example.com.
 const PROD_HOST_RE = /^https?:\/\/(www\.)?(?!(qa|staging|stage|stg|test|testing|dev|develop|development|uat|sandbox|preview|demo|local)[.-])[^/]*\b(prod|production|live)\b[^/]*\/?|^https?:\/\/(www\.)?[a-z0-9-]+\.(com|io|app|net|org|co|ai|dev)\/?$/i;
 
 const SHA_FORMATS = ['commit', 'build-id'];
@@ -40,6 +42,16 @@ function cmpSemver(a, b) {
 function parseSemver(v) {
   const m = /^(\d+)\.(\d+)(?:\.(\d+))?/.exec(String(v).trim());
   return m ? [Number(m[1]), Number(m[2]), Number(m[3] ?? 0)] : null;
+}
+
+/**
+ * Where an environment's traces go: its explicit `evidence_upload`, else `local` for
+ * production and `tracker` for everything else. The loader writes this into the normalized
+ * profile so no skill or script re-derives it.
+ */
+export function effectiveEvidenceUpload(env) {
+  if (EVIDENCE_UPLOADS.includes(env?.evidence_upload)) return env.evidence_upload;
+  return env?.kind === 'production' ? 'local' : 'tracker';
 }
 
 /**
@@ -91,20 +103,31 @@ export function validateProfile(raw, { profilePath = null } = {}) {
           if (!isUrl(url)) err(`environments.${envName}.apps.${appName}: must be an http(s) URL`);
         }
       }
-      // Production is not a place to run this. Specs create and mutate real records under
-      // stored credentials, and every run writes a trace containing those credentials
-      // (see "What a trace contains" in the ClickUp setup guide). A host that genuinely
-      // must point at a production hostname can say so explicitly with
-      // `allow_production: true`, which keeps the decision recorded in the profile rather
-      // than made silently by whoever typed the URL.
-      if (env.allow_production !== true) {
+      // What the environment is, declared rather than guessed. Everything production
+      // implies (local evidence, full capture, a write guard) keys off this.
+      if (env.kind === undefined) {
+        err(`environments.${envName}.kind: required, one of ${ENV_KINDS.join(' | ')}. Declare what this environment is; the hostname is no longer used to guess.`);
+      } else if (!ENV_KINDS.includes(env.kind)) {
+        err(`environments.${envName}.kind: "${env.kind}" is not one of ${ENV_KINDS.join(' | ')}`);
+      }
+      if (Object.hasOwn(env, 'allow_production')) {
+        err(`environments.${envName}.allow_production: retired in 0.3.0; declare kind: production`);
+      }
+      if (env.evidence_upload !== undefined && !EVIDENCE_UPLOADS.includes(env.evidence_upload)) {
+        err(`environments.${envName}.evidence_upload: must be ${EVIDENCE_UPLOADS.join(' | ')}`);
+      }
+      if (env.kind === 'production' && env.evidence_upload === 'tracker') {
+        // A trace carries the session credential that authenticated the run and every
+        // request body it touched (see "What a trace contains" in the ClickUp setup guide).
+        err(`environments.${envName}.evidence_upload: tracker is refused on a production environment. Its traces carry the session credential and every request body they touched, so production evidence stays local.`);
+      }
+      // The hostname guess survives only to catch a mistyped kind.
+      if (env.kind !== 'production') {
         for (const [appName, url] of Object.entries(isObj(env.apps) ? env.apps : {})) {
           if (typeof url === 'string' && PROD_HOST_RE.test(url)) {
-            err(`environments.${envName}.apps.${appName}: "${url}" looks like production. QA-Pilot specs create and mutate real data, and each run writes a trace containing session tokens that is then uploaded to the tracker. Point this at a QA or staging deployment, or set environments.${envName}.allow_production: true to accept that.`);
+            warnings.push(`environments.${envName}.apps.${appName}: "${url}" looks like production, but kind is ${env.kind ?? 'unset'}. The declared kind wins; check it is not a typo.`);
           }
         }
-      } else {
-        warnings.push(`environments.${envName}: allow_production is set. Runs against it will create real records, and their traces will carry live session tokens into the tracker.`);
       }
 
       const s = env.sha_source;
@@ -206,6 +229,31 @@ export function validateProfile(raw, { profilePath = null } = {}) {
   }
   if (capture === 'off') {
     warnings.push('evidence.capture: off captures nothing, so no run can be published. Use it only while iterating on specs locally.');
+  }
+  const envEntries = isObj(raw.environments) ? Object.entries(raw.environments).filter(([, e]) => isObj(e)) : [];
+  if (CAPTURE_MODES.includes(capture) && capture !== 'always'
+    && envEntries.some(([, e]) => e.kind === 'production')) {
+    err(`evidence.capture: must be always when any environment has kind production (got ${capture}). On production a pass is the claim most worth checking, and ${capture} keeps nothing for passes.`);
+  }
+
+  // --- stabilization (optional) ---
+  // A deployed environment where a new spec may earn its three greens when the sandbox
+  // cannot model the flow. Never production: stabilizing means running before anyone trusts it.
+  if (raw.stabilization !== undefined) {
+    const st = raw.stabilization;
+    if (!isObj(st)) {
+      err('stabilization: must be a mapping, e.g. { env: staging }');
+    } else {
+      for (const k of Object.keys(st)) {
+        if (k !== 'env') err(`stabilization.${k}: unknown key (allowed: env)`);
+      }
+      const known = new Map(envEntries);
+      if (!isStr(st.env)) err('stabilization.env: required, the name of a registered environment');
+      else if (!known.has(st.env)) err(`stabilization.env: "${st.env}" is not a registered environment`);
+      else if (known.get(st.env).kind === 'production') {
+        err(`stabilization.env: "${st.env}" has kind production. Stabilization runs a spec before anyone trusts it, which production must not host.`);
+      }
+    }
   }
 
   if (networkForbidden && evidenceExtra.length === 0) {
@@ -315,7 +363,11 @@ export function validateProfile(raw, { profilePath = null } = {}) {
     }
   }
 
-  return { profile: errors.length ? null : raw, errors, warnings };
+  if (errors.length) return { profile: null, errors, warnings };
+  // The normalized profile: a copy, so validating never changes what the caller holds.
+  const profile = structuredClone(raw);
+  for (const env of Object.values(profile.environments)) env.evidence_upload = effectiveEvidenceUpload(env);
+  return { profile, errors, warnings };
 }
 
 /** Read + validate a profile file. Throws on invalid, with all errors in the message. */

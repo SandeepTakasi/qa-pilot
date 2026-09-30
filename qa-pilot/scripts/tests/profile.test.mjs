@@ -192,44 +192,42 @@ test('warns when forbidden network assertions have no console evidence', () => {
 
 // --- production environments -------------------------------------------------
 
-test('a production URL is refused unless the host says so explicitly', () => {
-  const errs = errorsFor((d) => {
-    const env = Object.values(d.environments)[0];
-    env.apps[Object.keys(env.apps)[0]] = 'https://prod.example.com';
-  });
-  assert.equal(errs.some((e) => /looks like production/.test(e)), true, errs.join('\n'));
+// The kind is declared, so a production-looking URL only warns (a mistyped kind should be
+// noticed) and never refuses. The full kind rules live in env-kind.test.mjs.
+const prodWarningsFor = (url) => {
+  const d = golden();
+  const env = Object.values(d.environments)[0];
+  env.apps[Object.keys(env.apps)[0]] = url;
+  const { errors, warnings } = validateProfile(d);
+  assert.deepEqual(errors.filter((e) => /looks like production/.test(e)), [], url);
+  return warnings.filter((w) => /looks like production/.test(w));
+};
+
+test('a production URL on a qa environment warns rather than refuses', () => {
+  assert.equal(prodWarningsFor('https://prod.example.com').length, 1);
 });
 
-test('a bare apex domain reads as production', () => {
-  const errs = errorsFor((d) => {
-    const env = Object.values(d.environments)[0];
-    env.apps[Object.keys(env.apps)[0]] = 'https://example.com';
-  });
-  assert.equal(errs.some((e) => /looks like production/.test(e)), true);
+test('a bare apex domain on a qa environment warns rather than refuses', () => {
+  assert.equal(prodWarningsFor('https://example.com').length, 1);
 });
 
 test('qa and staging hostnames are never mistaken for production', () => {
-  // A false refusal here blocks legitimate work, which is how a check gets bypassed.
+  // A warning that fires on every legitimate host is one people learn to ignore.
   for (const url of [
     'https://qa.example.com', 'https://staging.example.com',
     'https://qa-thing.example.com', 'https://dev.example.com', 'http://localhost:5173',
   ]) {
-    const errs = errorsFor((d) => {
-      const env = Object.values(d.environments)[0];
-      env.apps[Object.keys(env.apps)[0]] = url;
-    });
-    assert.deepEqual(errs.filter((e) => /looks like production/.test(e)), [], url);
+    assert.deepEqual(prodWarningsFor(url), [], url);
   }
 });
 
-test('allow_production accepts the risk and records it as a warning', () => {
+test('allow_production is retired and refused', () => {
   const d = golden();
   const env = Object.values(d.environments)[0];
   env.apps[Object.keys(env.apps)[0]] = 'https://prod.example.com';
   env.allow_production = true;
-  const { errors, warnings } = validateProfile(d);
-  assert.deepEqual(errors.filter((e) => /looks like production/.test(e)), []);
-  assert.equal(warnings.some((w) => /live session tokens/.test(w)), true, warnings.join('\n'));
+  const { errors } = validateProfile(d);
+  assert.equal(errors.some((e) => /retired in 0\.3\.0; declare kind: production/.test(e)), true, errors.join('\n'));
 });
 
 test('clickup.bug_list is optional but must be a real name when set', () => {

@@ -15,6 +15,7 @@ apps:
 
 environments:
   qa:
+    kind: qa
     apps:
       storefront: https://qa.host-fake.example.com
       admin: https://qa-admin.host-fake.example.com
@@ -22,6 +23,7 @@ environments:
       url: https://qa.host-fake.example.com/api/version
       json_path: build.commit
   staging:
+    kind: staging
     apps:
       storefront: https://staging.host-fake.example.com
       admin: https://staging-admin.host-fake.example.com
