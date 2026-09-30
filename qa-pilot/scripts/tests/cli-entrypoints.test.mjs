@@ -53,6 +53,8 @@ test('every CLI prints usage and exits nonzero when given no arguments', () => {
 });
 
 test('the guard still denies from a path containing a space', () => {
+  // The guard acts only where a host profile exists, so give the cwd one.
+  writeFileSync(join(root, 'qa-pilot.config.yaml'), 'project: x\n');
   const { stdout, status } = spawnSync('node', [join(spaced, 'clickup-guard.mjs')], {
     input: JSON.stringify({
       hook_event_name: 'PreToolUse',
