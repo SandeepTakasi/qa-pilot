@@ -9,7 +9,8 @@ run_id: <ISO timestamp>-<feature>-<short sha>
 feature: string
 app: string                  # which frontend, on multi-app hosts
 env_name: string             # must be a registered environment
-env_kind: qa | staging | production  # from meta.json; the gate recomputes it from the profile
+env_kind: qa | staging | production | null  # from meta.json (null for a 0.2.0 meta, which
+                             # the gate refuses); the gate recomputes it from the profile
 env_url: string              # must match the registry for this app+env
 mutation_policy: read-only | scoped-write | unrestricted | null  # from meta.json
 mutation_prefix: string | null  # from meta.json; non-null only under scoped-write
@@ -67,8 +68,9 @@ unmapped_specs: [string]     # spec titles with neither a case-ID prefix nor a F
 across all retries and all projects, because a write on a failed first attempt is still a write:
 
 ```yaml
-attempts: integer            # attempt results across all projects (the length of every
-                             # tests[].results[] for this spec, summed)
+attempts: integer            # attempt results whose status is not `skipped`, across all
+                             # projects (every tests[].results[] entry for this spec, summed),
+                             # so a project that skips the case is not a missing guard record
 paths: [<path>]              # the writes.json attachment path of every attempt, as the
                              # Playwright report records it (Playwright may have copied the
                              # file), relative to the run dir, in attempt order
@@ -131,7 +133,9 @@ not compile, throws the same way.
 
 The guard fixture writes one `writes.json` per test attempt to `testInfo.outputPath('writes.json')`
 and attaches it **by path** (attachment name `writes.json`, content type `application/json`). It
-lives inside the run directory and never leaves the executor's machine.
+lives inside the run directory and never leaves the executor's machine. The fixture writes
+`writes.json` once, at the end of the attempt, then attaches it, and
+never modifies it afterwards: the gate matches the original to Playwright's copy by sha256 (rule 1b).
 
 ```yaml
 installed: boolean           # true once the page-side guard has reported in (a heartbeat
@@ -224,21 +228,32 @@ Neither is ever taken from the report. "Executed" below means a verdict of `pass
    **1b. The record matches the disk.** Its messages start with `rule 1b: `. Every non-null
    `writes` in the report must equal the aggregate recomputed from its `paths`, each re-read from
    disk. A file that is missing, unparseable, or whose `blocked` or `observed` differs from its
-   count of `events` with that `action`, reads as not installed. The report's own list is not
+   count of `events` with that `action`, reads as not installed. Every `paths` entry must be a
+   relative path with no leading `/` and no `..` segment; the gate refuses otherwise, because a
+   guard record outside the run directory escapes the sweep below. The run directory, for the
+   gate, is `--base` (default: the report's own directory). The report's own list is not
    trusted either. Let L be every file listed in a `paths` entry across `cases[]` and
-   `fixtures[]`, and U every file named `writes.json` under the run directory that is not in L.
+   `fixtures[]`, and U every file named `writes.json` under the run directory,
+   excluding `fixtures/` (where fixture identities live, so a fixture named `writes` is not
+   mistaken for a guard record), that is not in L.
    Playwright copies a file attached by path, so `paths` may name the copies while the guard's
    originals sit in U; each file in U must therefore have the same sha256 as a distinct file in
    L, and the gate refuses when one does not. A `writes.json` that no listed file accounts for
-   belongs to an attempt the report dropped. The gate also refuses a non-null `writes` whose
-   `attempts` is less than that case's or fixture's `retries + 1` (fixtures run with
-   `retries: 0`, so theirs is at least 1). A dropped attempt therefore cannot hide its writes.
-   The report is the file the gate is handed, so it is never the source.
+   belongs to an attempt the report dropped. The gate recomputes `attempts` and `retries` for
+   each case and fixture from the Playwright JSON report in the run directory (`results.json`,
+   the name `/qa-pilot:run-tests` gives it; refused when absent), never from `report.json`, and
+   refuses a non-null `writes` whose `attempts` differs from the recomputed count. That exact
+   count replaces a weaker lower bound of `retries + 1` taken from the report. A dropped
+   attempt therefore cannot hide its writes. The report is the file the gate is handed, so it is
+   never the source.
 2. **The guard was live.** On a production environment, or under any effective policy other than
    `unrestricted` on any environment, every executed case and every executed fixture needs a
    non-null `writes` with `installed: true` and `routed_requests > 0`, and
    every file in `paths` records `routed_requests > 0`, so an attempt whose route never ran
-   cannot hide behind a sibling attempt. Whenever the profile has a
+   cannot hide behind a sibling attempt. This also refuses a case with any attempt that
+   never loaded a page (for example a refused connection before the first navigation), since that
+   attempt records no heartbeat and no routed request; the remedy is a re-run, not an exemption.
+   Whenever the profile has a
    `mutation` block and the effective policy is not `unrestricted`, each such `writes` must also
    have `write_signatures` equal to the number of entries in the profile's
    `mutation.write_signatures`, so a run whose guard never received the host's signatures cannot
