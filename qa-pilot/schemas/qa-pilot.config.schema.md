@@ -78,9 +78,10 @@ mutation:                           # optional; REQUIRED when any environment ha
     text: [<regex string>]          # matched case-insensitively against a control's label
     icons: [string]                 # icon class names, prefix match
   write_signatures:                 # required, >= 1 entry, when mutation is required
-    - method: string                # an HTTP verb, or * for any
+    - method: string                # GET | HEAD | POST | PUT | PATCH | DELETE | OPTIONS | *
       url: <regex string>           # matched against the request URL
-      body?: <regex string>         # optional, matched against the request body
+      body?: <regex string>         # the key is `body`; `?` marks it optional. Matched
+                                    # against the request body
       note: string                  # optional: why this is a write
   allow_signatures:                 # optional, same shape: requests a write signature matches
     - ...                           # that are really reads
@@ -157,7 +158,9 @@ there is no guess left to turn off.
 The effective value is resolved by the loader and written into the normalized profile, so no
 skill or script re-derives it:
 
-1. if `tracker` is `none`, it is `local` on every environment;
+1. if `tracker` is `none`, it is `local` on every environment. An environment that sets
+   `evidence_upload: tracker` anyway gets a **warning**,
+   `environments.<env>.evidence_upload: tracker is ignored under tracker: none`, and is still `local`;
 2. otherwise, if the environment sets `evidence_upload`, that value (and `tracker` on a
    `production` environment is an error);
 3. otherwise `local` for `kind: production` and `tracker` for everything else.
@@ -195,7 +198,9 @@ Some flows cannot run in a sandbox, because the mock backend does not model them
 `stabilization.env` names a deployed environment where the three green runs may happen instead.
 It must be a registered environment whose kind is not `production` (an **error** otherwise):
 stabilizing a spec means running it before anyone trusts it, which is exactly what production
-must not host. Stabilization runs are never published, wherever they run.
+must not host. `/qa-pilot:run-tests` does not hand a stabilization run to
+`/qa-pilot:publish-results`, wherever it ran. The publish gate cannot tell a stabilization run on
+a deployed environment from a verdict run, so this rests on run-tests, not on the gate.
 
 ## Context sources
 
@@ -206,12 +211,13 @@ assertion should pin, and code only shows what was built.
 
 | Field | Rule |
 |---|---|
-| `name` | Required, non-empty, unique across sources. |
-| `description` | Required, non-empty. Say what it holds and which features it covers, so the reader knows when to use it. |
-| `command` | A shell command run from the repo root; its stdout is the context. It is **shown to the user and confirmed before its first run in a session**, because a committed profile is not a reason to run arbitrary commands unseen. |
-| `path` | A repo-relative file, directory or glob. `.env*` files are never read through it, whatever the glob matches. |
+| `name` | Required, non-empty string, unique across sources. |
+| `description` | Required, non-empty string. Say what it holds and which features it covers, so the reader knows when to use it. |
+| `command` | A non-empty string: a shell command run from the repo root; its stdout is the context. It is **shown to the user and confirmed before its first run in a session**, because a committed profile is not a reason to run arbitrary commands unseen. |
+| `path` | A non-empty string: a repo-relative file, directory or glob. A `path` whose last path segment matches `.env*` is an **error**. Files named `.env*` are never read through any `path`, whatever a directory or glob matches. |
 
-Exactly one of `command` or `path` per source.
+Exactly one of `command` or `path` per source, an **error** otherwise. When `context` is present,
+`sources` must be a non-empty list.
 
 ## What counts as a write
 
@@ -230,10 +236,18 @@ So a signature can also match the request body.
 
 | Field | Rule |
 |---|---|
-| `method` | Required. An HTTP verb (`GET`, `POST`, ...), or `*` for any. |
-| `url` | Required. A regex string, matched against the full request URL. Must compile. |
-| `body?` | Optional. A regex string, matched against the request body. Must compile. A signature with a body pattern matches only requests whose body matches. |
-| `note` | Optional. Why this request is a write. |
+| `method` | Required. One of `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS` (uppercase), or `*` for any. |
+| `url` | Required. A regex string, matched against the full request URL. |
+| `body` | Optional (written `body?` above). A regex string, matched against the request body. A signature with a body pattern matches only requests whose body matches; a request with no body never matches it. |
+| `note` | Optional string. Why this request is a write. |
+
+`url` and `body` must compile without flags: they are compiled with `new RegExp(pattern)` and
+matched case-sensitively. `deny_controls.text` patterns are the exception, compiled with the `i`
+flag, since control labels vary in case.
+
+**Unknown keys** under `mutation`, `deny_controls`, a signature entry, `stabilization`, `context`
+or a `sources` entry are **errors**, as unknown top-level keys are: a misspelt `write_signature`
+would otherwise leave the guard with no signatures and no complaint.
 
 A request is a **write** when it matches any `write_signatures` entry and no `allow_signatures`
 entry. `allow_signatures` has the same shape and exists for reads that look like writes, such as
@@ -245,8 +259,8 @@ words and patterns here, in the host's profile; the plugin's defaults stay gener
 
 ## Working without a tracker
 
-`tracker: clickup` (the default) is the 0.2.0 behaviour: the `clickup` block is required and
-validated exactly as before.
+`tracker: clickup` (the default): the `clickup` block is required and validated by the rules in
+this document, which are unchanged from 0.2.0.
 
 `tracker: none` runs the whole pipeline on local files:
 
@@ -255,7 +269,9 @@ validated exactly as before.
 - status names are the canonical seven (`Case Review`, `Approved for Execution`, `Under Review`,
   `Approved`, `Rejected`, `Retest`, `Quarantined`; matched case-insensitively);
 - QA records design and verdict decisions by editing `testing/<feature>/statuses.json`
-  (`{"<CASE-ID>": "<status>"}`), which is the file every gate already reads;
+  (`{"<CASE-ID>": "<status>"}`). `/qa-pilot:run-tests` reads it in place of the ClickUp fetch
+  and copies it into the run directory as that run's approval record, the copy the publish
+  gate's `--statuses` then reads;
 - effective `evidence_upload` is `local` on every environment, since there is nowhere to upload to;
 - confirmed bugs are written as markdown files inside the run directory.
 
@@ -335,6 +351,7 @@ Matching is case-insensitive and trimmed. Two lifecycle states may not share one
   (no network evidence *and* no console evidence leaves failures video-only)
 - a URL that looks like production on an environment whose kind is not `production`
 - a `clickup` block present while `tracker: none`
+- `environments.<env>.evidence_upload: tracker` while `tracker: none` (ignored; the value is `local`)
 
 ## CLI
 
