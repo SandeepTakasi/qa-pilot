@@ -1,6 +1,6 @@
 ---
 name: qa-review
-description: The QA reviewer's cockpit. Pull the Under Review queue for a feature from ClickUp, sorted by priority with failures first and evidence links attached, enforce the evidence sampling rules, and record Approve, Reject-with-reason, or Retest decisions back to ClickUp, and file a linked bug for every failure QA confirms is a real defect. Also runs design review on freshly authored cases awaiting approval. Use when the user says "qa review", "review the run", "review the cases", or "/qa-review <feature>".
+description: The QA reviewer's cockpit. Pull the Under Review queue for a feature from ClickUp (or a local statuses file without a tracker), sorted by priority with failures first and evidence attached or located, enforce the evidence sampling rules, and record Approve, Reject-with-reason, or Retest decisions back, and file a linked bug for every failure QA confirms is a real defect. Production traces never leave the executor's machine, so they are reviewed there and verified by hash. Also runs design review on freshly authored cases awaiting approval. Use when the user says "qa review", "review the run", "review the cases", or "/qa-review <feature>".
 argument-hint: "<feature>"
 ---
 
@@ -29,7 +29,7 @@ Ask which the user wants, or infer from what is actually waiting:
 
 Those are lifecycle keys. Resolve each to this host's actual status name via the profile's `clickup.statuses` before you query or write, because the board uses the host's wording, not the canonical one.
 
-Use `clickup_filter_tasks` on the feature's list.
+Use `clickup_filter_tasks` on the feature's list. **Under `tracker: none`** there is no board: read `testing/<feature>/statuses.json`, where the names are the canonical seven, and take each case's verdict and evidence from the run's `report.json`.
 
 ## 2. Design review
 
@@ -63,9 +63,25 @@ Present the queue sorted: failures first, then by priority. For each item give t
 
 Tell reviewers what the trace gives them, because it is more than the old video was: a scrubable film-strip of every action, the DOM at each step, the console output, and the network log, all on one timeline. "Watching the evidence" means scrubbing to the failing action and reading the DOM there, not just watching a recording and forming an impression.
 
+### When the evidence stayed local
+
+Every production run, and any run whose environment sets `evidence_upload: local` or whose profile says `tracker: none`, keeps its traces on the machine that ran it. Nothing was attached to the tracker, and the case task holds no failure text. So:
+
+**The review happens on the executor's machine**, or from a location the host chooses outside the tracker, such as an encrypted share the team controls. Not from the tracker: it has only the trace's path and its sha256. Find each trace from the case's `Trace Path` field (or `cases[].trace` in the run's `report.json`), relative to `testing/<feature>/runs/<run_id>/`, and **verify it before opening it**:
+
+```bash
+shasum -a 256 testing/<feature>/runs/<run_id>/<trace path>
+```
+
+The digest must equal the case's `Trace SHA256` field (`cases[].trace_sha256` in the report). If it does not, the file is not the evidence that was published: do not review it, and record the case as `retest`. For a failure, read the `failure_summary` from `report.json` there too; the tracker deliberately does not carry it.
+
+**The sampling quotas cannot be met from the tracker alone.** If the reviewer has no access to the executor's machine or the host's chosen location, say so plainly, review nothing from the tracker as if it were evidence, and record the quotas as unmet in the close-out. Treat the trace as a credential wherever it is opened: it carries a live session from the environment it ran against.
+
 ## 4. Record decisions
 
-Set the write flag before ClickUp writes and remove it after:
+**Under `tracker: none`**, a decision is an edit to `testing/<feature>/statuses.json`: set the case to the canonical name for the decision (`Approved`, `Rejected`, `Retest`, `Approved for Execution` at design review), and record a rejection's reason tag in `testing/<feature>/review-log.json` as `{"<CASE-ID>": {"decision": "rejected", "reason": "<tag>", "run_id": "..."}}`. No write flag is needed. Everything below about ClickUp names and flags then does not apply.
+
+With ClickUp, set the write flag at the repo root, next to the profile, before ClickUp writes and remove it after:
 
 ```bash
 mkdir -p .qa-pilot && touch .qa-pilot/allow-clickup-writes
@@ -106,6 +122,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/bug-report.mjs" \
 
 **Do not write the bug description yourself.** The script assembles it from the report and the cases file, and the failure text in it is Playwright's, verbatim. A summarized error is one a developer cannot trust, so they open the trace instead and the ticket has bought nothing. Post what the script returns, unedited.
 
+What it puts in the body depends on where the run's evidence went, and you never override it:
+
+- **Evidence stayed local** (every production run): the body and any repeat comment carry no failure text, URL or executor, only the case, the run, the build, and the trace's run-relative path with its `trace_sha256`, and `trace_attachment` is null. Do not paste the failure in, even though you just read it on the executor's machine: that is exactly the production data the tracker must not receive.
+- **`tracker: none`**: each `create[]` entry has a `file` instead of a list, `testing/<feature>/runs/<run_id>/bugs/<CASE-ID>.md`. Write `body` to that file. It keeps the full failure text, because it never leaves the machine. There is no task to link and no comment to post.
+
 It returns three lists:
 
 - **`create[]`**: file each as a new task. Use `title` and `body` as given, apply `tags`, set the priority from `priority`, and link it to the case task with `clickup_add_task_link`. Native task links rather than a custom field: a bug has its own lifecycle owned by the developers, not by QA-Pilot. If `supersedes` is set, say so in a comment on the older bug rather than closing it, since only a human should decide the old one is dead.
@@ -126,7 +147,7 @@ The bug body tells the reader the trace is a credential, because it is: it carri
 
 ## 6. Close out
 
-Report: how many were reviewed, the decisions taken, the bugs filed and the bugs that were already open, whether the sampling quotas were met, the updated confidence score, and whether the feature reads Ready or Not Ready.
+Report: how many were reviewed, the decisions taken, the bugs filed and the bugs that were already open, whether the sampling quotas were met, the updated confidence score, and whether the feature reads Ready or Not Ready. For a run whose evidence stayed local, also say where the traces were reviewed (the executor's machine, or the host's chosen location) and that each was verified against its sha256; if the reviewer could not reach them, say the quotas cannot be met from the tracker alone and were not met.
 
 **Any P0 that is not an approved pass means Not Ready regardless of score**, so say it explicitly rather than letting a percentage speak for itself. Approving a confirmed failure is the correct action and does not raise the score: it records that a human looked and agreed the feature is broken. A feature can therefore be fully reviewed, with every verdict accepted, and still read Not Ready, which is the pipeline working rather than failing.
 
