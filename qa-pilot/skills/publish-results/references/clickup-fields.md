@@ -73,9 +73,26 @@ apart breaks it.
 
 `API Mode` earns its place: it is what makes "this pass came from a seeded mock backend" auditable after the fact rather than a thing someone has to remember.
 
-## Evidence lives in ClickUp
+Those values arrive already named: on a `tracker`-mode payload, each case's `fields` object uses exactly the field names above, and `attach` names the trace file. Write them as given.
 
-One artifact per case per run: **`trace.zip`, attached to the case task.**
+### When evidence stays local
+
+A run whose environment keeps evidence local, which every production run does, sends no application data. `publish-payload.mjs` returns a different, smaller set per case, and these are the only fields written:
+
+| Field | Type | Payload key |
+|---|---|---|
+| Verdict | dropdown | `verdict` |
+| Env | dropdown | `env_name` |
+| Build SHA | text | `build_id` |
+| Run ID | text | `run_id` |
+| Trace Path | text | `trace_path`: relative to `testing/<feature>/runs/<run_id>/` on the executor's machine |
+| Trace SHA256 | text | `trace_sha256`: the full digest, so a reviewer can verify the file with `shasum -a 256` before opening it |
+
+Status comes from `target_status`. Nothing is attached, and API Mode, App, Executor, Run Date, Flake Count and Model Version are left as they were. `Run ID`, `Trace Path` and `Trace SHA256` are created once alongside the other fields (see `../../../SETUP-CLICKUP.md`); a host that never runs on production can skip them.
+
+## Evidence lives in ClickUp, unless it stays local
+
+One artifact per case per run: **`trace.zip`, attached to the case task**, when the environment's effective `evidence_upload` is `tracker`. When it is `local`, nothing is attached: the trace stays in the run directory and the case task records its path and sha256 instead (above).
 
 A Playwright trace contains the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log. Attaching the video and console separately stores the same bytes twice and splits one investigation across three files, so the trace supersedes both.
 
@@ -116,3 +133,15 @@ Quarantined (flaky): CHECKOUT-QTY-003
 The score is deliberately low here: publishing moves cases to `Under Review`, and only `Approved` counts toward the numerator. It climbs as QA works the queue. A first publish scoring 0% is normal, not alarming, so say so rather than posting a bare number.
 
 Keep it to facts already in the report. A comment that interprets the run is a model opinion wearing the record's authority.
+
+For a run whose evidence stays local, the comment holds only what the payload's summary holds: run ID, environment, build, counts, blocked percentage, confidence and readiness. No executor, no failed-case list with failure text, no trace link:
+
+```
+2026-08-30T09:22Z-checkout-a1b2c3d · production @ a1b2c3d
+
+12 pass · 2 fail · 1 flaky · 0 blocked (0% blocked)
+Confidence: 31% · Not Ready
+Evidence is on the executor's machine under testing/checkout/runs/2026-08-30T09:22Z-checkout-a1b2c3d/
+```
+
+Each case task carries its own trace path and `trace_sha256`, which is how a reviewer finds and verifies the file.
