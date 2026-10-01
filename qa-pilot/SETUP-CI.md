@@ -11,7 +11,13 @@ system the same steps port directly; nothing here is GitHub-specific except the 
 ## What the CI job does, and what it deliberately does not
 
 It runs the specs QA approved, against a deployed environment, and fails the build when
-one of them stops passing. It uploads `report.json` and the traces as build artifacts.
+one of them stops passing. It uploads the run directory (`report.json`, the Playwright
+results and the traces) as build artifacts, unless the environment keeps its evidence local.
+
+**It never runs against production.** The job reads the environment's `kind` from the
+profile and stops if it is `production`. Build artifacts leave the machine, and a production
+trace carries a live session and every request body it touched; production runs are made by
+a person, with evidence kept on their machine (see `/qa-pilot:run-tests`).
 
 **It does not publish to ClickUp.** Publishing runs through the approval gate over MCP and
 writes to the tracker as a person, and a build runner is neither. Adding a second write
@@ -132,14 +138,37 @@ have QA review it; the approval then carries forward on its own.
 If you see this on every case at once, someone reformatted the spec directory. Re-review
 once and it settles.
 
+## Each run has its own directory
+
+Everything a run produces goes under `testing/<feature>/runs/<run_id>/`, as it does locally:
+`meta.json`, the Playwright JSON report as `results.json` (the job sets
+`PLAYWRIGHT_JSON_OUTPUT_NAME` to it), the per-test output and traces under `test-results/`
+(`--output`), shared fixture identities under `fixtures/` (`QA_PILOT_FIXTURE_DIR`), and the
+`report.json` that `parse-report.mjs` writes there by default. Two runs never overwrite each
+other's evidence, and the publish gate finds everything it re-reads relative to that one
+directory.
+
+## The write guard in CI
+
+The job exports the feature's declared mutation policy from `testing/<feature>/cases.yaml` as
+`QA_PILOT_MUTATION`, after linting the file, and the profile's `mutation` block as
+`QA_PILOT_MUTATION_CONFIG`. Specs that import `test` from `write-guard.fixture.ts` then run
+under the same guard as they do locally, and each attempt leaves its `writes.json` beside its
+trace. A feature with no `mutation` block runs `unrestricted`, as in 0.2.0; one whose policy
+cannot be read fails the step rather than running unguarded.
+
 ## Evidence in CI
 
-The template uses `evidence_capture: on-failure`. Nobody samples CI passes, so keeping a
-trace for every green case buys storage and wall clock and nothing else. Failures still
-carry a full trace, which is what a red build needs.
+The job reads `evidence.capture` from the profile and passes the matching `--trace` mode to
+Playwright (`always` keeps a trace for every test, `on-failure` only for failures), and it
+records that mode in `meta.json`, so the report claims exactly what the run kept. For a
+regression job `on-failure` is a reasonable profile choice: nobody samples CI passes, and
+failures still carry a full trace.
 
-Traces upload as build artifacts with a 14-day retention. They contain the test account's
-session token, so treat the artifacts as credentials and keep the retention short.
+Traces upload as build artifacts with a 14-day retention, and only when the environment's
+effective `evidence_upload` is `tracker`. They contain the test account's session token, so
+treat the artifacts as credentials and keep the retention short. An environment that keeps
+evidence local uploads nothing.
 
 ## Pin the plugin
 

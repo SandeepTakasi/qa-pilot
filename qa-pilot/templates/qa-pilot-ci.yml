@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: <owner>/<qa-pilot-repo>   # EDIT
-          ref: v0.2.0                            # EDIT: pin a tag or SHA
+          ref: v0.3.0                            # EDIT: pin a tag or SHA
           path: .qa-pilot-plugin
           # token: ${{ secrets.QA_PILOT_REPO_TOKEN }}   # only if that repo is private
 
@@ -68,20 +68,62 @@ jobs:
           QA_PASSWORD: ${{ secrets.QA_PASSWORD }}
         run: node scripts/ci-login.mjs        # EDIT: your own login script
 
+      # Everything about the environment comes from the profile, never from a workflow
+      # variable: two places to record one fact is one place to get it wrong, and the
+      # publish gate refuses a report that disagrees with the profile.
+      # Assign first, THEN echo. `echo "X=$(cmd)"` returns echo's exit status, so a
+      # failing command would leave X empty and let the job carry on green.
+      - name: Read the environment from the profile
+        run: |
+          node $PLUGIN/lib/profile.mjs $PROFILE > .qa-pilot-profile.json
+          KIND=$(jq -er ".environments.$QA_ENV.kind" .qa-pilot-profile.json)
+          # Never production. This job uploads traces as build artifacts, and a production
+          # trace carries a live session and every request body it touched. Production runs
+          # are executed by a person, with evidence kept on their machine.
+          if [ "$KIND" = "production" ]; then
+            echo "refusing: environment $QA_ENV has kind: production, which this CI job never runs against" >&2
+            exit 1
+          fi
+          QA_URL=$(jq -er ".environments.$QA_ENV.apps.$APP" .qa-pilot-profile.json)
+          EVIDENCE_UPLOAD=$(jq -er ".environments.$QA_ENV.evidence_upload" .qa-pilot-profile.json)
+          CAPTURE=$(jq -er '.evidence.capture // "always"' .qa-pilot-profile.json)
+          echo "KIND=$KIND" >> $GITHUB_ENV
+          echo "QA_URL=$QA_URL" >> $GITHUB_ENV
+          echo "EVIDENCE_UPLOAD=$EVIDENCE_UPLOAD" >> $GITHUB_ENV
+          echo "CAPTURE=$CAPTURE" >> $GITHUB_ENV
+          # The write guard's view of what a write is on this host, uncompiled.
+          echo "QA_PILOT_MUTATION_CONFIG=$(jq -c '.mutation // empty' .qa-pilot-profile.json)" >> $GITHUB_ENV
+
+      # The feature's declared mutation policy, from the cases file QA approved. The write
+      # guard fixture reads it; unset would run read-only, never unrestricted.
+      - name: Read the mutation policy
+        run: |
+          node $PLUGIN/validate-cases.mjs testing/$FEATURE/cases.yaml --profile $PROFILE
+          MUTATION=$(node --input-type=module -e '
+            const { parse } = await import(`${process.cwd()}/${process.env.PLUGIN}/lib/yaml.mjs`);
+            const { readFileSync } = await import("node:fs");
+            const m = parse(readFileSync(`testing/${process.env.FEATURE}/cases.yaml`, "utf8")).mutation ?? { policy: "unrestricted" };
+            console.log(JSON.stringify(m.prefix ? { policy: m.policy, prefix: m.prefix } : { policy: m.policy }));')
+          echo "QA_PILOT_MUTATION=$MUTATION" >> $GITHUB_ENV
+
+      # Each run gets its own directory, so two runs never overwrite each other's evidence.
+      - name: Prepare the run directory
+        run: |
+          RUN_ID="${{ github.run_id }}-$FEATURE"
+          RUN_DIR="testing/$FEATURE/runs/$RUN_ID"
+          mkdir -p "$RUN_DIR/fixtures"
+          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo "RUN_DIR=$RUN_DIR" >> $GITHUB_ENV
+          echo "QA_PILOT_FIXTURE_DIR=$PWD/$RUN_DIR/fixtures" >> $GITHUB_ENV
+          echo "STARTED_AT=$(date -u +%FT%TZ)" >> $GITHUB_ENV
+
       # PREREQUISITE 2. The runner must be able to reach the deployed environment. If it
       # is behind a VPN or an IP allowlist, add the runner to it, or run this on a
       # self-hosted runner inside the network.
-      # Assign first, THEN echo. `echo "X=$(cmd)"` returns echo's exit status, so a
-      # failing command would leave X empty and let the job carry on green.
       - name: Read the deployed build, before
         run: |
           SHA_BEFORE=$(node $PLUGIN/read-env-sha.mjs $PROFILE $QA_ENV $APP --sha-only)
-          # Taken from the profile, never from a workflow variable. Two places to record
-          # one URL is one place to get it wrong, and the publish gate refuses a report
-          # whose env_url disagrees with the profile.
-          QA_URL=$(node $PLUGIN/lib/profile.mjs $PROFILE | jq -er ".environments.$QA_ENV.apps.$APP")
           echo "SHA_BEFORE=$SHA_BEFORE" >> $GITHUB_ENV
-          echo "QA_URL=$QA_URL" >> $GITHUB_ENV
 
       # Runs exactly what QA approved, and only while the spec still matches what they
       # approved. No ClickUp call: approved.json is committed.
@@ -102,8 +144,17 @@ jobs:
       # $SPECS is intentionally unquoted: it is a space-separated list of spec paths.
       # `select` refuses any path containing whitespace for that reason, so the split here
       # is safe. `select --json` gives a structured list if you need one.
+      # The trace mode follows the profile's evidence.capture, so the run keeps what the
+      # report will claim it kept. All output lands in this run's own directory.
       - name: Run
-        run: npx playwright test $SPECS --reporter=json > playwright-report.json
+        run: |
+          case "$CAPTURE" in
+            always) TRACE=on ;;
+            on-failure) TRACE=retain-on-failure ;;
+            *) TRACE=off ;;
+          esac
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUN_DIR/results.json" \
+            npx playwright test $SPECS --reporter=json --trace "$TRACE" --output "$RUN_DIR/test-results"
         continue-on-error: true    # the verdict step decides, so the report is built first
 
       - name: Read the deployed build, after
@@ -111,36 +162,38 @@ jobs:
           SHA_AFTER=$(node $PLUGIN/read-env-sha.mjs $PROFILE $QA_ENV $APP --sha-only)
           echo "SHA_AFTER=$SHA_AFTER" >> $GITHUB_ENV
 
+      # meta.json is written by node, not a heredoc, so a null prefix stays null.
       - name: Build the report
         run: |
-          cat > meta.json <<JSON
-          {
-            "run_id": "${{ github.run_id }}-$FEATURE",
-            "feature": "$FEATURE", "app": "$APP", "env_name": "$QA_ENV",
-            "env_url": "$QA_URL", "api_mode": "server",
-            "sha_before": "$SHA_BEFORE", "sha_after": "$SHA_AFTER",
-            "sha_source": "$PROFILE:$QA_ENV", "sha_format": "commit",
-            "evidence_capture": "on-failure",
-            "executor": "github-actions", "model_version": "none (CI regression run)",
-            "started_at": "$(date -u +%FT%TZ)", "finished_at": "$(date -u +%FT%TZ)"
-          }
-          JSON
-          node $PLUGIN/parse-report.mjs playwright-report.json meta.json \
-            --specs testing/$FEATURE/specs.json -o report.json
+          node --input-type=module -e '
+            const e = process.env;
+            const m = JSON.parse(e.QA_PILOT_MUTATION);
+            const meta = {
+              run_id: e.RUN_ID, feature: e.FEATURE, app: e.APP, env_name: e.QA_ENV,
+              env_kind: e.KIND, env_url: e.QA_URL, api_mode: "server",
+              sha_before: e.SHA_BEFORE, sha_after: e.SHA_AFTER,
+              sha_source: `${e.PROFILE}:${e.QA_ENV}`, sha_format: "commit",
+              evidence_capture: e.CAPTURE,
+              mutation_policy: m.policy, mutation_prefix: m.prefix ?? null,
+              executor: "github-actions", model_version: "none (CI regression run)",
+              started_at: e.STARTED_AT, finished_at: new Date().toISOString(),
+            };
+            (await import("node:fs")).writeFileSync(`${e.RUN_DIR}/meta.json`, JSON.stringify(meta, null, 2));'
+          # report.json lands in the run directory, beside results.json and meta.json.
+          node $PLUGIN/parse-report.mjs $RUN_DIR/results.json $RUN_DIR/meta.json \
+            --specs testing/$FEATURE/specs.json
 
-      # Keep the evidence whatever the outcome. A red build with no trace is a red build
-      # someone re-runs instead of reading.
+      # Keep the evidence whatever the outcome, unless this environment keeps evidence
+      # local: then it stays on the runner and is discarded with it.
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && env.EVIDENCE_UPLOAD == 'tracker'
         with:
           name: qa-pilot-${{ github.run_id }}
-          path: |
-            report.json
-            test-results/
+          path: ${{ env.RUN_DIR }}
           retention-days: 14
 
       - name: Verdict
-        run: node $PLUGIN/ci-gate.mjs verdict --report report.json
+        run: node $PLUGIN/ci-gate.mjs verdict --report $RUN_DIR/report.json
 
 # This job does not publish to ClickUp, by design. Publishing writes to the tracker as a
 # person and runs through the approval gate over MCP, neither of which a build runner has.
