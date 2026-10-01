@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { parse } from './lib/yaml.mjs';
 import { isMain } from './lib/is-main.mjs';
-import { loadProfile } from './lib/profile.mjs';
+import { loadProfile, effectiveEvidenceUpload } from './lib/profile.mjs';
 
 // A pass has no defect to report. `flaky` is included because an intermittent product bug
 // is a real thing, but it is labelled as one: quarantine-and-harden is the usual answer,
@@ -47,8 +47,46 @@ export function failureSignature(caseId, failureSummary) {
 
 const bullets = (items) => (items ?? []).map((s) => `- ${s}`).join('\n');
 
-/** The bug body. Every line is copied from the report, the cases file or the profile. */
-export function bugBody(c, kase, report, { specPath = null, traceName = null } = {}) {
+/**
+ * A bug for a run whose evidence stays local: the tracker gets no application data, so no
+ * failure text, URL, executor or attachment. Only the case (authored by us), the run's
+ * identity, and where on the executor's machine the trace is and how to verify it.
+ */
+function localBugBody(c, kase, report, { specPath = null } = {}) {
+  const sections = [`**${kase.title}**`];
+  sections.push(
+    (c.verdict === 'flaky'
+      ? 'This case failed and then passed on retry, so the defect is **intermittent**. '
+      : 'This case failed against a deployed build and QA confirmed the feature is broken. ') +
+    'The failure text is withheld: this run\'s evidence stays on the executor\'s machine, so the tracker receives no application data. Open the trace below there.',
+  );
+  sections.push(
+    `## Steps to reproduce\n\n` +
+    `**Preconditions**\n${bullets(kase.preconditions)}\n\n` +
+    `**Steps**\n${(kase.steps ?? []).map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
+  );
+  sections.push(`## Expected\n\n${bullets(kase.expected)}`);
+  sections.push(
+    `## Where\n\n| | |\n|---|---|\n` +
+    `| Case | ${c.id} |\n| Environment | ${report.env_name} |\n| Build | ${report.commit_sha} |\n| Run | ${report.run_id} |`,
+  );
+  if (specPath) sections.push(`## Re-run it\n\n\`\`\`bash\nnpx playwright test ${specPath}\n\`\`\``);
+  sections.push(
+    `## Evidence\n\n` +
+    `Trace: \`${c.trace ?? 'none recorded'}\`, relative to the run directory \`testing/${report.feature}/runs/${report.run_id}/\`.\n` +
+    `sha256: \`${c.trace_sha256 ?? 'none recorded'}\`. Verify the file with \`shasum -a 256\` before opening it.`,
+  );
+  sections.push(`Filed by QA-Pilot from case ${c.id}.`);
+  return sections.join('\n\n');
+}
+
+/**
+ * The bug body. Every line is copied from the report, the cases file or the profile.
+ * `mode`: `tracker` (0.2.0, trace attached), `local` (evidence stays local: no failure text)
+ * or `file` (tracker: none, a markdown file in the run directory, so the text stays).
+ */
+export function bugBody(c, kase, report, { specPath = null, traceName = null, mode = 'tracker' } = {}) {
+  if (mode === 'local') return localBugBody(c, kase, report, { specPath });
   const intermittent = c.verdict === 'flaky';
   const sections = [];
 
@@ -93,6 +131,15 @@ export function bugBody(c, kase, report, { specPath = null, traceName = null } =
     );
   }
 
+  if (mode === 'file') {
+    sections.push(
+      `## Evidence\n\nThe Playwright trace is \`${c.trace ?? 'not recorded'}\` in this run's directory. Open it at https://trace.playwright.dev.\n\n` +
+      `Treat the trace as a credential: it contains the session token that authenticated the run.`,
+    );
+    sections.push(`Filed by QA-Pilot from case ${c.id}.`);
+    return sections.join('\n\n');
+  }
+
   sections.push(
     `## Evidence\n\n` +
     (traceName
@@ -124,10 +171,25 @@ export function buildBugs(report, cases, confirmed, {
   const caseById = new Map(cases.map((c) => [c.id, c]));
   const resultById = new Map((report.cases ?? []).map((c) => [c.id, c]));
 
+  // What a bug may carry follows the environment's effective evidence_upload, the same key
+  // as everything else the tracker receives. Without a profile that cannot be known, which
+  // is only acceptable for a run that is known not to be production.
+  let mode = 'tracker';
+  if (!profile?.environments) {
+    if (!report.env_kind || report.env_kind === 'production') {
+      throw new Error(`refused: no profile was given and this report's env_kind is ${report.env_kind ?? 'absent'}, so there is no way to know whether its failure text may reach the tracker. Pass --profile.`);
+    }
+  } else {
+    const env = profile.environments[report.env_name];
+    if (!env) throw new Error(`refused: env_name "${report.env_name}" is not a registered environment in the profile`);
+    if (profile.tracker === 'none') mode = 'file';
+    else if ((env.evidence_upload ?? effectiveEvidenceUpload(env, { tracker: profile.tracker })) === 'local') mode = 'local';
+  }
+
   // Where bugs go. Naming a list is optional so a first pilot is not blocked on ClickUp
   // admin, but an unnamed one lands in the feature list, which mixes bugs into the case
   // board and is worth saying out loud rather than doing quietly.
-  const bugList = profile.clickup?.bug_list ?? null;
+  const bugList = mode === 'file' ? null : profile.clickup?.bug_list ?? null;
 
   for (const id of confirmed) {
     const result = resultById.get(id);
@@ -151,19 +213,24 @@ export function buildBugs(report, cases, confirmed, {
 
     const signature = failureSignature(id, result.failure_summary);
     const known = ledger[id];
-    const traceName = result.trace ? `${id}-${report.run_id}.zip` : null;
+    // Only a tracker upload attaches anything; local evidence and local files point at it.
+    const traceName = mode === 'tracker' && result.trace ? `${id}-${report.run_id}.zip` : null;
 
-    if (known?.task_id && known.signature === signature) {
+    // Under tracker: none there is no task to comment on: each run's bugs are its own files.
+    if (mode !== 'file' && known?.task_id && known.signature === signature) {
       // Same case, same failure. A weekly regression run would otherwise file this bug
       // every week, and a board of duplicates is a board nobody reads.
       comment.push({
         id,
         task_id: known.task_id,
-        body:
-          `Still failing on \`${report.run_id}\` against ${report.env_name} at build \`${report.commit_sha}\`.\n\n` +
-          `\`\`\`\n${result.failure_summary}\n\`\`\`\n\n` +
-          `Same failure signature as when this was filed, so it is the same defect rather than a new one. ` +
-          `The trace for this run is attached to case ${id}.`,
+        body: mode === 'local'
+          ? `Still failing on \`${report.run_id}\` against ${report.env_name} at build \`${report.commit_sha}\`, ` +
+            `with the same failure signature as when this was filed. The failure text is withheld because this run's evidence stays local: ` +
+            `trace \`${result.trace ?? 'none recorded'}\` in \`testing/${report.feature}/runs/${report.run_id}/\`, sha256 \`${result.trace_sha256 ?? 'none recorded'}\`.`
+          : `Still failing on \`${report.run_id}\` against ${report.env_name} at build \`${report.commit_sha}\`.\n\n` +
+            `\`\`\`\n${result.failure_summary}\n\`\`\`\n\n` +
+            `Same failure signature as when this was filed, so it is the same defect rather than a new one. ` +
+            `The trace for this run is attached to case ${id}.`,
       });
       nextLedger[id] = {
         ...known,
@@ -180,12 +247,14 @@ export function buildBugs(report, cases, confirmed, {
       // the case. Never search by title to find this later: use the ledger.
       title: `${id}: ${kase.title}`,
       list: bugList,
-      list_source: bugList ? 'clickup.bug_list' : 'the feature list (no clickup.bug_list set)',
+      list_source: mode === 'file' ? 'a markdown file in the run directory (tracker: none)'
+        : bugList ? 'clickup.bug_list' : 'the feature list (no clickup.bug_list set)',
+      ...(mode === 'file' ? { file: `testing/${report.feature}/runs/${report.run_id}/bugs/${id}.md` } : {}),
       tags: ['qa-pilot', ...(result.verdict === 'flaky' ? ['intermittent'] : [])],
       priority: kase.priority,
       link_to_case: id,
       trace_attachment: traceName,
-      body: bugBody(result, kase, report, { specPath: specs[id] ?? null, traceName }),
+      body: bugBody(result, kase, report, { specPath: specs[id] ?? null, traceName, mode }),
       // A previously filed bug whose signature changed means the failure moved. Say so,
       // rather than silently opening a second ticket that looks like a duplicate.
       supersedes: known?.task_id && known.signature !== signature
@@ -208,7 +277,7 @@ export function buildBugs(report, cases, confirmed, {
   }
 
   const warnings = [];
-  if (!bugList && create.length) {
+  if (mode !== 'file' && !bugList && create.length) {
     warnings.push('clickup.bug_list is not set, so these bugs land in the feature list beside the case tasks. Name a bug list in the profile to keep the case board clean.');
   }
   return { create, comment, skipped, ledger: nextLedger, warnings };
