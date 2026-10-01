@@ -34,7 +34,7 @@ export function buildPayload(report, profile, { transitions, confidence } = {}) 
     throw new Error('--confidence is required: the case-status output whose confidence object the run summary reports');
   }
   const mode = profile.tracker === 'none' ? 'none'
-    : (env.evidence_upload ?? effectiveEvidenceUpload(env, { tracker: profile.tracker }));
+    : effectiveEvidenceUpload(env, { tracker: profile.tracker });
 
   const names = profile.clickup?.statuses ?? DEFAULT_STATUSES;
   const target = new Map((transitions?.transitions ?? []).map((t) => [t.id, displayName(names, t.to)]));

@@ -56,6 +56,8 @@ function parseSemver(v) {
  */
 export function effectiveEvidenceUpload(env, { tracker = 'clickup' } = {}) {
   if (tracker === 'none') return 'local';
+  // The loader refuses tracker on production; this keeps an unvalidated profile from leaking.
+  if (env?.kind === 'production') return 'local';
   if (EVIDENCE_UPLOADS.includes(env?.evidence_upload)) return env.evidence_upload;
   return env?.kind === 'production' ? 'local' : 'tracker';
 }

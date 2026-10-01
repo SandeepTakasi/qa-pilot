@@ -76,6 +76,11 @@ test('effectiveEvidenceUpload is local under tracker: none whatever the environm
   assert.equal(effectiveEvidenceUpload({ kind: 'qa' }, { tracker: 'clickup' }), 'tracker');
 });
 
+test('effectiveEvidenceUpload is local for production even when handed an explicit tracker', () => {
+  // The loader refuses that combination; this keeps an unvalidated profile from leaking.
+  assert.equal(effectiveEvidenceUpload({ kind: 'production', evidence_upload: 'tracker' }), 'local');
+});
+
 // --- context.sources -------------------------------------------------------------
 
 const withSources = (sources) => (p) => { p.context = { sources }; };
@@ -106,6 +111,11 @@ test('a path whose last segment is an env file is an error', () => {
     assert.ok(has(errorsFor(withSources([{ name: 'a', description: 'x', path }])), /context\.sources\[0\]\.path: .*\.env/), path);
   }
   assert.deepEqual(errorsFor(withSources([{ name: 'a', description: 'x', path: 'docs/environment.md' }])), []);
+});
+
+test('context and each source must be mappings', () => {
+  assert.ok(has(errorsFor((p) => { p.context = ['docs']; }), /^context: must be a mapping/));
+  assert.ok(has(errorsFor(withSources(['docs/'])), /^context\.sources\[0\]: must be a mapping/));
 });
 
 test('context must hold a non-empty sources list and nothing else', () => {
@@ -152,6 +162,12 @@ test('signature url is required and every regex must compile', () => {
   assert.ok(has(errorsFor((p) => { p.mutation = badBody; }), /mutation\.write_signatures\[0\]\.body: does not compile/));
   const badText = MUTATION(); badText.deny_controls.text = ['('];
   assert.ok(has(errorsFor((p) => { p.mutation = badText; }), /mutation\.deny_controls\.text\[0\]: does not compile/));
+});
+
+test('deny_controls text and icons must be lists, and text entries must be strings', () => {
+  assert.ok(has(errorsFor((p) => { p.mutation = { deny_controls: { text: 'wipe' } }; }), /mutation\.deny_controls\.text: must be a list/));
+  assert.ok(has(errorsFor((p) => { p.mutation = { deny_controls: { text: [3] } }; }), /mutation\.deny_controls\.text\[0\]: must be a non-empty regex string/));
+  assert.ok(has(errorsFor((p) => { p.mutation = { deny_controls: { icons: 'fa-bomb' } }; }), /mutation\.deny_controls\.icons: must be a list/));
 });
 
 test('deny icons must be non-empty strings and note must be a string', () => {

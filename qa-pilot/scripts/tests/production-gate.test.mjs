@@ -263,6 +263,52 @@ test('rule 1b: retries recomputed from results.json must match the report', () =
   assert.ok(has(gate(r, QA_PROFILE, casesFile()).errors, /^rule 1b: cases\[CHECKOUT-ORDER-001\]\.retries/));
 });
 
+test('rule 1b: a case verdict edited in the report is refused', () => {
+  // Relabelling an unguarded case "blocked" would otherwise exempt it from rule 2.
+  const r = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO()), one('CHECKOUT-ORDER-002 b', RO())] });
+  r.report.cases[0].verdict = 'blocked';
+  r.report.summary = { pass: 1, fail: 0, flaky: 0, blocked: 1 };
+  assert.ok(has(gate(r, QA_PROFILE, casesFile()).errors, /^rule 1b: cases\[CHECKOUT-ORDER-001\]\.verdict says blocked but results\.json gives pass/));
+});
+
+test('rule 1b: a fixture verdict edited in the report is refused', () => {
+  // Relabelling a failed setup "pass" would otherwise exempt its dependents from rule 5.
+  const r = fxRun([one('FIXTURE shared', SW(), 'failed'), one('CHECKOUT-ORDER-001 a', SW())]);
+  r.report.fixtures[0].verdict = 'pass';
+  assert.ok(has(gate(r, QA_PROFILE, fxCases()).errors, /^rule 1b: fixtures\[shared setup\]\.verdict says pass but results\.json gives fail/));
+});
+
+test('rule 1b: a case in the report but not in results.json is refused', () => {
+  const r = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO())] });
+  r.report.cases.push({ ...r.report.cases[0], id: 'CHECKOUT-ORDER-002' });
+  r.report.summary = { pass: 2, fail: 0, flaky: 0, blocked: 0 };
+  assert.ok(has(gate(r, QA_PROFILE, casesFile()).errors, /^rule 1b: cases\[CHECKOUT-ORDER-002\] is not in results\.json/));
+});
+
+test('rule 1b: a case in results.json but missing from the report is refused', () => {
+  const r = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO()), one('CHECKOUT-ORDER-002 b', RO())] });
+  r.report.cases = r.report.cases.filter((c) => c.id !== 'CHECKOUT-ORDER-002');
+  r.report.summary = { pass: 1, fail: 0, flaky: 0, blocked: 0 };
+  assert.ok(has(gate(r, QA_PROFILE, casesFile()).errors, /^rule 1b: case CHECKOUT-ORDER-002 ran \(results\.json\) but is missing from the report/));
+});
+
+test('rule 1b: two unlisted records cannot both be accounted for by one listed copy', () => {
+  // Identical attempts write identical records; dropping one must still be caught.
+  const r = makeRun({ entities: [{ title: 'CHECKOUT-ORDER-001 a', attempts: [
+    { status: 'failed', writes: RO() }, { status: 'passed', writes: RO() }] }] });
+  const pw = JSON.parse(readFileSync(join(r.run, 'results.json'), 'utf8'));
+  pw.suites[0].specs[0].tests[0].results.shift();
+  writeFileSync(join(r.run, 'results.json'), JSON.stringify(pw));
+  const forged = { ...r, report: rebuild(r.run, pw, r.meta) };
+  assert.ok(has(gate(forged, QA_PROFILE, casesFile()).errors, /^rule 1b: .*no listed record accounts for/));
+});
+
+test('rule 1: the report prefix alone disagreeing with the declaration is refused', () => {
+  const r = makeRun({ policy: 'scoped-write', prefix: 'QA_T_', entities: [one('CHECKOUT-ORDER-001 a', SW())] });
+  r.report.mutation_prefix = 'QA_X_';
+  assert.ok(has(gate(r, QA_PROFILE, casesFile({ policy: 'scoped-write', prefix: 'QA_T_' })).errors, /^rule 1: report mutation_prefix "QA_X_"/));
+});
+
 // --- rule 2: the guard was live ------------------------------------------------------------
 
 test('rule 2: an executed read-only case with no guard record is refused', () => {
@@ -293,6 +339,16 @@ test('rule 2: a guard that did not load the host\'s write signatures is refused'
   assert.ok(has(gate(r, productionProfile(), casesFile()).errors, /^rule 2: .*write_signatures 0.*2/));
 });
 
+test('rule 2: a mutation block with no write_signatures means the guard must have loaded zero', () => {
+  const raw = parse(readFileSync(PROFILE_PATH, 'utf8'));
+  raw.mutation = { deny_controls: { text: ['wipe'] } };
+  const { profile } = validateProfile(raw);
+  const ok = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO({ write_signatures: 0 }))] });
+  assert.deepEqual(rules(gate(ok, profile, casesFile()).errors, 2), []);
+  const extra = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO({ write_signatures: 2 }))] });
+  assert.ok(has(gate(extra, profile, casesFile()).errors, /^rule 2: .*write_signatures 2 but the profile declares 0/));
+});
+
 test('rule 2: a blocked case is not required to carry a record', () => {
   const r = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO()), one('CHECKOUT-ORDER-002 b', null, 'skipped')] });
   assert.deepEqual(rules(gate(r, QA_PROFILE, casesFile()).errors, 2), []);
@@ -303,6 +359,11 @@ test('rule 2: a blocked case is not required to carry a record', () => {
 test('rule 3: a read-only run that recorded writes is refused, naming the count', () => {
   const r = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO({ blocked: 2, events: events('block', 2) }))] });
   assert.ok(has(gate(r, QA_PROFILE, casesFile()).errors, /^rule 3: read-only run recorded 2 write\(s\)/));
+});
+
+test('rule 3: an observed write counts too under read-only', () => {
+  const r = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO({ observed: 1, events: events('observe', 1) }))] });
+  assert.ok(has(gate(r, QA_PROFILE, casesFile()).errors, /^rule 3: read-only run recorded 1 write\(s\)/));
 });
 
 test('rule 4: a scoped-write run that blocked a write is refused', () => {
@@ -362,7 +423,19 @@ test('a passing fixture without a trace is refused like a case would be', () => 
   assert.ok(has(gate(r, QA_PROFILE, fxCases()).errors, /^fixtures\[shared setup\]\.trace: required/));
 });
 
+test('a passing fixture whose trace is missing from disk is refused', () => {
+  const r = fxRun([one('FIXTURE shared', SW()), one('CHECKOUT-ORDER-001 a', SW()), one('FIXTURE shared teardown', SW())]);
+  rmSync(join(r.run, r.report.fixtures[0].trace));
+  assert.ok(has(gate(r, QA_PROFILE, fxCases()).errors, /^fixtures\[shared setup\]\.trace: ".*" does not exist on disk/));
+});
+
 // --- rule 6: local evidence is pinned -----------------------------------------------------
+
+test('rule 6: a local trace that cannot be read is refused', () => {
+  const r = makeRun({ env: 'production', entities: [one('CHECKOUT-ORDER-001 a', RO({ write_signatures: PROD_SIGNATURES }))] });
+  rmSync(join(r.run, r.report.cases[0].trace));
+  assert.ok(has(gate(r, productionProfile(), casesFile()).errors, /^rule 6: cases\[CHECKOUT-ORDER-001\]\.trace cannot be read/));
+});
 
 test('rule 6: on production every trace needs its sha256', () => {
   const r = makeRun({ env: 'production', entities: [one('CHECKOUT-ORDER-001 a', RO({ write_signatures: PROD_SIGNATURES }))] });

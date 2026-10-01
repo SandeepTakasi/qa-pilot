@@ -248,7 +248,10 @@ Neither is ever taken from the report. "Executed" below means a verdict of `pass
    each case and fixture from the Playwright JSON report in the run directory (`results.json`,
    the name `/qa-pilot:run-tests` gives it; refused when absent), never from `report.json`, and
    refuses a non-null `writes` whose `attempts` differs from the recomputed count. That exact
-   count replaces a weaker lower bound of `retries + 1` taken from the report. A dropped
+   count replaces a weaker lower bound of `retries + 1` taken from the report. Each case's and
+   fixture's verdict is recomputed from results.json the same way, and a report verdict that
+   differs is refused, because rules 2 and 5 decide on verdicts: relabelling an unguarded case
+   `blocked`, or a failed setup `pass`, would otherwise exempt it. A dropped
    attempt therefore cannot hide its writes. The report is the file the gate is handed, so it is
    never the source.
 2. **The guard was live.** On a production environment, or under any effective policy other than

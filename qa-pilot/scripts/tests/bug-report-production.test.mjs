@@ -64,6 +64,13 @@ test('without a profile, a report with no env_kind is refused', () => {
   assert.throws(() => buildBugs(r, cases(), [FAIL]), /refused.*profile/i);
 });
 
+test('without a profile, an env_kind that is not exactly qa or staging is refused', () => {
+  for (const kind of ['prod', 'Production', 'live', 'QA']) {
+    assert.throws(() => buildBugs(report('qa', kind), cases(), [FAIL]), /refused.*profile/i, kind);
+  }
+  assert.equal(buildBugs(report('staging'), cases(), [FAIL]).create.length, 1);
+});
+
 test('without a profile, a qa report still files as before', () => {
   const out = buildBugs(report(), cases(), [FAIL]);
   assert.equal(out.create.length, 1);
@@ -136,4 +143,14 @@ test('under tracker: none a repeat failure is a new file for the new run, not a 
   const out = buildBugs(r, cases(), [FAIL], { profile: NONE, ledger: { [FAIL]: { task_id: null, signature } } });
   assert.equal(out.comment.length, 0);
   assert.equal(out.create.length, 1);
+});
+
+test('under tracker: none even a ledger entry with a task id gets a file, never a tracker comment', () => {
+  // A ledger left over from before the switch to tracker: none must not send anything.
+  const r = report();
+  const signature = failureSignature(FAIL, r.cases.find((c) => c.id === FAIL).failure_summary);
+  const out = buildBugs(r, cases(), [FAIL], { profile: NONE, ledger: { [FAIL]: { task_id: 't-old', signature } } });
+  assert.equal(out.comment.length, 0);
+  assert.equal(out.create.length, 1);
+  assert.ok(out.create[0].file);
 });

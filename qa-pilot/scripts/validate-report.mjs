@@ -66,7 +66,7 @@ function validateMutation(report, profile, casesDoc, { base, needsEvidence, arti
   if (production && capture !== 'always') {
     err(`evidence_capture: must be always on a production environment, but the report says "${capture}". The profile requires always there, and the report is not the source.`);
   }
-  const upload = env.evidence_upload ?? effectiveEvidenceUpload(env, { tracker: profile.tracker });
+  const upload = effectiveEvidenceUpload(env, { tracker: profile.tracker });
 
   // --- rule 1: the declaration ---
   if (casesDoc.feature !== report.feature) {
@@ -154,6 +154,10 @@ function validateMutation(report, profile, casesDoc, { base, needsEvidence, arti
       const truth = expected.get(k);
       expected.delete(k);
       if (!truth) { err(`rule 1b: ${at} is not in results.json`); continue; }
+      // Rules 2 and 5 decide on verdicts, so a verdict is checked like everything else.
+      if (e.verdict !== truth.verdict) {
+        err(`rule 1b: ${at}.verdict says ${e.verdict} but results.json gives ${truth.verdict}`);
+      }
       if (!isDeepStrictEqual(e.writes ?? null, truth.writes ?? null)) {
         err(`rule 1b: ${at}.writes does not match the records on disk and results.json`);
       }
@@ -187,7 +191,10 @@ function validateMutation(report, profile, casesDoc, { base, needsEvidence, arti
 
   // --- rule 2: the guard was live ---
   if (production || policy !== 'unrestricted') {
-    const signatures = Array.isArray(profile.mutation?.write_signatures) ? profile.mutation.write_signatures.length : null;
+    // A mutation block with no write_signatures declares zero of them.
+    const signatures = profile.mutation
+      ? (Array.isArray(profile.mutation.write_signatures) ? profile.mutation.write_signatures.length : 0)
+      : null;
     for (const { at, e } of entities) {
       if (!EXECUTED.includes(e.verdict)) continue;
       const w = e.writes;

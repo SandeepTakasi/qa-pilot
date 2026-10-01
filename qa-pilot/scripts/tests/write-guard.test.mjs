@@ -163,6 +163,11 @@ test('method must match unless the signature says *', () => {
   assert.equal(decideRequest(req('put', 'https://api.test/upload/x'), { policy: 'read-only' }, c).action, 'block');
 });
 
+test('a request method is matched case-insensitively against the uppercase signature', () => {
+  const c = cfg(GRAPHQL);
+  assert.equal(decideRequest(req('delete', 'https://api.test/api/projects/1'), { policy: 'read-only' }, c).action, 'block');
+});
+
 test('an allow signature wins over a write signature', () => {
   const c = cfg({ ...GRAPHQL, write_signatures: [{ method: 'POST', url: '/api/' }] });
   assert.equal(decideRequest(req('POST', 'https://api.test/api/search'), { policy: 'read-only' }, c).action, 'allow');

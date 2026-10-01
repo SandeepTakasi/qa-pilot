@@ -176,14 +176,16 @@ export function buildBugs(report, cases, confirmed, {
   // is only acceptable for a run that is known not to be production.
   let mode = 'tracker';
   if (!profile?.environments) {
-    if (!report.env_kind || report.env_kind === 'production') {
-      throw new Error(`refused: no profile was given and this report's env_kind is ${report.env_kind ?? 'absent'}, so there is no way to know whether its failure text may reach the tracker. Pass --profile.`);
+    // Only a kind known not to be production may go on without a profile; anything else,
+    // including a misspelt kind, fails closed.
+    if (!['qa', 'staging'].includes(report.env_kind)) {
+      throw new Error(`refused: no profile was given and this report's env_kind is ${report.env_kind ? `"${report.env_kind}"` : 'absent'}, so there is no way to know whether its failure text may reach the tracker. Pass --profile.`);
     }
   } else {
     const env = profile.environments[report.env_name];
     if (!env) throw new Error(`refused: env_name "${report.env_name}" is not a registered environment in the profile`);
     if (profile.tracker === 'none') mode = 'file';
-    else if ((env.evidence_upload ?? effectiveEvidenceUpload(env, { tracker: profile.tracker })) === 'local') mode = 'local';
+    else if (effectiveEvidenceUpload(env, { tracker: profile.tracker }) === 'local') mode = 'local';
   }
 
   // Where bugs go. Naming a list is optional so a first pilot is not blocked on ClickUp
