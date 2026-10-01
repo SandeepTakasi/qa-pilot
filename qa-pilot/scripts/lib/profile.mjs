@@ -9,10 +9,14 @@ import { dirname, resolve } from 'node:path';
 import { parse } from './yaml.mjs';
 import { STATUS_KEYS, DEFAULT_STATUSES } from './statuses.mjs';
 
-const TOP_KEYS = ['project', 'apps', 'environments', 'stabilization', 'auth', 'assertions',
-  'evidence', 'selectors', 'models', 'sandbox', 'cross_app', 'clickup'];
+const TOP_KEYS = ['project', 'tracker', 'apps', 'environments', 'stabilization', 'auth',
+  'assertions', 'evidence', 'selectors', 'models', 'sandbox', 'context', 'mutation',
+  'cross_app', 'clickup'];
+const TRACKERS = ['clickup', 'none'];
 const ENV_KINDS = ['qa', 'staging', 'production'];
 const EVIDENCE_UPLOADS = ['tracker', 'local'];
+const HTTP_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', '*'];
+const SIGNATURE_KEYS = ['method', 'url', 'body', 'note'];
 const AUTH_MODELS = ['dev-handoff', 'role-accounts', 'mixed'];
 const NETWORK_MODES = ['allowed', 'forbidden'];
 const ASSERT_STYLES = ['ui-state', 'mixed'];
@@ -45,11 +49,13 @@ function parseSemver(v) {
 }
 
 /**
- * Where an environment's traces go: its explicit `evidence_upload`, else `local` for
- * production and `tracker` for everything else. The loader writes this into the normalized
- * profile so no skill or script re-derives it.
+ * Where an environment's traces go: `local` everywhere under `tracker: none` (there is
+ * nowhere to upload to), else its explicit `evidence_upload`, else `local` for production
+ * and `tracker` for everything else. The loader writes this into the normalized profile so
+ * no skill or script re-derives it.
  */
-export function effectiveEvidenceUpload(env) {
+export function effectiveEvidenceUpload(env, { tracker = 'clickup' } = {}) {
+  if (tracker === 'none') return 'local';
   if (EVIDENCE_UPLOADS.includes(env?.evidence_upload)) return env.evidence_upload;
   return env?.kind === 'production' ? 'local' : 'tracker';
 }
@@ -69,6 +75,10 @@ export function validateProfile(raw, { profilePath = null } = {}) {
   }
 
   if (!isStr(raw.project)) err('project: required, must be a non-empty string');
+
+  // Which tracker the record lives in. `none` runs the pipeline on local files.
+  const tracker = raw.tracker ?? 'clickup';
+  if (!TRACKERS.includes(tracker)) err(`tracker: "${tracker}" is not one of ${TRACKERS.join(' | ')} (default: clickup)`);
 
   // --- apps ---
   const appNames = [];
@@ -115,6 +125,9 @@ export function validateProfile(raw, { profilePath = null } = {}) {
       }
       if (env.evidence_upload !== undefined && !EVIDENCE_UPLOADS.includes(env.evidence_upload)) {
         err(`environments.${envName}.evidence_upload: must be ${EVIDENCE_UPLOADS.join(' | ')}`);
+      }
+      if (tracker === 'none' && env.evidence_upload === 'tracker') {
+        warnings.push(`environments.${envName}.evidence_upload: tracker is ignored under tracker: none; evidence stays local`);
       }
       if (env.kind === 'production' && env.evidence_upload === 'tracker') {
         // A trace carries the session credential that authenticated the run and every
@@ -311,7 +324,12 @@ export function validateProfile(raw, { profilePath = null } = {}) {
   }
 
   // --- clickup ---
-  if (!isObj(raw.clickup)) {
+  if (tracker === 'none') {
+    // Ignored, not validated: nothing reads it, and it is dropped from the normalized profile.
+    if (raw.clickup !== undefined) {
+      warnings.push('clickup: present but ignored under tracker: none, and removed from the normalized profile');
+    }
+  } else if (!isObj(raw.clickup)) {
     err('clickup: required');
   } else {
     if (!PLAN_TIERS.includes(raw.clickup.plan_tier)) {
@@ -363,10 +381,112 @@ export function validateProfile(raw, { profilePath = null } = {}) {
     }
   }
 
+  // --- context (optional) ---
+  // Places a host documents behaviour, read before code when authoring cases.
+  if (raw.context !== undefined) {
+    if (!isObj(raw.context)) {
+      err('context: must be a mapping with a sources list');
+    } else {
+      for (const k of Object.keys(raw.context)) if (k !== 'sources') err(`context.${k}: unknown key (allowed: sources)`);
+      const sources = raw.context.sources;
+      if (!Array.isArray(sources) || sources.length === 0) {
+        err('context.sources: required, a non-empty list when context is set');
+      } else {
+        const names = new Set();
+        sources.forEach((s, i) => {
+          const at = `context.sources[${i}]`;
+          if (!isObj(s)) { err(`${at}: must be a mapping`); return; }
+          for (const k of Object.keys(s)) {
+            if (!['name', 'description', 'command', 'path'].includes(k)) err(`${at}.${k}: unknown key (allowed: name, description, command, path)`);
+          }
+          if (!isStr(s.name)) err(`${at}.name: required, a non-empty string`);
+          else if (names.has(s.name)) err(`${at}.name: "${s.name}" is used twice; names must be unique`);
+          else names.add(s.name);
+          if (!isStr(s.description)) err(`${at}.description: required. Say what it holds and which features it covers.`);
+          if (isStr(s.command) === isStr(s.path)) err(`${at}: set exactly one of command | path, as a non-empty string`);
+          // Env files hold secrets. They are never read, so naming one is a mistake.
+          if (isStr(s.path) && /^\.env/.test(s.path.split('/').filter(Boolean).pop() ?? '')) {
+            err(`${at}.path: "${s.path}" names .env files, which are never read as context`);
+          }
+        });
+      }
+    }
+  }
+
+  // --- mutation (optional; required with a production environment) ---
+  // What a write looks like on this host, for the write guard. Every key is checked,
+  // since a misspelt one would leave the guard with nothing to match and no complaint.
+  const hasProduction = envEntries.some(([, e]) => e.kind === 'production');
+  const regexProblem = (src, flags) => {
+    try { new RegExp(src, flags); return null; } catch (e) { return e.message; }
+  };
+  const checkSignatures = (list, key) => {
+    if (list === undefined) return 0;
+    if (!Array.isArray(list)) { err(`mutation.${key}: must be a list`); return 0; }
+    list.forEach((s, i) => {
+      const at = `mutation.${key}[${i}]`;
+      if (!isObj(s)) { err(`${at}: must be a mapping`); return; }
+      for (const k of Object.keys(s)) {
+        if (!SIGNATURE_KEYS.includes(k)) err(`${at}.${k}: unknown key (allowed: ${SIGNATURE_KEYS.join(', ')})`);
+      }
+      if (!HTTP_METHODS.includes(s.method)) err(`${at}.method: must be one of ${HTTP_METHODS.join(' | ')} (uppercase)`);
+      for (const f of ['url', 'body']) {
+        if (s[f] === undefined && f === 'body') continue;
+        if (!isStr(s[f])) { err(`${at}.${f}: required, a regex string`); continue; }
+        const problem = regexProblem(s[f], '');
+        if (problem) err(`${at}.${f}: does not compile: ${problem}`);
+      }
+      if (s.note !== undefined && typeof s.note !== 'string') err(`${at}.note: must be a string`);
+    });
+    return list.length;
+  };
+  if (raw.mutation === undefined) {
+    if (hasProduction) err('mutation: required when any environment has kind production, with at least one write_signatures entry, so the write guard knows what a write looks like on this host');
+  } else if (!isObj(raw.mutation)) {
+    err('mutation: must be a mapping');
+  } else {
+    const m = raw.mutation;
+    for (const k of Object.keys(m)) {
+      if (!['deny_controls', 'write_signatures', 'allow_signatures'].includes(k)) {
+        err(`mutation.${k}: unknown key (allowed: deny_controls, write_signatures, allow_signatures)`);
+      }
+    }
+    if (m.deny_controls !== undefined) {
+      const d = m.deny_controls;
+      if (!isObj(d)) {
+        err('mutation.deny_controls: must be a mapping of text and icons');
+      } else {
+        for (const k of Object.keys(d)) if (!['text', 'icons'].includes(k)) err(`mutation.deny_controls.${k}: unknown key (allowed: text, icons)`);
+        if (d.text !== undefined) {
+          if (!Array.isArray(d.text)) err('mutation.deny_controls.text: must be a list of regex strings');
+          else d.text.forEach((t, i) => {
+            if (!isStr(t)) err(`mutation.deny_controls.text[${i}]: must be a non-empty regex string`);
+            else {
+              const problem = regexProblem(t, 'i');
+              if (problem) err(`mutation.deny_controls.text[${i}]: does not compile: ${problem}`);
+            }
+          });
+        }
+        if (d.icons !== undefined) {
+          if (!Array.isArray(d.icons)) err('mutation.deny_controls.icons: must be a list of icon class names');
+          else d.icons.forEach((c, i) => { if (!isStr(c)) err(`mutation.deny_controls.icons[${i}]: must be a non-empty string`); });
+        }
+      }
+    }
+    const writes = checkSignatures(m.write_signatures, 'write_signatures');
+    checkSignatures(m.allow_signatures, 'allow_signatures');
+    // A non-list was already reported above; do not report it twice.
+    if (hasProduction && writes === 0 && Array.isArray(m.write_signatures ?? [])) {
+      err('mutation.write_signatures: at least one entry is required when any environment has kind production');
+    }
+  }
+
   if (errors.length) return { profile: null, errors, warnings };
   // The normalized profile: a copy, so validating never changes what the caller holds.
   const profile = structuredClone(raw);
-  for (const env of Object.values(profile.environments)) env.evidence_upload = effectiveEvidenceUpload(env);
+  for (const env of Object.values(profile.environments)) env.evidence_upload = effectiveEvidenceUpload(env, { tracker });
+  // Under tracker: none no script may read a status name from an ignored block.
+  if (tracker === 'none') delete profile.clickup;
   return { profile, errors, warnings };
 }
 
