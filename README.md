@@ -6,7 +6,7 @@ guard and local-only evidence for production runs, and ClickUp (or plain local f
 no tracker at all) as the record.
 
 ```bash
-claude plugin marketplace add <this-repo-url>
+claude plugin marketplace add https://github.com/SandeepTakasi/qa-pilot
 claude plugin install qa-pilot
 ```
 

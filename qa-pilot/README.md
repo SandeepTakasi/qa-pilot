@@ -66,7 +66,7 @@ The plugin ships generic. Everything project-specific (environment URLs, auth me
 ## Install
 
 ```bash
-claude plugin marketplace add <this-repo-url>
+claude plugin marketplace add https://github.com/SandeepTakasi/qa-pilot
 claude plugin install qa-pilot
 ```
 
