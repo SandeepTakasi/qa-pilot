@@ -19,12 +19,17 @@
 // popups opened outside the guarded context, and frames other than each page's main frame
 // for setScope. Requests are only as well classified as the host's write_signatures.
 //
-// Under any policy but unrestricted, every request path that would bypass the guard is
-// refused: the request fixture, page.request and context.request, the request export of
-// @playwright/test (playwright.request.newContext), browser.newContext and newPage outside
-// the test's own context (beforeAll and beforeEach included), and every browser type's
-// launch and connect. Every guarded test gets the built-in context, used or not, so the
-// window that lets Playwright create it is always closed again.
+// Under any policy but unrestricted, the request paths a spec reaches for are refused: the
+// request fixture, page.request and context.request, the request export of @playwright/test
+// (playwright.request.newContext), Node's global fetch(), browser.newContext and newPage
+// outside the test's own context (beforeAll and beforeEach included), and every browser
+// type's launch and connect. Every guarded test gets the built-in context, used or not, so
+// the window that lets Playwright create it is always closed again.
+//
+// Not refused, and so ceilings: Node's own node:http, node:https and node:net, and calling
+// a route method off the prototype (Object.getPrototypeOf(context).unrouteAll.call(...)) to
+// get past the guard's replacements. Both are deliberate subversion rather than ordinary
+// spec code; review catches them.
 
 import { test as base, expect } from '@playwright/test';
 import type { Browser, BrowserContext, BrowserContextOptions, Page, Route, Request, TestInfo } from '@playwright/test';
@@ -138,7 +143,10 @@ function pageScript(state: GuardState): string {
     value: (token, url) => { if (token === TOKEN) SCOPE = typeof url === 'string' ? url : null; },
     writable: false, configurable: false, enumerable: false,
   });
-  const report = (e) => { try { window.__qaPilotReport(e); } catch (_) {} };
+  // Captured once, before any page script runs, so the page cannot swap it out and hide
+  // the blocks it is told about.
+  const bind = window.__qaPilotReport;
+  const report = (e) => { try { bind(e); } catch (_) {} };
   const ROW = 'tr, [role=row], li, [role=listitem], .v-list-item';
   const CONTROL = 'button, a, [role=button], [role=menuitem], [role=link], [role=tab], input[type=submit], input[type=button], input[type=image], summary, [onclick], [tabindex]';
   // The control's own row, or the dialog holding it, never a container of several rows.
@@ -233,8 +241,12 @@ async function installGuard(ctx: BrowserContext, state: GuardState): Promise<voi
       tracked.push({ url, handler, wrapped });
       return route(url, wrapped, options);
     };
+    // The same URL as Playwright judges it: a RegExp by its source and flags, anything else
+    // by value.
+    const sameUrl = (a: any, b: any) => a === b
+      || (a instanceof RegExp && b instanceof RegExp && a.source === b.source && a.flags === b.flags);
     (target as any).unroute = async (url: any, handler?: any) => {
-      for (const t of tracked.filter((x) => x.url === url && (!handler || x.handler === handler))) {
+      for (const t of tracked.filter((x) => sameUrl(x.url, url) && (!handler || x.handler === handler))) {
         tracked.splice(tracked.indexOf(t), 1);
         await unroute(t.url, t.wrapped);
       }
@@ -334,6 +346,8 @@ export const test = base.extend<Fixtures, { _writeGuardWorker: void }>({
       lock(browser, 'newContext', 'browser.newContext() (use newGuardedContext instead)', () => builtinWindow);
       lock(browser, 'newPage', 'browser.newPage() (use newGuardedContext instead)');
       lock(playwright.request, 'newContext', 'request.newContext() (the request export of @playwright/test)');
+      // globalThis.fetch: Node's own fetch, the obvious workaround once the request fixture refuses.
+      lock(globalThis, 'fetch', 'fetch() (Node\'s own, from the spec)');
       for (const type of [playwright.chromium, playwright.firefox, playwright.webkit]) {
         for (const m of ['launch', 'launchPersistentContext', 'launchServer', 'connect', 'connectOverCDP']) {
           lock(type, m, `${type.name()}.${m}()`);
@@ -376,6 +390,9 @@ export const test = base.extend<Fixtures, { _writeGuardWorker: void }>({
       await use(context);
     } finally {
       current = null;
+      // Extra contexts from newGuardedContext belong to this test's record. Close them before
+      // the record is written, so one kept past the test cannot keep writing into nothing.
+      for (const extra of guardState.contexts) if (extra !== context) await extra.close().catch(() => {});
       // Written once, then attached by path. The gate matches this file to Playwright's copy
       // by sha256, so it must not change after this.
       const file = testInfo.outputPath('writes.json');

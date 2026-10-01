@@ -3,7 +3,8 @@
 // the guard has to stop writes with no help from them.
 import type { Page } from '@playwright/test';
 import { request as apiRequest, chromium } from '@playwright/test';
-import { test, expect } from './.guard/write-guard.fixture';
+import { test, expect, newGuardedContext } from './.guard/write-guard.fixture';
+import type { BrowserContext } from '@playwright/test';
 
 const ORIGIN = 'https://app.test';
 
@@ -105,6 +106,51 @@ test.describe('a page made in beforeAll', () => {
     await serve(page, '/projects', '<p>Projects</p>');
     expect(made).toBeInstanceOf(Error);
     expect((made as Error).message).toMatch(/browser\.newPage\(\) .*disabled under mutation policy read-only/);
+  });
+});
+
+test('GUARD-READONLY-008 @read-only Node\'s own fetch from the spec is refused', async ({ page }) => {
+  await serve(page, '/projects', '<p>Projects</p>');
+  // Port 9 would refuse the connection anyway; the assertion is on the guard's message.
+  await expect(fetch('http://127.0.0.1:9/api/projects/1/archive', { method: 'POST', body: '{}' }))
+    .rejects.toThrow(/fetch\(\) .*disabled under mutation policy read-only/);
+});
+
+test('GUARD-READONLY-009 @read-only the page cannot hide a blocked click from the record', async ({ page, guardState }) => {
+  await serve(page, '/projects', `${COUNTER}
+    <ul><li>Project one <button onclick="bump('deleted')">Delete</button></li></ul>
+    <span id="deleted">0</span>
+    <script>window.__qaPilotReport = () => {};</script>`);
+  await page.getByRole('button', { name: 'Delete' }).click();
+  await expect(page.locator('#deleted')).toHaveText('0');
+  await expect.poll(() => guardState.blocked).toBe(1);
+});
+
+test('GUARD-READONLY-010 @read-only unroute with an equal RegExp removes the spec route', async ({ page }) => {
+  await serve(page, '/projects', '<p>Projects</p>');
+  const stub = (route: any) => route.fulfill({ status: 200, contentType: 'text/plain', body: 'stubbed' });
+  const read = () => page.evaluate(() => fetch('/api/stub').then((r) => r.text()));
+  await page.route(/\/api\/stub$/, stub);
+  expect(await read()).toBe('stubbed');
+  await page.unroute(/\/api\/stub$/, stub); // a new literal, equal by source and flags
+  expect(await read()).toBe('ok');
+});
+
+test.describe.serial('a context kept past its test', () => {
+  let kept: BrowserContext;
+
+  test('GUARD-READONLY-011 @read-only newGuardedContext gives a second guarded context', async ({ page }) => {
+    await serve(page, '/projects', '<p>Projects</p>');
+    kept = await newGuardedContext();
+    const other = await kept.newPage();
+    await other.route(`${ORIGIN}/**`, (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<p>Other app</p>' }));
+    await other.goto(`${ORIGIN}/other`);
+    await expect(other.locator('p')).toHaveText('Other app');
+  });
+
+  test('GUARD-READONLY-012 @read-only that context is closed when its test ends', async ({ page }) => {
+    await serve(page, '/projects', '<p>Projects</p>');
+    await expect(kept.newPage()).rejects.toThrow();
   });
 });
 
