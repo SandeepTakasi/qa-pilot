@@ -50,6 +50,18 @@ Steps are what the executor does, in order, in the UI. Keep them at the level of
 
 Preconditions carry state the steps assume: who is signed in, what data exists, which role. Every precondition involving data is a hint to the executor about namespacing, because five developers share one deployed environment, so cases must not assume they are alone in it.
 
+## Cases that write
+
+Decide the feature's `mutation.policy` from what its cases do, not from where it will run:
+
+| The cases | Policy | Then |
+|---|---|---|
+| only read, list, open or filter | `read-only` | no step may save, delete, submit or upload; a case that needs to is a different feature, or this one is not read-only |
+| create and change their own entities | `scoped-write` with a `prefix` | every step that names a new entity starts the name with the prefix: "Create a project named `QA_TEST_<run>-alpha`" |
+| touch shared data on purpose | `unrestricted` | never runnable on production |
+
+**Shared fixtures** replace "each case creates and deletes its own project" when ten cases all work inside one. Declare the entity once under `fixtures`, name it from the cases that use it (`fixture: shared-project`), and keep the cases' preconditions honest: "Inside the shared project fixture" rather than restating how it was made. Choose `teardown: delete` unless QA needs to inspect the entity afterwards.
+
 ## What not to generate
 
 - **Volume.** Twenty shallow cases are worse than eight sharp ones: they consume QA review time and dilute the confidence score with cases nobody trusts.

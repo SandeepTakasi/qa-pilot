@@ -1,7 +1,7 @@
 ---
 name: generate-tests
-description: Author test cases for a feature by reading its ClickUp task and the relevant code paths, produce a lint-clean testing/<feature>/cases.yaml (25-case cap, mandatory scenario mix, every case carrying a verifiable assertion), create one ClickUp task per case in Case Review status, and record the case-ID to task-ID mapping. Cases are not executable until QA approves them. Use when the user says "generate tests", "author test cases", "write QA cases for <feature>", or "/generate-tests <feature>".
-argument-hint: "<feature>"
+description: Author test cases for a feature by reading the host's documentation sources, its ClickUp task and the relevant code paths, produce a lint-clean testing/<feature>/cases.yaml (25-case cap, mandatory scenario mix, every case carrying a verifiable assertion, a declared mutation policy), create one ClickUp task per case in Case Review status (or seed a local statuses file without a tracker), and record the case-ID to task-ID mapping. Cases are not executable until QA approves them. Use when the user says "generate tests", "author test cases", "write QA cases for <feature>", or "/generate-tests <feature> [<feature> ...]".
+argument-hint: "<feature> [<feature> ...]"
 ---
 
 # generate-tests: author the case set for one feature
@@ -22,17 +22,26 @@ Nonzero exit → **STOP**. Print the errors verbatim and tell the user to run `/
 
 Then check whether the profile is committed (`git ls-files --error-unmatch <profile-path>`). If it is not, **warn but continue**: an uncommitted profile is fine for a solo pilot and must be committed before the team relies on it, because otherwise five developers test against five different definitions of the truth. Some hosts deliberately gitignore it while trialling the pipeline, which is a legitimate choice rather than an error.
 
-Use the JSON on stdout as your source for every project-specific value. Do not re-read the YAML yourself.
+Use the JSON on stdout as your source for every project-specific value. Do not re-read the YAML yourself. Note its `tracker` (`clickup` unless it says `none`), which decides step 4.
+
+## Several features at once
+
+When the user names more than one feature, author them in parallel: **one subagent per feature**, each given the profile JSON, its one feature name, and this skill's steps 1 to 3. Each returns its `cases.yaml`, and you run `validate-cases.mjs` on every one yourself; a subagent saying it validated is not evidence. Features are independent at this stage, so the fan-out is safe.
+
+Tracker writes are not parallel. Run step 4 yourself, one feature after another, at the pace it states: several subagents writing at once would exhaust the per-token rate budget together and leave half-synced lists.
 
 ## 1. Gather feature context
 
 Do all of this before writing a single case:
 
-1. **ClickUp**: find the feature's task (`clickup_search` / `clickup_get_task`). Read the description, acceptance criteria, and comments. If the user gave a task ID or URL, use it directly.
-2. **Code**: locate the routes, components, and state modules the feature touches. Read them. You are looking for the branches a test must cover: role checks, validation rules, empty and error states, limits and boundaries.
-3. **Existing cases**: if `testing/<feature>/cases.yaml` already exists, read it. You are updating a QA-approved artifact, not replacing it: preserve existing IDs and their wording wherever the behavior is unchanged.
+1. **Documentation sources first**, when the profile has `context.sources`. Pick the sources whose `description` covers this feature and read them before anything else: documented intent is what an assertion should pin, and code only shows what was built.
+   - A `path` source: read the files it names. Never open a `.env*` file, whatever a directory or glob matches.
+   - A `command` source: **show the user the exact command and wait for their confirmation before its first run in this session**, then run it from the repo root and use its stdout. A committed profile is not a reason to run arbitrary commands unseen. Once confirmed, the same command may run again in this session without asking.
+2. **The tracker task** (`tracker: clickup`): find the feature's task (`clickup_search` / `clickup_get_task`). Read the description, acceptance criteria, and comments. If the user gave a task ID or URL, use it directly. Under `tracker: none` there is no task; ask the user for the acceptance criteria if the documentation and code do not settle them.
+3. **Code**: locate the routes, components, and state modules the feature touches. Read them. You are looking for the branches a test must cover: role checks, validation rules, empty and error states, limits and boundaries, and which actions create, change or delete data.
+4. **Existing cases**: if `testing/<feature>/cases.yaml` already exists, read it. You are updating a QA-approved artifact, not replacing it: preserve existing IDs and their wording wherever the behavior is unchanged.
 
-If the ClickUp task is thin and the code does not settle a question, ask the user. A guessed acceptance criterion becomes a wrong assertion that outlives the guess.
+If the sources are thin and the code does not settle a question, ask the user. A guessed acceptance criterion becomes a wrong assertion that outlives the guess.
 
 ## 2. Author the cases
 
@@ -46,6 +55,14 @@ The rules that matter most:
 - **Stay under 25 cases.** If the feature needs more, it is more than one feature, so split it into sub-features with their own directories. Case count is an anti-metric; approved coverage and defects caught are the real ones.
 - Stamp `model_version` with your own model ID and `generated_at` with the current UTC timestamp.
 
+**Declare whether the specs may write**, as the `mutation` block (see "May these tests write?" in the cases schema):
+
+- `read-only` when every case only looks: listing, opening, filtering, reading a report. This is the only policy a feature can run under on production if it must not create data there.
+- `scoped-write` with a `prefix` (at least three of `A-Z a-z 0-9 _ -`, such as `QA_TEST_`) when the cases create, change or delete things, but only things the tests themselves made. Write every step that creates an entity so its name starts with the prefix, because the write guard only unlocks write controls in a row or dialog that shows it.
+- `unrestricted` only off production, for a feature whose cases legitimately touch shared data. Leaving `mutation` out means `unrestricted`; on production that is refused, so for any feature that may ever run there, write the block.
+
+When several cases need the same built-up entity (one project created once, then edited by many cases), declare it under `fixtures` with `teardown: keep` or `delete` and give each such case `fixture: <name>`, rather than having every case build its own. Fixtures are not allowed under `read-only`. Say in your hand-off which fixtures you declared, since each one is a setup spec `/qa-pilot:run-tests` will write.
+
 ## 3. Validate, and loop until clean
 
 ```bash
@@ -56,11 +73,19 @@ Fix every error and re-run. Do not proceed to ClickUp with a failing file, and n
 
 If `model_version` is rejected, your model is not on the profile's approved list. Stop and tell the user: QA adds a model to `models.generation_approved` after a calibration pass, not mid-run.
 
-## 4. Create the ClickUp tasks
+## 4. Register the cases for review
 
-Skip this section entirely if the ClickUp MCP tools are unavailable. The validated `cases.yaml` still stands, and the user can re-run later to sync. Say clearly that sync was skipped.
+**Under `tracker: none`** there is nothing to create. Seed `testing/<feature>/statuses.json` with every case at `Case Review`, keeping the status of any case already in the file unless step 2 changed it (then reset it to `Case Review` and say so), and stop here:
 
-1. Create the write flag the plugin's guard hook checks: `mkdir -p .qa-pilot && touch .qa-pilot/allow-clickup-writes` (it expires after 30 minutes, so a dead session cannot leave writes open)
+```json
+{ "CHECKOUT-ORDER-001": "Case Review", "CHECKOUT-ORDER-002": "Case Review" }
+```
+
+QA approves cases by editing that file to `Approved for Execution`. `/qa-pilot:run-tests` reads it instead of a tracker.
+
+**With ClickUp** (`tracker: clickup`), create the tasks. Skip this entirely if the ClickUp MCP tools are unavailable: the validated `cases.yaml` still stands, and the user can re-run later to sync. Say clearly that sync was skipped.
+
+1. Create the write flag the plugin's guard hook checks, at the repo root next to the profile: `mkdir -p .qa-pilot && touch .qa-pilot/allow-clickup-writes` (it expires after 30 minutes, so a dead session cannot leave writes open)
 2. Read `testing/<feature>/clickup-map.json` if it exists. **Every case already in the map is updated, never recreated**, and this is what makes reruns idempotent. Never look tasks up by name.
 
    **If you changed an existing case's steps, expected outcomes, priority, or type, move it back to `case_review`** and say which cases you reset and why. Design approval belongs to the case QA actually read; editing the assertions of an approved case and leaving it approved walks a changed test straight past the design gate. Pure wording or title tidying that leaves the behaviour identical does not need a reset, but when in doubt, reset: a re-approval costs QA a minute, an unnoticed change costs a false verdict.
@@ -76,6 +101,6 @@ Skip this section entirely if the ClickUp MCP tools are unavailable. The validat
 
 ## 5. Hand off
 
-State plainly, every time: **these cases are not executable yet.** QA reviews the scenario matrix and every P0/P1 case individually, approves P2 in bulk at matrix level, and moves approved cases into `approved_for_execution`. `/qa-pilot:run-tests` refuses anything else.
+State plainly, every time: **these cases are not executable yet.** QA reviews the scenario matrix, the declared mutation policy, and every P0/P1 case individually, approves P2 in bulk at matrix level, and moves approved cases into `approved_for_execution` (in ClickUp, or in `testing/<feature>/statuses.json` under `tracker: none`). `/qa-pilot:run-tests` refuses anything else.
 
 Then tell the user the next command: `/qa-pilot:run-tests <feature> --env <name>` once approval lands.
