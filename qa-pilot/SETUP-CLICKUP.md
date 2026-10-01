@@ -6,6 +6,10 @@ missing, so get the names right: **the plugin matches on names, not IDs.**
 
 Fifteen minutes, once per workspace.
 
+Not using ClickUp? Set `tracker: none` in the profile and skip this document: approvals live
+in `testing/<feature>/statuses.json`, evidence stays on the executor's machine, and bugs are
+markdown files in each run's directory.
+
 ## 1. Space
 
 Use a Space for QA work, and inside it create a **Folder dedicated to the automated
@@ -57,11 +61,21 @@ exactly, and so must dropdown options: `P0` is not `p0`.
 | Run Date | Date | none |
 | Flake Count | Number | none |
 | Model Version | Text | none |
+| Run ID | Text | none; only needed if any environment keeps evidence local |
+| Trace Path | Text | none; same |
+| Trace SHA256 | Text | none; same |
 
-The last three dropdowns are host-specific: their options come from your
+The three host-specific dropdowns (Env, API Mode, App) take their options from your
 `qa-pilot.config.yaml`, so create them after `/qa-pilot:qa-init` has written it.
 
-There is no Trace field. Traces are **attachments** on the case task, not a field value.
+The last three fields are what a run whose evidence stays local writes instead of attaching
+a trace: every production environment keeps its evidence local, and any other environment
+can choose to (`evidence_upload: local`). A reviewer uses the path and the hash to find the
+trace on the executor's machine and verify it. A host that never keeps evidence local can
+skip them.
+
+There is no Trace field. Traces are **attachments** on the case task, not a field value,
+for environments that upload evidence.
 
 There is no Bug field either. A confirmed defect becomes its own task, linked to the case
 with a native ClickUp task relationship, so there is nothing to create here for it. Point
@@ -77,7 +91,7 @@ because of what is actually inside a trace.
 ### What a trace contains
 
 A Playwright trace is a full recording of the session, not a screenshot of it. Every trace
-QA-Pilot uploads carries:
+carries:
 
 - **The session credential.** Whatever authenticated the run: the `Authorization` header,
   the session cookie, the Firebase ID token in local storage. Network requests and storage
@@ -95,9 +109,15 @@ can hold rather than one anybody can. Turn it on before the first publish, not a
 
 **Use short-lived, low-privilege test accounts.** The right fix is that a leaked trace
 leaks a token that expires and could not do much anyway. Never run QA-Pilot as an admin
-account, and never against production: the profile validator refuses a production-looking
-URL for exactly this reason, and overriding it with `allow_production: true` means
-accepting that live tokens for real users will be uploaded to the tracker.
+account.
+
+**Production evidence never reaches ClickUp.** An environment declared `kind: production`
+keeps its traces on the executor's machine: uploading them is refused by the profile
+validator, the publish step attaches nothing, and the case task receives only the verdict,
+the environment, the build, the run ID, and the trace's run-relative path and sha256. No
+failure text, no console output, no URL, no executor. QA reviews production traces on the
+executor's machine, or wherever the host chooses outside the tracker. Every other
+environment uploads traces by default, and any can opt out with `evidence_upload: local`.
 
 Consequence to know: `npx playwright show-trace <url>` stops working against ClickUp URLs
 because it sends no auth header. Reviewers download the trace first, then open it.

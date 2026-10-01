@@ -8,7 +8,7 @@
     {
       "name": "qa-pilot",
       "source": "./qa-pilot",
-      "description": "Evidence-first E2E feature testing: QA-approved test cases, verdicts only from committed Playwright runs against registered deployed environments, mandatory video/trace/SHA evidence, and a ClickUp-backed case lifecycle. Portable via a per-project host profile."
+      "description": "Evidence-first E2E feature testing: QA-approved test cases, verdicts only from committed Playwright runs against registered deployed environments, a mandatory Playwright trace and deploy SHA per case, a write guard and local-only evidence for production runs, and a case lifecycle in ClickUp or in local files. Portable via a per-project host profile."
     }
   ]
 }

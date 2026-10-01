@@ -4,7 +4,7 @@ A record of the technology this plugin requires of a host project, how tightly e
 is bound in, and what it would cost to change. Written so the question does not have to be
 re-litigated from memory every time someone new looks at it.
 
-Last verified 2026-08-30, against the commands in the final section.
+Last verified 2026-10-01, against the commands in the final section.
 
 ## Enforced
 
@@ -12,9 +12,9 @@ Last verified 2026-08-30, against the commands in the final section.
 |---|---|---|
 | Claude Code | Absolute | It is a plugin. There is no version of this that runs elsewhere. |
 | Playwright | Hard, deliberate | The deepest coupling in the system, and the one worth having. See below. |
-| Node 18 or newer | Trivial | Scripts are zero-dependency ESM. Any machine running Vite already qualifies. |
+| Node 20 or newer | Trivial | Scripts are zero-dependency ESM. Node 18 is end-of-life; the plugin's own CI runs 20, 22 and 24. |
 | Git | Trivial | Nothing is required to be committed. Committing the profile, the specs and the per-feature ledgers is what makes the pipeline work for a team rather than one machine, and CI needs them, but every skill warns and continues instead of refusing. |
-| ClickUp | Surface only | Much shallower than the name suggests. See below. |
+| ClickUp | Optional, surface only | `tracker: none` runs the whole pipeline on local files. With a tracker, ClickUp is the one supported, and it is much shallower than the name suggests. See below. |
 | YAML for config | Cosmetic | One file, one vendored parser. Chosen over JSON because the profile is hand-edited by QA and needs comments. |
 | Deployed environments with a readable build SHA | Hard, but it is process rather than technology | Applies whatever tracker or runner you use. A verdict that cannot be pinned to a build is not a verdict. |
 
@@ -58,10 +58,17 @@ Real coupling is confined to three places: the `clickup-guard.mjs` hook and its 
 (`plan_tier`, `space`, `folder`, `bug_list`, `statuses`). Of those five, only `plan_tier`
 is genuinely ClickUp-shaped; the rest name a place and a vocabulary that any tracker has.
 
+**No tracker at all is already supported.** `tracker: none` drops the `clickup` block from the
+normalized profile, so every script falls back to the canonical status names; approvals live
+in `testing/<feature>/statuses.json`, evidence stays local, and bugs are markdown files in the
+run directory. It exists because an open-source plugin cannot assume its users have ClickUp,
+and it cost almost nothing for the reason above: the scripts never knew where statuses came
+from.
+
 **Cost to support Jira, Linear, or GitHub Issues: roughly a day, almost entirely prose.**
-Rename `clickup-map.json` to `tracker-map.json`, rename the profile block to `tracker:` with
-a `type:` discriminator, generalise the guard matcher, and rewrite the three skill sections
-that name MCP tools. The scripts barely change.
+Add a value to the profile's `tracker` key, rename `clickup-map.json` to `tracker-map.json`,
+generalise the guard matcher, and rewrite the skill sections that name MCP tools.
+`publish-payload.mjs` already emits the field set as plain data, so the scripts barely change.
 
 ## Playwright is deep, and that is the point
 
@@ -95,8 +102,10 @@ the expensive kind of lock-in is the kind buried in business logic. This one is 
 a hook matcher.
 
 **Do not build a tracker abstraction speculatively.** With one team on one tracker it buys
-nothing and costs clarity in every skill file. If a second project ever adopts this on a
-different tracker, do the renames then, as part of that adoption.
+nothing and costs clarity in every skill file. `tracker: none` is not that abstraction: it is
+the absence of a tracker, which every adopter without ClickUp needs on day one. If a second
+project ever adopts this on a different tracker, do the renames then, as part of that
+adoption.
 
 ## Re-verifying these claims
 
@@ -110,12 +119,15 @@ grep -rn 'api\.clickup\|clickup\.com' qa-pilot/scripts/ | grep -v yaml.mjs
 #    Expected output: qa-pilot/scripts/clickup-guard.mjs, and nothing else.
 grep -rl 'mcp__' qa-pilot/scripts/*.mjs qa-pilot/scripts/lib/*.mjs | grep -v yaml.mjs
 
-# 3. Where Playwright coupling lives. Expected exactly these five:
+# 3. Where Playwright coupling lives. Expected exactly these six:
 #      lib/profile.mjs          version floor check only
 #      parse-report.mjs         the real one: parses the JSON reporter format
 #      save-storage-state.mjs   the other real one: uses the Playwright API
-#      validate-report.mjs      mentions it in messages only
+#      validate-report.mjs      re-parses results.json through parse-report, plus messages
 #      bug-report.mjs           mentions it in the bug text only
+#      publish-payload.mjs      mentions it in the reviewer line only
+#    The write guard's Playwright wiring lives in templates/, outside scripts/, on purpose:
+#    hosts copy it, and nothing in scripts/ imports it.
 #    ci-gate.mjs must NOT appear: it reasons about approval and verdicts, and
 #    the runner is what knows how to invoke a test.
 grep -rl 'playwright' qa-pilot/scripts/*.mjs qa-pilot/scripts/lib/*.mjs \

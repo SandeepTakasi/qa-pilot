@@ -1,5 +1,90 @@
 # Changelog
 
+## 0.3.0 (2026-10-01)
+
+### Upgrading from 0.2.0
+
+These changes will stop an existing setup working until you act on them. Each one closes a
+gap, mostly around running against production safely.
+
+1. **Every environment must declare `kind: qa | staging | production`.** The profile no
+   longer guesses production from the hostname: the guess missed `app.<domain>.com`, the
+   commonest production shape. A production-looking URL on a non-production kind is now a
+   warning, never an error.
+2. **`allow_production` is retired.** A profile that still sets it, to anything, fails with
+   "retired in 0.3.0; declare kind: production".
+3. **A production environment brings rules with it.** `evidence.capture` must be `always`;
+   `evidence_upload: tracker` on it is refused, since its traces stay local; a `mutation`
+   block with at least one `write_signatures` entry is required; and `/run-tests` refuses a
+   production run unless `testing/*/runs/` is gitignored and the feature declares a
+   `mutation.policy` other than `unrestricted`.
+4. **`validate-report.mjs` now requires `--cases <cases.yaml>`, on every environment.** It
+   is the only source of the feature's mutation policy and fixtures, and the gate takes
+   neither from the report. A report with no `env_kind`, which every 0.2.0 run has, is
+   refused: re-run with 0.3.0 rather than re-publishing an old run.
+5. **The CI template exports `QA_PILOT_MUTATION`** from `testing/$FEATURE/cases.yaml`, plus
+   `QA_PILOT_MUTATION_CONFIG` from the profile, reads `evidence.capture` from the profile
+   instead of hard-coding `on-failure`, gives each run its own directory, and refuses an
+   environment whose kind is `production`. Re-copy it rather than patching your copy.
+6. **Node 20 or newer.** Node 18 is end-of-life.
+7. **Move the reporters out of your Playwright config.** `/run-tests` now passes
+   `--reporter=json,html` on the command line with per-run output paths
+   (`PLAYWRIGHT_JSON_OUTPUT_NAME`, `PLAYWRIGHT_HTML_OUTPUT_DIR`, `--output`), and a JSON
+   `outputFile` in the config would override them and send every run to the same file.
+8. **`parse-report.mjs` writes `report.json` into the run directory by default**, and the
+   trace paths in it are relative to that directory. It no longer prints the report to
+   stdout when `-o` is absent.
+
+Nothing else requires action. Hosts that keep evidence local on any environment add three
+text fields in ClickUp (`Run ID`, `Trace Path`, `Trace SHA256`; see `SETUP-CLICKUP.md`).
+
+### Production, safely
+
+- **The write guard.** A feature declares `mutation.policy`: `read-only`, `scoped-write`
+  with a name prefix, or `unrestricted` (the default, so 0.2.0 case files stay valid off
+  production). `templates/write-guard.fixture.ts` enforces it with no help from the specs:
+  capture-phase listeners injected before any app script judge clicks, submits and
+  Enter/Space in the page; the network route judges every request against the host's
+  `write_signatures`, which can match the request body, so a GraphQL mutation is told
+  apart from a query on the same URL. Specs' own route handlers are wrapped so the guard
+  always decides first. The request fixture, `page.request`, `context.request` and an
+  unguarded `browser.newContext()` are disabled under any policy but `unrestricted`;
+  `newGuardedContext()` replaces the last for cross-app specs.
+- **The gate re-reads everything.** Each attempt leaves a `writes.json`; the publish gate
+  rebuilds every case and fixture from the Playwright report and those records on disk,
+  sweeps the run directory for records the report does not account for, and refuses any
+  field that differs. A read-only run that recorded a write, a scoped-write run that was
+  blocked, or a guarded run whose guard never reported in does not publish.
+- **Local evidence.** `environments.<env>.evidence_upload: tracker | local`, `local` by
+  default on production. Traces stay on the executor's machine and are pinned by sha256;
+  the tracker receives only ids, verdicts, build, run and the trace's path and hash,
+  computed by the new `scripts/publish-payload.mjs`, which the skill posts verbatim. Bugs
+  from such a run carry no failure text.
+
+### Also new
+
+- **`tracker: none`.** The whole pipeline on local files: approvals in
+  `testing/<feature>/statuses.json`, evidence local, bugs as markdown in the run directory.
+- **Shared fixtures.** `cases.yaml` `fixtures` and `cases[].fixture`: one entity built by a
+  `FIXTURE <name>` setup spec and worked inside by many cases, with an optional teardown.
+- **Concurrent runs.** Every output lands under `testing/<feature>/runs/<run_id>/`, so two
+  runs of the same feature no longer overwrite each other.
+- **Documentation sources.** `context.sources` names docs or commands `/generate-tests`
+  reads first; commands are confirmed with the user before their first run in a session.
+  `/generate-tests` can author several features at once, one subagent each.
+- **Stabilization off the sandbox.** `stabilization.env` names a non-production deployed
+  environment where new specs may earn their three greens. Those runs are never published.
+- **The ClickUp guard only acts in repos that use QA-Pilot.** Installed user-scope, it used
+  to block ClickUp writes everywhere; it now acts only where a host profile exists.
+- **`qa-init` never opens `.env*` files.** It finds variable names in the code that reads
+  them and asks for the value.
+
+### Fixes
+
+- The bundled `yaml` is ISC licensed, not MIT; `THIRD_PARTY_NOTICES.md` carries its text.
+- `spec-conventions.md` no longer claims the gate requires a separate console log (the
+  trace satisfies it), and `run-tests` no longer contradicts its own capture table.
+
 ## 0.2.0 (2026-09-23)
 
 ### Upgrading from 0.1.0
