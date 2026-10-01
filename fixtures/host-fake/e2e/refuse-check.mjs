@@ -18,8 +18,8 @@ const PROFILE = resolve(HERE, '../qa-pilot.config.yaml');
 const OUT = join(HERE, '.out');
 const RUN = join(OUT, 'read-only');
 const CLEAN = join(OUT, 'read-only-clean');
-const WRITERS = ['GUARD-READONLY-002', 'GUARD-READONLY-003'];
-const QUIET = ['GUARD-CLEAN-001', 'GUARD-READONLY-004'];
+const WRITERS = ['GUARD-READONLY-002', 'GUARD-READONLY-003', 'GUARD-READONLY-005'];
+const QUIET = ['GUARD-CLEAN-001', 'GUARD-READONLY-004', 'GUARD-READONLY-006', 'GUARD-READONLY-007'];
 
 const fail = (msg) => { console.error(`refuse-check: FAIL: ${msg}`); process.exit(1); };
 const node = (script, args) => spawnSync(process.execPath, [join(SCRIPTS, script), ...args], { encoding: 'utf8' });
@@ -51,7 +51,7 @@ scenario_mix:
   boundary: { n_a: "No limits are involved in a single click" }
   permission: { n_a: "One account; roles are not what is under test" }
   data-validation: { n_a: "No form input is submitted" }
-cases:${caseEntry('GUARD-CLEAN-001', 'A page that is only read records no write')}${caseEntry('GUARD-READONLY-002', 'A Delete click is blocked')}${caseEntry('GUARD-READONLY-003', 'A write request is aborted')}${caseEntry('GUARD-READONLY-004', 'Requests that bypass the page are refused')}
+cases:${caseEntry('GUARD-CLEAN-001', 'A page that is only read records no write')}${caseEntry('GUARD-READONLY-002', 'A Delete click is blocked')}${caseEntry('GUARD-READONLY-003', 'A write request is aborted')}${caseEntry('GUARD-READONLY-004', 'Requests that bypass the page are refused')}${caseEntry('GUARD-READONLY-005', 'Removing every route does not remove the guard')}${caseEntry('GUARD-READONLY-006', 'Request clients and browsers outside the guard are refused')}${caseEntry('GUARD-READONLY-007', 'A page made in beforeAll is refused')}
 `);
 const lint = node('validate-cases.mjs', [CASES, '--profile', PROFILE]);
 if (lint.status !== 0) fail(`the cases file does not lint:\n${lint.stderr}`);

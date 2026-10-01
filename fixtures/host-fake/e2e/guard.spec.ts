@@ -2,6 +2,7 @@
 // https://app.test, so no request leaves the machine. Specs use ordinary clicks and fetches:
 // the guard has to stop writes with no help from them.
 import type { Page } from '@playwright/test';
+import { request as apiRequest, chromium } from '@playwright/test';
 import { test, expect } from './.guard/write-guard.fixture';
 
 const ORIGIN = 'https://app.test';
@@ -59,6 +60,54 @@ test('GUARD-READONLY-004 @read-only requests that bypass the page are refused', 
   await expect(page.context().request.post(`${ORIGIN}/api/projects`)).rejects.toThrow(/context\.request\.post\(\) is disabled under mutation policy read-only/);
 });
 
+test('GUARD-READONLY-005 @read-only removing every route does not remove the guard', async ({ page, context }) => {
+  await serve(page, '/projects', `
+    <button id="load">Load</button><span id="state">idle</span>
+    <script>
+      document.getElementById('load').addEventListener('click', () => {
+        fetch('${ORIGIN}/api/projects/1/archive', { method: 'POST', body: '{}' })
+          .then(() => { document.getElementById('state').textContent = 'reached the server'; })
+          .catch(() => { document.getElementById('state').textContent = 'request failed'; });
+      });
+    </script>`);
+  // Every way a spec could clear routes; the guard's own catch-all must survive all of them.
+  await context.unroute('**/*');
+  await context.unrouteAll();
+  await page.unrouteAll();
+  // With no route left at all the request would still fail, on DNS; only the guard aborts it
+  // as blocked by the client, so that is what is asserted.
+  const failed = page.waitForEvent('requestfailed', (r) => r.url().includes('/api/'));
+  await page.getByRole('button', { name: 'Load' }).click();
+  await expect(page.locator('#state')).toHaveText('request failed');
+  expect((await failed).failure()?.errorText).toMatch(/ERR_BLOCKED_BY_CLIENT/);
+});
+
+test('GUARD-READONLY-006 @read-only request clients and browsers outside the guard are refused', async ({ page, playwright, browser }) => {
+  await serve(page, '/projects', '<p>Projects</p>');
+  const refused = /disabled under mutation policy read-only/;
+  await expect(apiRequest.newContext()).rejects.toThrow(refused);
+  await expect(playwright.request.newContext()).rejects.toThrow(refused);
+  await expect(browser.newContext()).rejects.toThrow(refused);
+  await expect(browser.newPage()).rejects.toThrow(refused);
+  await expect(chromium.launch()).rejects.toThrow(refused);
+  await expect(playwright.chromium.launchPersistentContext('')).rejects.toThrow(refused);
+  await expect(playwright.chromium.connectOverCDP('http://127.0.0.1:9')).rejects.toThrow(refused);
+});
+
+test.describe('a page made in beforeAll', () => {
+  // Playwright's documented way to share a page across serial tests; it must not escape the guard.
+  let made: unknown;
+  test.beforeAll(async ({ browser }) => {
+    made = await browser.newPage().then(() => 'made an unguarded page', (e: Error) => e);
+  });
+
+  test('GUARD-READONLY-007 @read-only browser.newPage in beforeAll is refused', async ({ page }) => {
+    await serve(page, '/projects', '<p>Projects</p>');
+    expect(made).toBeInstanceOf(Error);
+    expect((made as Error).message).toMatch(/browser\.newPage\(\) .*disabled under mutation policy read-only/);
+  });
+});
+
 // --- scoped-write ---------------------------------------------------------------------
 
 test('GUARD-SCOPED-001 @scoped-write a write is allowed only in a row carrying the prefix', async ({ page }) => {
@@ -86,6 +135,19 @@ test('GUARD-SCOPED-002 @scoped-write an observed write is fulfilled by the spec\
     </script>`);
   await page.getByRole('button', { name: 'Sync' }).click();
   await expect(page.locator('#state')).toHaveText('saved: ok');
+});
+
+test('GUARD-SCOPED-004 @scoped-write the page cannot widen its own scope', async ({ page }) => {
+  await serve(page, '/projects', `${COUNTER}
+    <button onclick="bump('wiped')">Delete</button><span id="wiped">0</span>
+    <script>
+      // Everything a page could try: the old global, a guessed token, replacing the setter.
+      window.__qaPilotScope = '.*';
+      try { window.__qaPilotSetScope('not-the-token', '.*'); } catch (_) {}
+      try { window.__qaPilotSetScope = () => {}; } catch (_) {}
+    </script>`);
+  await page.getByRole('button', { name: 'Delete' }).click();
+  await expect(page.locator('#wiped')).toHaveText('0');
 });
 
 test('GUARD-SCOPED-003 @scoped-write a declared scope URL unlocks writes on that page only', async ({ page, writeGuard }) => {

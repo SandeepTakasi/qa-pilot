@@ -17,12 +17,18 @@
 // ponytail: ceilings, by design. Not seen: drag-and-drop, pointer or mouse handlers that act
 // before click, keyboard activation other than Enter/Space, WebSocket frames, routeFromHAR,
 // popups opened outside the guarded context, and frames other than each page's main frame
-// for setScope. A spec's route handlers are wrapped, so unroute(url, handler) with the
-// original handler does not remove them; unroute(url) does. Requests are only as well
-// classified as the host's write_signatures.
+// for setScope. Requests are only as well classified as the host's write_signatures.
+//
+// Under any policy but unrestricted, every request path that would bypass the guard is
+// refused: the request fixture, page.request and context.request, the request export of
+// @playwright/test (playwright.request.newContext), browser.newContext and newPage outside
+// the test's own context (beforeAll and beforeEach included), and every browser type's
+// launch and connect. Every guarded test gets the built-in context, used or not, so the
+// window that lets Playwright create it is always closed again.
 
 import { test as base, expect } from '@playwright/test';
 import type { Browser, BrowserContext, BrowserContextOptions, Page, Route, Request, TestInfo } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_DENY, compileConfig, decideControl, decideRequest } from './write-guard.mjs';
@@ -74,6 +80,8 @@ class GuardState {
   scopeUrls: string[] = [];
   decided = new WeakSet<Request>();
   contexts: BrowserContext[] = [];
+  // Only the fixture knows it, so only the fixture can change the page's scope.
+  readonly token = randomUUID();
   constructor(
     readonly policy: Policy,
     readonly prefix: string | null,
@@ -122,6 +130,14 @@ function pageScript(state: GuardState): string {
   const decideControl = ${decideControl.toString()};
   const cfg = compileConfig(${JSON.stringify(state.raw)}, ${JSON.stringify(DEFAULT_DENY)});
   const POLICY = ${JSON.stringify({ policy: state.policy, prefix: state.prefix })};
+  // The scope lives here, not on window, so the page cannot widen it. It changes only through
+  // a setter that is fixed in place and needs a token the page never sees.
+  let SCOPE = null;
+  const TOKEN = ${JSON.stringify(state.token)};
+  Object.defineProperty(window, '__qaPilotSetScope', {
+    value: (token, url) => { if (token === TOKEN) SCOPE = typeof url === 'string' ? url : null; },
+    writable: false, configurable: false, enumerable: false,
+  });
   const report = (e) => { try { window.__qaPilotReport(e); } catch (_) {} };
   const ROW = 'tr, [role=row], li, [role=listitem], .v-list-item';
   const CONTROL = 'button, a, [role=button], [role=menuitem], [role=link], [role=tab], input[type=submit], input[type=button], input[type=image], summary, [onclick], [tabindex]';
@@ -154,7 +170,7 @@ function pageScript(state: GuardState): string {
     const label = labelOf(el);
     const v = decideControl(
       { label, icons: iconsOf(el), pageUrl: location.href, ownRowText: ownRowText(el) },
-      { policy: POLICY.policy, prefix: POLICY.prefix, scopeUrl: window.__qaPilotScope || null },
+      { policy: POLICY.policy, prefix: POLICY.prefix, scopeUrl: SCOPE },
       cfg,
     );
     if (v.action !== 'block') return;
@@ -172,6 +188,13 @@ function pageScript(state: GuardState): string {
 }
 
 let current: { state: GuardState; newContext: Browser['newContext'] } | null = null;
+// The worker's unpatched browser.newContext, for newGuardedContext.
+let workerNewContext: Browser['newContext'] | null = null;
+// Open only while Playwright builds the test's own context, which it does through the public
+// browser.newContext(); closed for the rest of the test and for every hook.
+let builtinWindow = false;
+const scopeScript = (state: GuardState, url: string) =>
+  `window.__qaPilotSetScope(${JSON.stringify(state.token)}, ${JSON.stringify(url)});`;
 
 const refuse = (what: string, policy: Policy) => new Error(
   `${what} is disabled under mutation policy ${policy}: it sends requests the write guard cannot see. ` +
@@ -185,24 +208,40 @@ async function installGuard(ctx: BrowserContext, state: GuardState): Promise<voi
     if (e?.kind === 'control' && e.action === 'block') { state.blocked++; state.events.push(e); }
   });
   await ctx.addInitScript({ content: pageScript(state) });
-  if (state.scopeUrls.length) {
-    await ctx.addInitScript({ content: `window.__qaPilotScope = ${JSON.stringify(state.scopeUrls.at(-1))};` });
-  }
+  if (state.scopeUrls.length) await ctx.addInitScript({ content: scopeScript(state, state.scopeUrls.at(-1)!) });
 
   // Our catch-all sees every request no spec handler took. Allow and observe fall back, so
-  // a spec's own routes still apply and the request otherwise reaches the network.
-  await ctx.route('**/*', async (route) => {
+  // a spec's own routes still apply and the request otherwise reaches the network. A
+  // predicate rather than a glob, so no unroute(url) can name it.
+  await ctx.route(() => true, async (route) => {
     if ((await state.judge(route)) === 'pass') await route.fallback();
   });
 
   // A spec's own handler would run before ours (later handlers win) and could continue a
-  // request unseen, so every handler a spec registers is made to ask the guard first.
+  // request unseen, so every handler a spec registers is made to ask the guard first. They
+  // are tracked, so unroute and unrouteAll remove exactly the spec's own handlers (by the
+  // original handler, too) and never the guard's.
   const wrap = (handler: any) => async (route: Route, request: Request) => {
     if ((await state.judge(route)) === 'pass') return handler(route, request);
   };
   const patchRoutes = (target: BrowserContext | Page) => {
     const route = target.route.bind(target);
-    (target as any).route = (url: any, handler: any, options?: any) => route(url, wrap(handler), options);
+    const unroute = target.unroute.bind(target);
+    const tracked: { url: any; handler: any; wrapped: any }[] = [];
+    (target as any).route = (url: any, handler: any, options?: any) => {
+      const wrapped = wrap(handler);
+      tracked.push({ url, handler, wrapped });
+      return route(url, wrapped, options);
+    };
+    (target as any).unroute = async (url: any, handler?: any) => {
+      for (const t of tracked.filter((x) => x.url === url && (!handler || x.handler === handler))) {
+        tracked.splice(tracked.indexOf(t), 1);
+        await unroute(t.url, t.wrapped);
+      }
+    };
+    (target as any).unrouteAll = async () => {
+      for (const t of tracked.splice(0)) await unroute(t.url, t.wrapped);
+    };
   };
   patchRoutes(ctx);
 
@@ -240,8 +279,8 @@ async function installGuard(ctx: BrowserContext, state: GuardState): Promise<voi
  * unrestricted; use this instead.
  */
 export async function newGuardedContext(options: BrowserContextOptions = {}): Promise<BrowserContext> {
-  if (!current) throw new Error('newGuardedContext() can only be called inside a test that uses the write guard');
-  const ctx = await current.newContext({ ...options, serviceWorkers: 'block' });
+  if (!current || !workerNewContext) throw new Error('newGuardedContext() can only be called inside a test that uses the write guard');
+  const ctx = await workerNewContext({ ...options, serviceWorkers: 'block' });
   await installGuard(ctx, current.state);
   return ctx;
 }
@@ -270,9 +309,55 @@ type WriteGuard = {
   setScope(scope: { url: string }): Promise<void>;
 };
 
-export const test = base.extend<{ writeGuard: WriteGuard; guardState: GuardState }>({
+type Fixtures = { writeGuard: WriteGuard; guardState: GuardState; _writeGuardOpen: void; _writeGuardContext: void };
+
+export const test = base.extend<Fixtures, { _writeGuardWorker: void }>({
   // Service workers can issue requests the route never sees.
   serviceWorkers: 'block',
+
+  // Once per worker, so beforeAll hooks are covered: every way to get a browser, context or
+  // request client the guard does not sit in front of is refused.
+  _writeGuardWorker: [async ({ browser, playwright }, use) => {
+    const { policy } = readPolicy(); // malformed input fails the whole worker, never runs unguarded
+    workerNewContext = browser.newContext.bind(browser);
+    const restore: (() => void)[] = [];
+    const lock = (obj: any, name: string, label: string, allow?: () => boolean) => {
+      if (typeof obj?.[name] !== 'function') return;
+      const original = obj[name];
+      restore.push(() => { obj[name] = original; });
+      obj[name] = async (...args: any[]) => {
+        if (allow?.()) return original.apply(obj, args);
+        throw refuse(label, policy);
+      };
+    };
+    if (policy !== 'unrestricted') {
+      lock(browser, 'newContext', 'browser.newContext() (use newGuardedContext instead)', () => builtinWindow);
+      lock(browser, 'newPage', 'browser.newPage() (use newGuardedContext instead)');
+      lock(playwright.request, 'newContext', 'request.newContext() (the request export of @playwright/test)');
+      for (const type of [playwright.chromium, playwright.firefox, playwright.webkit]) {
+        for (const m of ['launch', 'launchPersistentContext', 'launchServer', 'connect', 'connectOverCDP']) {
+          lock(type, m, `${type.name()}.${m}()`);
+        }
+      }
+    }
+    try {
+      await use();
+    } finally {
+      for (const r of restore.reverse()) r();
+      workerNewContext = null;
+    }
+  }, { scope: 'worker', auto: true }],
+
+  // Registered before the context fixture is forced below, so the window is open exactly while
+  // Playwright builds this test's context, and shut whatever happens.
+  _writeGuardOpen: [async ({}, use) => {
+    builtinWindow = true;
+    try { await use(); } finally { builtinWindow = false; }
+  }, { auto: true }],
+
+  // Every guarded test gets the built-in context, so the window always closes in the context
+  // fixture below rather than staying open through a test that never asked for a page.
+  _writeGuardContext: [async ({ context }, use) => { await use(); }, { auto: true }],
 
   guardState: async ({}, use) => {
     const { policy, prefix } = readPolicy();
@@ -283,21 +368,14 @@ export const test = base.extend<{ writeGuard: WriteGuard; guardState: GuardState
 
   // Wraps the built-in context rather than creating one, so storageState, video and trace
   // settings all survive.
-  context: async ({ context, browser, guardState }, use, testInfo: TestInfo) => {
+  context: async ({ context, guardState }, use, testInfo: TestInfo) => {
+    builtinWindow = false; // Playwright has built the context; nothing else may.
     await installGuard(context, guardState);
-    const newContext = browser.newContext.bind(browser);
-    const newPage = browser.newPage.bind(browser);
-    if (guardState.policy !== 'unrestricted') {
-      browser.newContext = (async () => { throw refuse('browser.newContext() (use newGuardedContext instead)', guardState.policy); }) as any;
-      browser.newPage = (async () => { throw refuse('browser.newPage() (use newGuardedContext instead)', guardState.policy); }) as any;
-    }
-    current = { state: guardState, newContext };
+    current = { state: guardState, newContext: workerNewContext! };
     try {
       await use(context);
     } finally {
       current = null;
-      browser.newContext = newContext;
-      browser.newPage = newPage;
       // Written once, then attached by path. The gate matches this file to Playwright's copy
       // by sha256, so it must not change after this.
       const file = testInfo.outputPath('writes.json');
@@ -319,8 +397,10 @@ export const test = base.extend<{ writeGuard: WriteGuard; guardState: GuardState
         guardState.scopeUrls.push(url);
         for (const ctx of guardState.contexts) {
           // Later documents get the new scope; the current ones are updated in place.
-          await ctx.addInitScript({ content: `window.__qaPilotScope = ${JSON.stringify(url)};` });
-          for (const p of ctx.pages()) await p.evaluate((u) => { (window as any).__qaPilotScope = u; }, url).catch(() => {});
+          await ctx.addInitScript({ content: scopeScript(guardState, url) });
+          for (const p of ctx.pages()) {
+            await p.evaluate(([t, u]) => (window as any).__qaPilotSetScope(t, u), [guardState.token, url]).catch(() => {});
+          }
         }
       },
     });
