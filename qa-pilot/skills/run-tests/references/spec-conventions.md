@@ -14,6 +14,62 @@ The test title **must** begin with the case ID. `parse-report.mjs` maps Playwrig
 test('CHECKOUT-ORDER-001 places an order with a single in-stock item', async ({ page }) => { … });
 ```
 
+Shared fixture specs are the one exception, and their titles are exact: `FIXTURE <name>` for the setup and `FIXTURE <name> teardown` for the teardown. Any other title starting with `FIXTURE` is dropped as unmapped. See "Shared fixtures" below.
+
+## The write guard
+
+When a feature's `mutation.policy` is anything but `unrestricted`, or the run targets production, specs import `test` and `expect` from the write guard rather than from `@playwright/test`. `/qa-pilot:run-tests` copies `write-guard.mjs` and `write-guard.fixture.ts` into the spec directory.
+
+```ts
+import { test, expect } from '../write-guard.fixture';
+```
+
+Nothing else changes in the spec: ordinary `locator.click()` calls are judged in the page before the app sees them, and every request is judged at the network layer. A blocked click does nothing, a blocked request is aborted, and each one is recorded in the attempt's `writes.json`, which the publish gate re-reads. Under `read-only` any recorded write refuses the run; under `scoped-write` a blocked one does.
+
+Rules the guard imposes on specs:
+
+- **Drive the app through the page.** The `request` fixture, `page.request`, `context.request`, `browser.newContext()` and `browser.newPage()` throw under any policy but `unrestricted`, because their requests would bypass the guard. A cross-app spec that needs a second context calls `newGuardedContext(options)` from the fixture instead.
+- **Under `scoped-write`, name what you create with the prefix.** A write control is allowed only in a row or dialog that shows `mutation.prefix`, or on a page inside a scope the spec declared with `writeGuard.setScope({ url: '<regex>' })`. An entity named without the prefix cannot be edited or deleted by its own spec.
+- **Your own route handlers still work.** The guard decides first and then hands the request to them, so `route.fulfill()` for a stub, `route.fallback()` and `route.continue()` all behave as usual. `unroute(url, handler)` with the original handler does not remove a wrapped one; use `unroute(url)`.
+- **Native dialogs are declined under `read-only`**, since a `confirm()` before a delete is a write path too.
+
+## Shared fixtures
+
+A fixture is one entity several cases work inside, declared in `cases.yaml` under `fixtures` and named by each case's `fixture:` key.
+
+```
+<spec_dir>/<feature>/FIXTURE-<name>.setup.ts      title: FIXTURE <name>
+<spec_dir>/<feature>/FIXTURE-<name>.teardown.ts   title: FIXTURE <name> teardown   (teardown: delete only)
+```
+
+```ts
+// FIXTURE-shared-project.setup.ts
+import { test, expect, saveFixture } from '../write-guard.fixture';
+
+test('FIXTURE shared-project', async ({ page }) => {
+  await page.goto('/projects/new');
+  await page.getByTestId('project-name').fill(`QA_TEST_${Date.now()}`);   // the scoped-write prefix
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page).toHaveURL(/\/projects\/[\w-]+$/);
+  saveFixture('shared-project', { url: page.url() });
+});
+
+// CHECKOUT-ORDER-003.spec.ts, a case with `fixture: shared-project`
+import { test, expect, loadFixture } from '../write-guard.fixture';
+
+test('CHECKOUT-ORDER-003 renames a line item inside the shared project', async ({ page }) => {
+  const { url } = loadFixture<{ url: string }>('shared-project');
+  await page.goto(url);
+  …
+});
+```
+
+`saveFixture` and `loadFixture` read and write `$QA_PILOT_FIXTURE_DIR/<name>.json`, which `/qa-pilot:run-tests` points at the run's own `fixtures/` directory, so two runs never share an identity. Both throw when the variable is unset.
+
+The setup and teardown run as Playwright projects with an explicit `testMatch` and `retries: 0` (see `/qa-pilot:run-tests` step 5). If the setup fails, Playwright skips its dependents, which is what makes them `blocked`, and the publish gate refuses a report where a dependent of a failed setup still carries a verdict. A teardown that fails is a publish warning naming the entity left behind.
+
+Fixtures are not allowed under `read-only`: they create something.
+
 ## Authentication
 
 Specs consume saved profiles, never login flows:
@@ -72,12 +128,12 @@ await expect(page.getByTestId('order-confirmation')).toBeHidden();
 
 ## Console evidence
 
-When the profile's `evidence.extra` includes `console_log`, attach console output to every test. On hosts where operations bypass the network, this is the only machine-readable trace of what the application actually did, and `validate-report.mjs` refuses to publish without it.
+When the profile's `evidence.extra` includes `console_log`, attach console output to every test. On hosts where operations bypass the network, this is the only machine-readable record of what the application actually did. The publish gate does not require the attachment, because the trace already carries the console output and the trace is required; the separate log is there so a failure can be read without opening the trace.
 
-Put it in a fixture so every spec gets it without repeating the wiring. `<spec_dir>/fixtures.ts`:
+Put it in a fixture so every spec gets it without repeating the wiring. Build it on the write guard's `test` when the feature is guarded, so specs keep a single import. `<spec_dir>/fixtures.ts`:
 
 ```ts
-import { test as base } from '@playwright/test';
+import { test as base } from './write-guard.fixture';   // or '@playwright/test' when unguarded
 
 export const test = base.extend<{ consoleLog: void }>({
   consoleLog: [async ({ page }, use, testInfo) => {
@@ -92,7 +148,7 @@ export const test = base.extend<{ consoleLog: void }>({
   }, { auto: true }],
 });
 
-export { expect } from '@playwright/test';
+export { expect, saveFixture, loadFixture, newGuardedContext } from './write-guard.fixture';
 ```
 
 Specs then import `test` from `./fixtures` instead of `@playwright/test`, and the attachment appears in the JSON report where `parse-report.mjs` picks it up.
@@ -116,9 +172,10 @@ Use two browser contexts, one per app and each with its own storageState, rather
 
 Five developers run against one deployment. Data collisions read as flakiness and get misattributed to the tests.
 
-- Prefix every entity a spec creates with the run ID: `qa-${runId}-project-1`.
+- Prefix every entity a spec creates with the run ID: `qa-${runId}-project-1`. Under `scoped-write` the name must also carry the feature's `mutation.prefix`, which comes first: `QA_TEST_${runId}-project-1`.
 - Create data under the executor's own account wherever the tenancy model allows.
-- Clean up what you create in `afterEach`, and write cleanup so it succeeds even when the test failed halfway.
+- Clean up what you create in `afterEach`, and write cleanup so it succeeds even when the test failed halfway. A read-only feature creates nothing, so it has nothing to clean up.
+- When several cases need the same built-up entity, use a shared fixture rather than each case building and deleting its own.
 - Never assert on a global count ("there are 3 projects"), because someone else's run will break it. Assert on the entity you created.
 
 ## What makes a spec durable
