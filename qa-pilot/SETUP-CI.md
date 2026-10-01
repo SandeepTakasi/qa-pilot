@@ -142,8 +142,11 @@ once and it settles.
 
 Everything a run produces goes under `testing/<feature>/runs/<run_id>/`, as it does locally:
 `meta.json`, the Playwright JSON report as `results.json` (the job sets
-`PLAYWRIGHT_JSON_OUTPUT_NAME` to it), the per-test output and traces under `test-results/`
-(`--output`), shared fixture identities under `fixtures/` (`QA_PILOT_FIXTURE_DIR`), and the
+`PLAYWRIGHT_JSON_OUTPUT_NAME` to it, as an absolute path, because Playwright resolves that name
+against the config file's directory), the per-test output and traces under `test-results/`
+(`--output`), shared fixture identities under `fixtures/` (`QA_PILOT_FIXTURE_DIR`; the job also
+exports `QA_PILOT_FEATURE`, which your config's fixture projects use to run only this feature's
+fixtures, see `/qa-pilot:run-tests`), and the
 `report.json` that `parse-report.mjs` writes there by default. Two runs never overwrite each
 other's evidence, and the publish gate finds everything it re-reads relative to that one
 directory.
@@ -164,6 +167,11 @@ Playwright (`always` keeps a trace for every test, `on-failure` only for failure
 records that mode in `meta.json`, so the report claims exactly what the run kept. For a
 regression job `on-failure` is a reasonable profile choice: nobody samples CI passes, and
 failures still carry a full trace.
+
+Playwright has no command-line flag for video, so the job cannot set it. **Make your config's
+`use.video` match the profile's capture mode** (`retain-on-failure` under `on-failure`, `on`
+under `always`), as `/qa-pilot:run-tests` describes; otherwise every passing test still records
+and keeps a video, which throws away most of what `on-failure` saves.
 
 Traces upload as build artifacts with a 14-day retention, and only when the environment's
 effective `evidence_upload` is `tracker`. They contain the test account's session token, so

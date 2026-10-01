@@ -137,6 +137,8 @@ Where they land: `clickup.bug_list` in the profile, if it is set. If it is not, 
 
 **Write `ledger` back to `testing/<feature>/bugs.json` and commit it**, filling in each new task's `task_id` from the ClickUp response. That file is what makes deduplication work on the next run. Without it, every regression run refiles every open bug.
 
+Under `tracker: none` there is no task and no deduplication: each run's bugs are its own files, and the script never turns a repeat into a comment. Write `ledger` back all the same, with `task_id` left `null`. It still records each failure's signature and the runs it was seen in, so a reader can tell a recurring defect from a new one, and it keeps the ledger valid if the host later moves to a tracker.
+
 If `testing/` is gitignored, the ledger still works for whoever holds it and deduplication simply does not survive to another machine. Worth mentioning once, not worth blocking on:
 
 ```bash

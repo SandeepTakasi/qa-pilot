@@ -141,7 +141,6 @@ For a run whose evidence stays local, the comment holds only what the payload's 
 
 12 pass · 2 fail · 1 flaky · 0 blocked (0% blocked)
 Confidence: 31% · Not Ready
-Evidence is on the executor's machine under testing/checkout/runs/2026-08-30T09:22Z-checkout-a1b2c3d/
 ```
 
-Each case task carries its own trace path and `trace_sha256`, which is how a reviewer finds and verifies the file.
+Each case task carries its own trace path and `trace_sha256`, which is how a reviewer finds and verifies the file; the run directory follows from the feature and the run ID (`testing/<feature>/runs/<run_id>/`).

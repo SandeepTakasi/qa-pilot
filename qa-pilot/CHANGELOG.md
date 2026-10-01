@@ -29,8 +29,12 @@ gap, mostly around running against production safely.
 6. **Node 20 or newer.** Node 18 is end-of-life.
 7. **Move the reporters out of your Playwright config.** `/run-tests` now passes
    `--reporter=json,html` on the command line with per-run output paths
-   (`PLAYWRIGHT_JSON_OUTPUT_NAME`, `PLAYWRIGHT_HTML_OUTPUT_DIR`, `--output`), and a JSON
-   `outputFile` in the config would override them and send every run to the same file.
+   (`PLAYWRIGHT_JSON_OUTPUT_NAME`, `PLAYWRIGHT_HTML_OUTPUT_DIR`, `--output`, all absolute), and
+   a JSON `outputFile` in the config would override them and send every run to the same file.
+   If you declare shared fixtures, scope the fixture projects' `testMatch` to
+   `` `**/${process.env.QA_PILOT_FEATURE}/FIXTURE-*.setup.ts` `` (and `.teardown.ts`), as the
+   run-tests skill shows: dependency and teardown projects ignore the command line's spec list,
+   so unscoped they would run every feature's fixtures on every run.
 8. **`parse-report.mjs` writes `report.json` into the run directory by default**, and the
    trace paths in it are relative to that directory. It no longer prints the report to
    stdout when `-o` is absent.

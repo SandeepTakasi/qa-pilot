@@ -102,15 +102,22 @@ Print (do not write to a file) the prerequisites this host must close before the
 | Playwright < 1.51 | `/setup-profiles`: IndexedDB-persisted auth (Firebase) will not restore |
 | No sandbox/mock mode | spec stabilization competes for the shared deployed environment |
 | No role accounts yet | permission-type cases in `/generate-tests` |
-| ClickUp space, statuses or custom fields not created | `/publish-results`: see below |
 | Deployed builds strip console logs | failure evidence on hosts where console output is the required evidence |
-| Private Attachment Links not enabled in ClickUp | evidence privacy: attachment URLs are public, unauthenticated and non-expiring by default, and traces carry application state |
-| All developers sharing one ClickUp API token | `/publish-results` under concurrency, because the 100 req/min budget is per token, so a shared token is shared by everyone publishing at once |
 | A production environment with `testing/*/runs/` not gitignored | `/run-tests` on production: it refuses until the run directories are ignored |
 | No write signatures confirmed against real requests | the write guard on production: the profile is invalid without at least one, and an incomplete list is a write the guard cannot see |
+
+With `tracker: clickup` only, add these:
+
+| Gap | Blocks |
+|---|---|
+| ClickUp space, statuses or custom fields not created | `/publish-results`: see below |
+| Private Attachment Links not enabled in ClickUp | evidence privacy: attachment URLs are public, unauthenticated and non-expiring by default, and traces carry application state |
+| All developers sharing one ClickUp API token | `/publish-results` under concurrency, because the 100 req/min budget is per token, so a shared token is shared by everyone publishing at once |
 | `Run ID`, `Trace Path`, `Trace SHA256` fields not created in ClickUp | `/publish-results` for any environment whose evidence stays local |
 
-**The plugin does not create the ClickUp structure. The user does, once.** Point them at
+Under `tracker: none` there is no ClickUp setup at all: skip the rest of this section, and tell the user instead that QA approves cases by editing `testing/<feature>/statuses.json`.
+
+**With `tracker: clickup`, the plugin does not create the ClickUp structure. The user does, once.** Point them at
 `${CLAUDE_PLUGIN_ROOT}/SETUP-CLICKUP.md`, which lists the exact statuses, the exact custom
 fields and their dropdown options, and the two settings above. Names are matched literally
 by `/publish-results`, so "roughly right" fails at publish time.
@@ -145,9 +152,11 @@ carry on, which is the same treatment an uncommitted profile gets.
 
 Two degraded modes are coherent enough to name, so a host can pick one on purpose:
 
-- **Local-only.** Ignore the specs and all of `testing/`. You still get QA-approved cases,
-  evidenced verdicts and a ClickUp record. You give up CI, cross-machine reproduction, and
-  approval carry-forward, so every run returns the feature to review.
+- **Local-only.** Ignore the specs and all of `testing/`. You still get QA-approved cases and
+  evidenced verdicts, plus a ClickUp record with `tracker: clickup`. You give up CI,
+  cross-machine reproduction, and approval carry-forward, so every run returns the feature to
+  review. Under `tracker: none` this mode also keeps the approvals themselves
+  (`testing/<feature>/statuses.json`) on one machine, so it suits a single reviewer only.
 - **Committed.** Ignore only `testing/*/runs/`. Everything works, and the repo carries the
   specs and three small JSON files per feature.
 

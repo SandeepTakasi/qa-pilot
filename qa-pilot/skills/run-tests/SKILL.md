@@ -109,12 +109,19 @@ Specs then `import { test, expect } from '../write-guard.fixture'` (or from a `f
 **Shared fixtures.** For each `fixtures[]` entry in `cases.yaml`, write `<spec_dir>/<feature>/FIXTURE-<name>.setup.ts` (test title `FIXTURE <name>`) and, only for `teardown: delete`, `FIXTURE-<name>.teardown.ts` (title `FIXTURE <name> teardown`). Wire them as Playwright projects. Each needs an explicit `testMatch`, because the default `testMatch` does not find `*.setup.ts` or `*.teardown.ts` files, and `retries: 0`, because a setup that only works on retry has already created a first entity:
 
 ```js
+// Scoped to the feature being run. A file filter on the command line does not apply to
+// dependency or teardown projects, which run every file their testMatch finds, so without
+// this every run would also run, and write through, every other feature's fixtures.
+const feature = process.env.QA_PILOT_FEATURE ?? '__no_feature__';
+
 projects: [
-  { name: 'fixture-setup', testMatch: '**/*.setup.ts', retries: 0, teardown: 'fixture-teardown' },
-  { name: 'fixture-teardown', testMatch: '**/*.teardown.ts', retries: 0 },
+  { name: 'fixture-setup', testMatch: `**/${feature}/FIXTURE-*.setup.ts`, retries: 0, teardown: 'fixture-teardown' },
+  { name: 'fixture-teardown', testMatch: `**/${feature}/FIXTURE-*.teardown.ts`, retries: 0 },
   { name: 'chromium', testMatch: '**/*.spec.ts', dependencies: ['fixture-setup'] },
 ],
 ```
+
+Every fixture the feature declares runs on each of its runs, whichever cases are selected; that is fine, because all of them are the feature's own and the publish gate accepts declared fixtures. Unset, `QA_PILOT_FEATURE` matches no fixture at all, so an ordinary `npx playwright test` runs none.
 
 The setup saves the entity's identity with `saveFixture(name, identity)` from the guard fixture, and dependents read it with `loadFixture(name)`; both use `QA_PILOT_FIXTURE_DIR`, which step 7 sets to `$RUN_DIR/fixtures/`.
 
@@ -160,13 +167,14 @@ Set the guard's inputs and this run's output paths, then run from the app's repo
 export QA_PILOT_MUTATION='<{"policy": ..., "prefix": ...} from cases.yaml mutation; {"policy":"unrestricted"} when absent>'
 export QA_PILOT_MUTATION_CONFIG='<the profile mutation block as JSON, or unset>'
 export QA_PILOT_FIXTURE_DIR="$PWD/$RUN_DIR/fixtures"
-PLAYWRIGHT_JSON_OUTPUT_NAME="$RUN_DIR/results.json" \
-PLAYWRIGHT_HTML_OUTPUT_DIR="$RUN_DIR/html" \
-  npx playwright test <case spec paths> <FIXTURE-*.setup.ts and .teardown.ts of every fixture they name> \
-    --reporter=json,html --output="$RUN_DIR/test-results"
+export QA_PILOT_FEATURE='<feature>'
+PLAYWRIGHT_JSON_OUTPUT_NAME="$PWD/$RUN_DIR/results.json" \
+PLAYWRIGHT_HTML_OUTPUT_DIR="$PWD/$RUN_DIR/html" \
+  npx playwright test <case spec paths> \
+    --reporter=json,html --output="$PWD/$RUN_DIR/test-results"
 ```
 
-`prefix` goes into `QA_PILOT_MUTATION` only under `scoped-write`. Unset, the guard runs `read-only`, never `unrestricted`. Pass the fixture specs explicitly: a file filter applies to every project, so a setup file left off the command line does not run, and every case that needs it is blocked.
+`prefix` goes into `QA_PILOT_MUTATION` only under `scoped-write`. Unset, the guard runs `read-only`, never `unrestricted`. `QA_PILOT_FEATURE` selects this feature's fixture projects (step 5); you do not list the fixture specs yourself. Keep every output path absolute: Playwright resolves `PLAYWRIGHT_JSON_OUTPUT_NAME` against the config file's directory, not the one you run from, so a relative path lands outside the run directory whenever the config lives elsewhere.
 
 Then read the deploy SHA **again**.
 

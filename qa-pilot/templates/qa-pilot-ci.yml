@@ -115,6 +115,9 @@ jobs:
           echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
           echo "RUN_DIR=$RUN_DIR" >> $GITHUB_ENV
           echo "QA_PILOT_FIXTURE_DIR=$PWD/$RUN_DIR/fixtures" >> $GITHUB_ENV
+          # Selects this feature's shared-fixture projects in the host's Playwright config
+          # (see run-tests): dependency projects ignore the spec list below.
+          echo "QA_PILOT_FEATURE=$FEATURE" >> $GITHUB_ENV
           echo "STARTED_AT=$(date -u +%FT%TZ)" >> $GITHUB_ENV
 
       # PREREQUISITE 2. The runner must be able to reach the deployed environment. If it
@@ -153,8 +156,9 @@ jobs:
             on-failure) TRACE=retain-on-failure ;;
             *) TRACE=off ;;
           esac
-          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUN_DIR/results.json" \
-            npx playwright test $SPECS --reporter=json --trace "$TRACE" --output "$RUN_DIR/test-results"
+          # Absolute: Playwright resolves the JSON output name against the config's directory.
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$PWD/$RUN_DIR/results.json" \
+            npx playwright test $SPECS --reporter=json --trace "$TRACE" --output "$PWD/$RUN_DIR/test-results"
         continue-on-error: true    # the verdict step decides, so the report is built first
 
       - name: Read the deployed build, after
