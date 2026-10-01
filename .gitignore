@@ -11,3 +11,7 @@ playwright-report/
 # Local planning and execution artifacts, never published
 .drydock/
 docs/plans/
+
+# Site build output and dependencies
+site/dist/
+site/node_modules/

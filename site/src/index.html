@@ -1,0 +1,285 @@
+<section class="hero" aria-labelledby="hero-title">
+  <div class="split">
+    <div class="split__text">
+      <p class="eyebrow">QA-Pilot for Claude Code</p>
+      <h1 class="display" id="hero-title">A verdict you can open, not a claim.</h1>
+      <p class="lede">QA-Pilot runs feature tests against a deployed environment and publishes a verdict only after a script has checked its evidence. Every executed case leaves a Playwright trace and a deploy SHA read from the running environment, so QA reviews evidence instead of re-running the tests.</p>
+      <div class="hero__actions">
+        <p class="eyebrow">1. Add the marketplace</p>
+        <div class="cmd"><code>claude plugin marketplace add https://github.com/SandeepTakasi/qa-pilot</code><button class="cmd__copy" type="button">Copy</button></div>
+        <p class="eyebrow">2. Install</p>
+        <div class="cmd"><code>claude plugin install qa-pilot</code><button class="cmd__copy" type="button">Copy</button></div>
+        <p class="hero__buttons">
+          <a class="btn btn--primary" href="{{base}}docs/">Read the docs</a>
+          <a class="btn btn--quiet" href="{{base}}docs/production/">How production runs stay safe</a>
+        </p>
+      </div>
+    </div>
+    <div class="split__media">
+      <figure class="artifact">
+        <figcaption class="artifact__label">report.json (excerpt)</figcaption>
+        <pre><code>run_id: 2026-10-01T09:22Z-checkout-a1f9c3e
+env_name: staging
+commit_sha: a1f9c3e
+sha_before: a1f9c3e
+sha_after: a1f9c3e
+mutation_policy: scoped-write
+mutation_prefix: qa-e2e-
+cases:
+  - id: CHECKOUT-ORDER-001
+    verdict: <span class="tag tag--pass">pass</span>
+    trace: test-results/checkout-order-001/trace.zip
+  - id: CHECKOUT-ORDER-002
+    verdict: <span class="tag tag--flaky">flaky</span>
+    retries: 1
+    trace: test-results/checkout-order-002/trace.zip
+  - id: CHECKOUT-ORDER-007
+    verdict: <span class="tag tag--blocked">blocked</span>
+    trace: null
+summary: { pass: 21, fail: 0, flaky: 1, blocked: 2 }</code></pre>
+      </figure>
+      <figure class="artifact">
+        <figcaption class="artifact__label">writes.json (CHECKOUT-ORDER-001, one attempt, excerpt)</figcaption>
+        <pre><code>{
+  "policy": "scoped-write",
+  "prefix": "qa-e2e-",
+  "write_signatures": 2,
+  "routed_requests": 41,
+  "blocked": 0,
+  "observed": 1,
+  "events": [
+    {
+      "action": "observe",
+      "reason": "POST matches write_signatures[1]; ...",
+      "url": "https://staging.example.com/api/orders"
+    }
+  ]
+}</code></pre>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="problem-title">
+  <p class="eyebrow">The problem</p>
+  <h2 class="section__title" id="problem-title">Looked fine is not evidence</h2>
+  <p class="lede">An agent can click through an app and report that it looked fine. That report is a sentence. It names no build, holds no recording, and gives a second person nothing to open or to run again next week.</p>
+  <blockquote class="pullquote">
+    <p>&ldquo;Claude clicked through it and it looked fine&rdquo;</p>
+  </blockquote>
+  <p>QA-Pilot treats that sentence as the failure it is built to remove. An agentic browser session can help write a test, but it produces no trace and no machine-readable result, so it has nothing to publish with. What QA-Pilot leaves behind instead:</p>
+  <ul>
+    <li>A committed Playwright spec per case, which produces the verdict today and regresses the feature in CI later.</li>
+    <li>A <code>trace.zip</code> per case per run: video, console, DOM snapshots and network log in one file.</li>
+    <li>A deploy SHA read from the running environment before the run and again after it.</li>
+  </ul>
+</section>
+
+<section class="section" aria-labelledby="pipeline-title">
+  <p class="eyebrow">The pipeline</p>
+  <h2 class="section__title" id="pipeline-title">Six commands, with QA between design and execution</h2>
+  <p class="lede">Each command is a Claude Code skill. The deterministic work, such as parsing the report and validating it, sits in zero-dependency Node scripts that a model does not get to reinterpret.</p>
+  <ol class="pipeline">
+    <li class="pipeline__step">
+      <code class="pipeline__cmd">/qa-pilot:qa-init</code>
+      <h3>Describe the project</h3>
+      <p>Scans the repo, asks for what it cannot discover (environment URLs, where the deploy SHA is served, the tracker), and writes a schema-valid <code>qa-pilot.config.yaml</code>. Once per project.</p>
+    </li>
+    <li class="pipeline__step">
+      <code class="pipeline__cmd">/qa-pilot:setup-profiles</code>
+      <h3>Save a login once</h3>
+      <p>Gives you one command that opens a real browser for a single sign-in per account, then saves cookies, localStorage and IndexedDB so specs reuse the session. Once per developer.</p>
+    </li>
+    <li class="pipeline__step">
+      <code class="pipeline__cmd">/qa-pilot:generate-tests</code>
+      <h3>Author the cases</h3>
+      <p>Reads the tracker task and the code, then writes <code>cases.yaml</code>: at most 25 cases, a required scenario mix, and an assertion that could become a Playwright check in every case. Per feature.</p>
+    </li>
+    <li class="pipeline__gate">QA approves the scenario matrix, the write policy and the cases</li>
+    <li class="pipeline__step">
+      <code class="pipeline__cmd">/qa-pilot:run-tests</code>
+      <h3>Run against a deployed build</h3>
+      <p>Turns approved cases into committed Playwright specs and runs them with a trace per case, reading the deploy SHA before and after. A feature that may not write freely runs under the write guard.</p>
+    </li>
+    <li class="pipeline__step">
+      <code class="pipeline__cmd">/qa-pilot:publish-results</code>
+      <h3>Validate, then publish</h3>
+      <p>Builds <code>report.json</code> from the Playwright report and runs the gate. Only a report that passes reaches the tracker.</p>
+    </li>
+    <li class="pipeline__step">
+      <code class="pipeline__cmd">/qa-pilot:qa-review</code>
+      <h3>Review as QA</h3>
+      <p>Sorts the queue with failures first, tracks the sampling quotas, and records approve, reject with a reason, or retest. Every confirmed defect becomes a linked bug.</p>
+    </li>
+  </ol>
+</section>
+
+<section class="section" aria-labelledby="refusals-title">
+  <p class="eyebrow">What it refuses to publish</p>
+  <h2 class="section__title" id="refusals-title">Six things it will not publish</h2>
+  <p class="lede">The publish step is a script, not a judgement call. It rejects each of these outright, and QA never has to police any of them. The lines below are the gate&rsquo;s own output, as printed under <code>REFUSED. This report cannot be published</code>.</p>
+  <ol class="refusals">
+    <li class="refusal">
+      <h3>A verdict without evidence</h3>
+      <p>Every executed case needs a Playwright trace and a deploy SHA read from the running environment. A missing, empty or unreadable artifact fails the report.</p>
+      <code class="refusal__out">cases[CHECKOUT-ORDER-001].trace: required for a pass verdict. An unevidenced verdict is exactly the unverifiable claim this pipeline exists to prevent.</code>
+    </li>
+    <li class="refusal">
+      <h3>A verdict from a local or sandbox environment</h3>
+      <p>Mock backends are seeded and always succeed. Runs against them are useful for stabilising specs and are stamped as such, but they cannot carry a verdict.</p>
+      <code class="refusal__out">api_mode: "mocks" is this host's sandbox mode. Sandbox backends are seeded and always succeed, so their results are structurally false passes and cannot be published.</code>
+    </li>
+    <li class="refusal">
+      <h3>A pass that was really a retry</h3>
+      <p>Pass-on-retry is recorded <code>flaky</code>, always, derived from the attempt results and not from Playwright&rsquo;s own status field, so no config change can turn it green. A failure in any browser is a failure, never a flake. The gate recomputes every verdict from <code>results.json</code>.</p>
+      <code class="refusal__out">rule 1b: cases[CHECKOUT-ORDER-002].verdict says pass but results.json gives flaky</code>
+    </li>
+    <li class="refusal">
+      <h3>A verdict for a case QA never approved</h3>
+      <p>Checked against the case&rsquo;s recorded status at the time of the run, not against the case map. Every generated case is in the map from the moment it is created, so membership proves nothing about approval.</p>
+      <code class="refusal__out">cases[CHECKOUT-ORDER-004]: was "Case Review" (case_review) when the run happened, which is not an approved state. Only cases QA approved may be published.</code>
+    </li>
+    <li class="refusal">
+      <h3>A run that lost its ground truth</h3>
+      <p>If the deployed build changes mid-run, every case is <code>blocked</code>, because half tested one build and half another. Past 10% blocked the run halts: the environment failed, not the feature.</p>
+      <code class="refusal__out">sha_mismatch: the deployed build changed mid-run (a1f9c3e -&gt; 7d02be4) but 12 case(s) still carry a verdict; every case must be blocked</code>
+    </li>
+    <li class="refusal">
+      <h3>A run that broke its write policy</h3>
+      <p>Each feature declares whether its specs may write: <code>read-only</code>, <code>scoped-write</code> with a name prefix, or <code>unrestricted</code>. The write guard records every write control and write request it saw. A read-only run that recorded one, or a run whose guard never reported in, does not publish.</p>
+      <code class="refusal__out">rule 3: read-only run recorded 2 write(s) in cases[CHECKOUT-ORDER-003]</code>
+    </li>
+  </ol>
+</section>
+
+<section class="section" aria-labelledby="evidence-title">
+  <p class="eyebrow">Evidence</p>
+  <h2 class="section__title" id="evidence-title">The evidence is one file</h2>
+  <div class="split">
+    <div class="split__text">
+      <p class="lede">One artifact per case per run: <code>trace.zip</code>. It carries the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log, so there is no separate video and no separate console log to keep in step.</p>
+      <p>Reviewers drag it onto <a href="https://trace.playwright.dev" rel="noopener">trace.playwright.dev</a>, which runs entirely in the browser and transmits nothing. No second storage system, and no extra credentials.</p>
+      <p>With ClickUp, the trace is attached to the case&rsquo;s task. Without it, set <code>tracker: none</code>: approvals live in <code>testing/&lt;feature&gt;/statuses.json</code>, evidence stays local, and bugs are markdown files in the run directory.</p>
+    </div>
+    <div class="split__media">
+      <figure class="artifact">
+        <figcaption class="artifact__label">One run directory</figcaption>
+        <pre><code>testing/checkout/runs/2026-10-01T09:22Z-checkout-a1f9c3e/
+  meta.json
+  results.json
+  statuses.json
+  report.json
+  fixtures/
+  test-results/
+    checkout-order-001/
+      trace.zip
+      writes.json
+    checkout-order-002/
+      trace.zip
+      writes.json</code></pre>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="production-title">
+  <p class="eyebrow">Production</p>
+  <h2 class="section__title" id="production-title">Production, without the damage</h2>
+  <p class="lede">An environment declares what it is: <code>kind: qa | staging | production</code>, never guessed from the hostname. Production is allowed, under rules that are refusals, not advice.</p>
+  <div class="split">
+    <div class="split__text">
+      <ul>
+        <li><strong>Evidence stays local.</strong> A trace carries the session and every request body it touched, so a production trace is never attached to the tracker, never uploaded by CI, and never committed. <code>/qa-pilot:run-tests</code> refuses unless the run directory is gitignored.</li>
+        <li><strong>Full capture.</strong> Every case keeps a trace. On production a pass is the claim most worth checking, so <code>evidence.capture</code> must be <code>always</code>.</li>
+        <li><strong>A declared write policy and a live guard.</strong> A production feature must be <code>read-only</code> or <code>scoped-write</code>, and the host profile says what a write looks like on that host. The guard judges clicks in the page before the app sees them, and requests at the network layer.</li>
+      </ul>
+      <p><a href="{{base}}docs/production/">Production, in full</a></p>
+    </div>
+    <div class="split__media">
+      <figure class="artifact">
+        <figcaption class="artifact__label">What the tracker receives from a production run (excerpt)</figcaption>
+        <pre><code>{
+  "mode": "local",
+  "cases": [
+    {
+      "case_id": "CHECKOUT-ORDER-001",
+      "verdict": "pass",
+      "target_status": "Under Review",
+      "env_name": "production",
+      "build_id": "a1f9c3e",
+      "trace_path": "test-results/checkout-order-001/trace.zip",
+      "trace_sha256": "26f9dc66c7273...a1b2"
+    }
+  ],
+  "summary": {
+    "counts": { "pass": 1, "fail": 0, "flaky": 0, "blocked": 0 },
+    "blocked_pct": 0,
+    "confidence": { "score": 0, "label": "Not Ready" },
+    "ready": false
+  }
+}</code></pre>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="profile-title">
+  <p class="eyebrow">Portability</p>
+  <h2 class="section__title" id="profile-title">One profile per project, owned by QA</h2>
+  <div class="split">
+    <div class="split__text">
+      <p class="lede">The plugin ships generic. Environment URLs, auth mechanics, selector policy, assertion constraints and evidence requirements live in <code>qa-pilot.config.yaml</code>, committed in the consuming repo and reviewed by QA.</p>
+      <p>Onboarding a second project is one <code>/qa-pilot:qa-init</code> run and a profile review, with no plugin-code changes. Every other skill refuses to run without a schema-valid profile.</p>
+      <p><a href="{{base}}docs/profile/">The host profile reference</a></p>
+    </div>
+    <div class="split__media">
+      <figure class="artifact">
+        <figcaption class="artifact__label">qa-pilot.config.yaml (excerpt)</figcaption>
+        <pre><code>project: shop
+tracker: clickup
+
+environments:
+  staging:
+    kind: staging
+    apps:
+      storefront: https://staging.example.com
+    sha_source:
+      url: https://staging.example.com/version.json
+      json_path: commit
+  production:
+    kind: production
+    apps:
+      storefront: https://app.example.com
+    sha_source:
+      url: https://app.example.com/version.json
+      json_path: commit
+
+evidence:
+  capture: always
+
+selectors:
+  testid_attribute: data-testid</code></pre>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="limits-title">
+  <p class="eyebrow">Honest limits</p>
+  <h2 class="section__title" id="limits-title">How strong these gates actually are</h2>
+  <p>The checks are deterministic scripts, so a rushed developer cannot skip them by accident, and that is the failure this system is built for. What they verify is that a report is internally consistent and that its evidence exists on disk.</p>
+  <p>They do not cryptographically bind a report to a Playwright run that happened. Someone determined to fabricate a green result could hand-write the inputs, and nothing here stops that. QA-Pilot makes the evidenced path the path of least resistance, not the only conceivable one. The environment name in a report is taken on trust, like the deploy SHA, and the write guard&rsquo;s ceilings are listed in its source.</p>
+  <p>The backstop for deliberate fabrication is QA&rsquo;s sampling: 100% of P0 passes watched, at least 30% of P1 and 10% of P2, and every failure. A fake trace does not survive being opened.</p>
+</section>
+
+<section class="section" aria-labelledby="install-title">
+  <p class="eyebrow">Install</p>
+  <h2 class="section__title" id="install-title">Two commands</h2>
+  <div class="cmd"><code>claude plugin marketplace add https://github.com/SandeepTakasi/qa-pilot</code><button class="cmd__copy" type="button">Copy</button></div>
+  <div class="cmd"><code>claude plugin install qa-pilot</code><button class="cmd__copy" type="button">Copy</button></div>
+  <p>Requires Node 20 or newer (the scripts are zero-dependency ESM) and, in the host repo, Playwright 1.51 or newer. That is the release where <code>storageState({ indexedDB: true })</code> landed, and below it IndexedDB-persisted auth such as Firebase silently fails to restore.</p>
+  <p class="hero__buttons">
+    <a class="btn btn--primary" href="{{base}}docs/qa-init/">Setting up a project</a>
+    <a class="btn btn--quiet" href="https://github.com/SandeepTakasi/qa-pilot" rel="noopener">QA-Pilot on GitHub</a>
+  </p>
+</section>

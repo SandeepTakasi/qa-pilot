@@ -1,0 +1,20 @@
+<div class="doc-layout container">
+  <nav class="doc-sidebar" id="doc-sidebar" aria-label="Documentation">
+{{sidebar}}
+  </nav>
+  <article class="doc" data-pagefind-body data-pagefind-meta="group:{{eyebrow}}">
+    <p class="doc__eyebrow" data-pagefind-ignore>{{eyebrow}}</p>
+    <h1>{{h1}}</h1>
+{{lede}}
+    <div class="prose">
+{{prose}}
+    </div>
+    <footer class="doc__footer">
+      <a class="doc__edit" href="https://github.com/SandeepTakasi/qa-pilot/blob/main/{{source}}" rel="noopener">Edit this page on GitHub</a>
+      <nav class="pager" aria-label="Previous and next">
+{{pager}}
+      </nav>
+    </footer>
+  </article>
+{{toc}}
+</div>

@@ -1,0 +1,144 @@
+{
+  "groups": [
+    {
+      "group": "Get started",
+      "pages": [
+        {
+          "title": "Overview",
+          "slug": "docs/",
+          "source": "qa-pilot/README.md",
+          "omit": [
+            "Layout",
+            "Development"
+          ]
+        },
+        {
+          "title": "Setting up a project",
+          "slug": "docs/qa-init/",
+          "source": "qa-pilot/skills/qa-init/SKILL.md",
+          "lede": "Scans your repo, asks for what it cannot discover, and writes a schema-valid `qa-pilot.config.yaml` plus a gap report. Run it once per project, before any other command."
+        },
+        {
+          "title": "Saving logins",
+          "slug": "docs/setup-profiles/",
+          "source": "qa-pilot/skills/setup-profiles/SKILL.md",
+          "lede": "Opens a real browser for one sign-in per account, then saves cookies, localStorage and IndexedDB so specs reuse the session without asking you to log in again."
+        }
+      ]
+    },
+    {
+      "group": "The pipeline",
+      "pages": [
+        {
+          "title": "Generating cases",
+          "slug": "docs/generate-tests/",
+          "source": "qa-pilot/skills/generate-tests/SKILL.md",
+          "lede": "Reads the feature's tracker task and code, then writes `cases.yaml`: at most 25 cases, a required scenario mix, and a verifiable assertion in every case. Nothing runs until QA approves."
+        },
+        {
+          "title": "Running tests",
+          "slug": "docs/run-tests/",
+          "source": "qa-pilot/skills/run-tests/SKILL.md",
+          "lede": "Runs the QA-approved cases against a deployed environment as committed Playwright specs, with a trace per case and the deploy SHA read before and after the run."
+        },
+        {
+          "title": "Publishing results",
+          "slug": "docs/publish-results/",
+          "source": "qa-pilot/skills/publish-results/SKILL.md",
+          "lede": "Builds `report.json` from the Playwright report, validates it, and publishes to the tracker only if it passes. A report with missing evidence is refused."
+        },
+        {
+          "title": "Reviewing as QA",
+          "slug": "docs/qa-review/",
+          "source": "qa-pilot/skills/qa-review/SKILL.md",
+          "lede": "Pulls the Under Review queue with failures first, enforces the evidence sampling rules, and records approve, reject or retest. Each confirmed defect becomes a linked bug."
+        }
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        {
+          "title": "Spec conventions",
+          "slug": "docs/spec-conventions/",
+          "source": "qa-pilot/skills/run-tests/references/spec-conventions.md"
+        },
+        {
+          "title": "Writing cases",
+          "slug": "docs/case-style/",
+          "source": "qa-pilot/skills/generate-tests/references/case-style.md"
+        },
+        {
+          "title": "Running in CI",
+          "slug": "docs/ci/",
+          "source": "qa-pilot/SETUP-CI.md"
+        },
+        {
+          "title": "Setting up ClickUp",
+          "slug": "docs/clickup/",
+          "source": "qa-pilot/SETUP-CLICKUP.md"
+        },
+        {
+          "title": "ClickUp fields",
+          "slug": "docs/clickup-fields/",
+          "source": "qa-pilot/skills/publish-results/references/clickup-fields.md"
+        }
+      ]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        {
+          "title": "Host profile",
+          "slug": "docs/profile/",
+          "source": "qa-pilot/schemas/qa-pilot.config.schema.md"
+        },
+        {
+          "title": "Cases file",
+          "slug": "docs/cases/",
+          "source": "qa-pilot/schemas/cases.schema.md"
+        },
+        {
+          "title": "Report and gate",
+          "slug": "docs/report/",
+          "source": "qa-pilot/schemas/report.schema.md"
+        }
+      ]
+    },
+    {
+      "group": "Project",
+      "pages": [
+        {
+          "title": "Production",
+          "slug": "docs/production/",
+          "source": "site/content/production.md"
+        },
+        {
+          "title": "What it enforces",
+          "slug": "docs/decisions/",
+          "source": "qa-pilot/DECISIONS.md"
+        },
+        {
+          "title": "Write guard internals",
+          "slug": "docs/architecture/",
+          "source": "docs/architecture.md"
+        },
+        {
+          "title": "Decision 0001",
+          "slug": "docs/adr-0001/",
+          "source": "docs/decisions/0001-write-signatures-default-deny.md"
+        },
+        {
+          "title": "Changelog",
+          "slug": "docs/changelog/",
+          "source": "qa-pilot/CHANGELOG.md"
+        },
+        {
+          "title": "Third-party notices",
+          "slug": "docs/notices/",
+          "source": "qa-pilot/THIRD_PARTY_NOTICES.md"
+        }
+      ]
+    }
+  ]
+}
