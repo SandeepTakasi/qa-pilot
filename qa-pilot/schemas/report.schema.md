@@ -74,8 +74,13 @@ attempts: integer            # attempt results whose status is not `skipped`, ac
 paths: [<path>]              # the writes.json attachment path of every attempt, as the
                              # Playwright report records it (Playwright may have copied the
                              # file), relative to the run dir, in attempt order
-installed: boolean           # true iff paths.length === attempts and every file has
-                             # installed: true; an attempt with no writes.json makes it false
+installed: boolean           # true iff every attempt that ran (status not skipped) attached
+                             # a writes.json with installed: true; an attempt that ran with no
+                             # writes.json makes it false. A skipped attempt is not required
+                             # to have one, but a test skipped at runtime still runs the guard
+                             # and may attach one: a record from a skipped attempt stays in
+                             # paths and its counts are summed, since it may have written
+                             # before it skipped
 policy: string | null        # the policy every file recorded; null when they disagree
 prefix: string | null        # likewise
 write_signatures: integer    # the smallest count any file recorded
