@@ -1,0 +1,3 @@
+# The write-guard browser proof copies the templates here and writes its runs here.
+e2e/.guard/
+e2e/.out/

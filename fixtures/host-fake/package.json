@@ -6,14 +6,15 @@
   "scripts": {
     "dev": "vite",
     "dev:mocks": "VITE_API_MODE=mocks vite",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:guard": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
     "vue": "^3.4.0",
     "vuetify": "^3.5.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.51.0",
+    "@playwright/test": "1.62.1",
     "vite": "^5.0.0"
   }
 }
