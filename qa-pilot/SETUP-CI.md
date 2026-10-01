@@ -22,8 +22,10 @@ a person, with evidence kept on their machine (see `/qa-pilot:run-tests`).
 **It does not publish to ClickUp.** Publishing runs through the approval gate over MCP and
 writes to the tracker as a person, and a build runner is neither. Adding a second write
 path, with a CI token and its own copy of the rules, would mean two things to keep honest
-instead of one. When a CI regression needs to be in ClickUp, download `report.json` from
-the build artifacts and run `/qa-pilot:publish-results` against it.
+instead of one. When a CI regression needs to be in ClickUp, download the run directory from
+the build artifacts and run `/qa-pilot:publish-results` against it. That route exists only
+where the environment uploads evidence: under `tracker: none`, or on an environment set to
+`evidence_upload: local`, there is no artifact (see "Evidence in CI").
 
 **It does not need ClickUp at all.** `testing/<feature>/approved.json` is committed. It
 names every case QA accepted and the hash of the spec they accepted, so CI can answer
@@ -161,6 +163,12 @@ trace. A feature with no `mutation` block runs `unrestricted`, as in 0.2.0; one 
 cannot be read fails the step rather than running unguarded.
 
 ## Evidence in CI
+
+**Under `tracker: none` the job uploads no artifact at all.** Without a tracker every
+environment's effective `evidence_upload` is `local`, so the upload step is skipped and the
+run directory stays on the runner, discarded with it. The red or green build is the whole
+result; a team that wants to keep a CI run's evidence runs the same specs on a machine of its
+own with `/qa-pilot:run-tests`.
 
 The job reads `evidence.capture` from the profile and passes the matching `--trace` mode to
 Playwright (`always` keeps a trace for every test, `on-failure` only for failures), and it

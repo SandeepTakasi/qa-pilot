@@ -51,9 +51,17 @@ text fields in ClickUp (`Run ID`, `Trace Path`, `Trace SHA256`; see `SETUP-CLICK
   Enter/Space in the page; the network route judges every request against the host's
   `write_signatures`, which can match the request body, so a GraphQL mutation is told
   apart from a query on the same URL. Specs' own route handlers are wrapped so the guard
-  always decides first. The request fixture, `page.request`, `context.request` and an
-  unguarded `browser.newContext()` are disabled under any policy but `unrestricted`;
-  `newGuardedContext()` replaces the last for cross-app specs.
+  always decides first, and `unroute` / `unrouteAll` remove only the spec's own handlers.
+  Under any policy but `unrestricted` every request path a spec would reach for is refused:
+  the request fixture, `page.request` and `context.request`, `request.newContext()` from
+  `@playwright/test`, Node's global `fetch()`, `browser.newContext()` and
+  `browser.newPage()` (also from `beforeAll` and `beforeEach`), and every browser type's
+  `launch` and `connect`. `newGuardedContext()` replaces `browser.newContext()` for
+  cross-app specs. The page cannot widen the scoped-write scope or hide a blocked click.
+  **What spec authors will notice:** every guarded test gets a browser context even if it
+  never asks for a page, and a page made in `beforeAll` can no longer be shared across
+  serial tests; use the per-test `page`. Node's `node:http`, `node:https` and `node:net`
+  are not seen by the guard and must not be used from a guarded spec.
 - **The gate re-reads everything.** Each attempt leaves a `writes.json`; the publish gate
   rebuilds every case and fixture from the Playwright report and those records on disk,
   sweeps the run directory for records the report does not account for, and refuses any
