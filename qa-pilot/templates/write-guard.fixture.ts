@@ -206,9 +206,22 @@ async function installGuard(ctx: BrowserContext, state: GuardState): Promise<voi
   };
   patchRoutes(ctx);
 
+  // The request object stays readable, because Playwright's own teardown reads it; only the
+  // methods that would send something are refused.
+  const SENDS = new Set(['fetch', 'get', 'post', 'put', 'patch', 'delete', 'head']);
   const lockRequest = (target: BrowserContext | Page, name: string) => {
     if (state.policy === 'unrestricted') return;
-    Object.defineProperty(target, 'request', { get() { throw refuse(name, state.policy); }, configurable: true });
+    const original = (target as any).request;
+    const locked = new Proxy(original, {
+      get(obj, prop) {
+        if (typeof prop === 'string' && SENDS.has(prop)) {
+          return async () => { throw refuse(`${name}.${prop}()`, state.policy); };
+        }
+        const v = Reflect.get(obj, prop, obj);
+        return typeof v === 'function' ? v.bind(obj) : v;
+      },
+    });
+    Object.defineProperty(target, 'request', { get: () => locked, configurable: true });
   };
   lockRequest(ctx, 'context.request');
   const onPage = (page: Page) => {
