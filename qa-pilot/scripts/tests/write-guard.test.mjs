@@ -86,6 +86,8 @@ test('a method outside the verb set throws', () => {
 test('a config that is not a mapping throws rather than guarding nothing', () => {
   assert.throws(() => cfg('write_signatures'), /mapping/);
   assert.throws(() => cfg({ write_signatures: 'POST /api' }), /write_signatures/);
+  assert.throws(() => cfg({ deny_controls: ['wipe'] }), /mutation\.deny_controls: must be a mapping/);
+  assert.throws(() => cfg({ deny_controls: { icons: ['fa-bomb', 3] } }), /mutation\.deny_controls\.icons/);
 });
 
 // --- decideControl ------------------------------------------------------------------
@@ -122,6 +124,12 @@ test('scoped-write allows a write control on a page inside the scope URL', () =>
   assert.equal(decideControl(control('Save', { pageUrl: 'https://app.test/projects/p-999/edit' }), s, cfg()).action, 'block');
 });
 
+test('an empty prefix or empty scope URL unlocks nothing', () => {
+  // Every string contains "", and the empty regex matches every URL.
+  assert.equal(decideControl(control('Delete', { ownRowText: 'Customer project' }), { policy: 'scoped-write', prefix: '' }, cfg()).action, 'block');
+  assert.equal(decideControl(control('Delete'), { policy: 'scoped-write', prefix: 'QA_TEST_', scopeUrl: '' }, cfg()).action, 'block');
+});
+
 test('an unparseable scope URL blocks rather than throwing inside a click listener', () => {
   const s = { policy: 'scoped-write', prefix: 'QA_TEST_', scopeUrl: '(' };
   assert.equal(decideControl(control('Save'), s, cfg()).action, 'block');
@@ -147,6 +155,10 @@ test('a body signature separates a mutation from a query on the same URL', () =>
 test('a request with no body never matches a body signature', () => {
   const c = cfg(GRAPHQL);
   assert.equal(decideRequest(req('POST', 'https://api.test/graphql', null), { policy: 'read-only' }, c).action, 'allow');
+  // A pattern that would match the text "null" or "undefined" must still not fire.
+  const any = cfg({ write_signatures: [{ method: 'POST', url: '/graphql$', body: '.*' }] });
+  assert.equal(decideRequest(req('POST', 'https://api.test/graphql', null), { policy: 'read-only' }, any).action, 'allow');
+  assert.equal(decideRequest(req('POST', 'https://api.test/graphql', undefined), { policy: 'read-only' }, any).action, 'allow');
 });
 
 test('a write request: read-only blocks, scoped-write and unrestricted observe', () => {

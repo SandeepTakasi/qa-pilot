@@ -215,6 +215,12 @@ report whose `evidence_capture` is not `always` is refused, since the profile re
 there and the report is not the source; otherwise a report claiming `on-failure` would exempt
 its passes from the trace requirement.
 
+`env_name` itself is taken from the report, as `sha_before` and `sha_after` have been since
+0.2.0: nothing in the run directory identifies the environment independently, so a report
+relabelled to another registered environment is a known ceiling of this gate. Closing it means
+the write guard recording the request origins it saw and the gate matching them against the
+registered app URLs, which is a planned follow-up.
+
 The gate refuses a `--cases` file whose `feature` differs from the report's `feature`, or that
 fails the mutation and fixture lint in `cases.schema.md`: the rules below are only as good as the
 declaration they compare against. The **effective policy** is the `--cases` file's
@@ -251,7 +257,12 @@ Neither is ever taken from the report. "Executed" below means a verdict of `pass
    count replaces a weaker lower bound of `retries + 1` taken from the report. Each case's and
    fixture's verdict is recomputed from results.json the same way, and a report verdict that
    differs is refused, because rules 2 and 5 decide on verdicts: relabelling an unguarded case
-   `blocked`, or a failed setup `pass`, would otherwise exempt it. A dropped
+   `blocked`, or a failed setup `pass`, would otherwise exempt it. Every other field
+   parse-report derives from results.json is compared the same way (`trace`, `video`,
+   `console_log`, `failure_summary`, `retries`, `duration_ms`, `assertions` and `writes`), so a
+   passing case cannot borrow another case's trace. The two exceptions are the trace hash,
+   trace_sha256, which rule 6 re-hashes from the file itself, and `spec_sha`, which needs the
+   spec files. A dropped
    attempt therefore cannot hide its writes. The report is the file the gate is handed, so it is
    never the source.
 2. **The guard was live.** On a production environment, or under any effective policy other than
@@ -319,8 +330,8 @@ percentage, confidence score and readiness. Nothing else is sent: no attachment,
 `failure_summary`, no console text, no absolute path, no executor. A bug filed from such a run
 (and a dedup comment on an existing bug) names the case id, run id, env name, build id, trace
 path and trace sha256, and no failure text. `bug-report.mjs` keys this on the same effective
-`evidence_upload: local` from the profile, not on `env_kind`; given no profile, it refuses a
-report whose `env_kind` is `production` or absent, and given a profile that does not register the
+`evidence_upload: local` from the profile, not on `env_kind`; given no profile, it accepts only a
+report whose `env_kind` is exactly `qa` or `staging` and refuses any other value or none, and given a profile that does not register the
 report's `env_name`, it refuses, as `publish-payload.mjs` does. Under `tracker: none` no tracker
 receives the bug: the bug file inside the run directory keeps the failure text, since it never
 leaves the machine (the run directory must be gitignored on production).

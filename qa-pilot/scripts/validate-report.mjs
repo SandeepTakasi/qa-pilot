@@ -35,6 +35,10 @@ const EXECUTED = ['pass', 'fail', 'flaky'];
 // A path the tracker may receive, or the gate must sweep, has to stay inside the run dir.
 const escapesRunDir = (p) => typeof p !== 'string' || isAbsolute(p) || p.split(/[\\/]/).includes('..');
 const sha256File = (p) => createHash('sha256').update(readFileSync(p)).digest('hex');
+// Fields rule 1b compares against the rebuild, besides verdict, writes and retries, which
+// have their own messages. Not compared: trace_sha256 (rule 6 re-hashes the file) and
+// spec_sha (it needs the spec files, which the run directory does not hold).
+const REBUILT_FIELDS = ['trace', 'video', 'console_log', 'failure_summary', 'duration_ms', 'assertions'];
 
 /**
  * The mutation, fixture and production rules (report schema, "Mutation, fixture and
@@ -163,6 +167,13 @@ function validateMutation(report, profile, casesDoc, { base, needsEvidence, arti
       }
       if (e.retries !== undefined && e.retries !== truth.retries) {
         err(`rule 1b: ${at}.retries says ${e.retries} but results.json gives ${truth.retries}`);
+      }
+      // Every other field parse-report derives from results.json, so none can be borrowed
+      // or edited (a passing case pointing at another case's trace, say).
+      for (const f of REBUILT_FIELDS) {
+        if (Object.hasOwn(truth, f) && !isDeepStrictEqual(e[f] ?? null, truth[f] ?? null)) {
+          err(`rule 1b: ${at}.${f} says ${show(e[f])} but results.json gives ${show(truth[f])}`);
+        }
       }
     }
     for (const k of expected.keys()) err(`rule 1b: ${k.replace(/#\d+$/, '')} ran (results.json) but is missing from the report`);

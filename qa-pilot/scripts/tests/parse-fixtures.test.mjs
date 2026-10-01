@@ -152,6 +152,12 @@ test('an unreadable writes.json reads as not installed and contributes no counts
   assert.equal(r.cases[0].writes.policy, null);
 });
 
+test('one attempt with several records needs every one of them installed', () => {
+  const r = build(pw(spec('CHECKOUT-ORDER-001 x', [res('passed', [att('writes.json', W('a')), att('writes.json', W('b'))])])),
+    { writesFiles: { [W('a')]: writes(), [W('b')]: writes({ installed: false }) } });
+  assert.equal(r.cases[0].writes.installed, false);
+});
+
 test('a file with installed absent or false makes installed false', () => {
   const r = build(pw(spec('CHECKOUT-ORDER-001 x', [res('passed', [att('writes.json', W('a'))])])),
     { writesFiles: { [W('a')]: writes({ installed: undefined }) } });

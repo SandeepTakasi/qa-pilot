@@ -303,6 +303,39 @@ test('rule 1b: two unlisted records cannot both be accounted for by one listed c
   assert.ok(has(gate(forged, QA_PROFILE, casesFile()).errors, /^rule 1b: .*no listed record accounts for/));
 });
 
+test('rule 1b: a production pass with no trace cannot borrow another case\'s trace', () => {
+  const r = makeRun({ env: 'production', entities: [
+    one('CHECKOUT-ORDER-001 a', RO({ write_signatures: PROD_SIGNATURES })),
+    one('CHECKOUT-ORDER-002 b', RO({ write_signatures: PROD_SIGNATURES }))] });
+  // Strip case 002's trace from results.json, then point the report at case 001's.
+  const pw = JSON.parse(readFileSync(join(r.run, 'results.json'), 'utf8'));
+  const res = pw.suites[0].specs[1].tests[0].results[0];
+  res.attachments = res.attachments.filter((a) => a.name !== 'trace');
+  writeFileSync(join(r.run, 'results.json'), JSON.stringify(pw));
+  const [c1, c2] = r.report.cases;
+  c2.trace = c1.trace;
+  c2.trace_sha256 = c1.trace_sha256;
+  assert.ok(has(gate(r, productionProfile(), casesFile()).errors, /^rule 1b: cases\[CHECKOUT-ORDER-002\]\.trace says ".*" but results\.json gives null/));
+});
+
+test('rule 1b: a fixture cannot borrow a case\'s trace', () => {
+  const r = fxRun([one('FIXTURE shared', SW()), one('CHECKOUT-ORDER-001 a', SW()), one('FIXTURE shared teardown', SW())]);
+  r.report.fixtures[0].trace = r.report.cases[0].trace;
+  assert.ok(has(gate(r, QA_PROFILE, fxCases()).errors, /^rule 1b: fixtures\[shared setup\]\.trace says/));
+});
+
+test('rule 1b: an edited failure summary is refused', () => {
+  const r = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO(), 'failed')] });
+  r.report.cases[0].failure_summary = 'a more convenient error';
+  assert.ok(has(gate(r, QA_PROFILE, casesFile()).errors, /^rule 1b: cases\[CHECKOUT-ORDER-001\]\.failure_summary says "a more convenient error" but results\.json gives "boom"/));
+});
+
+test('rule 1: a guard record that enforced a different prefix is refused', () => {
+  const r = makeRun({ policy: 'scoped-write', prefix: 'QA_T_', entities: [one('CHECKOUT-ORDER-001 a', SW({ prefix: 'OTHER_' }))] });
+  assert.ok(has(gate(r, QA_PROFILE, casesFile({ policy: 'scoped-write', prefix: 'QA_T_' })).errors,
+    /^rule 1: cases\[CHECKOUT-ORDER-001\]\.writes enforced policy "scoped-write" prefix "OTHER_"/));
+});
+
 test('rule 1: the report prefix alone disagreeing with the declaration is refused', () => {
   const r = makeRun({ policy: 'scoped-write', prefix: 'QA_T_', entities: [one('CHECKOUT-ORDER-001 a', SW())] });
   r.report.mutation_prefix = 'QA_X_';
@@ -382,6 +415,12 @@ test('rule 5: a consistent fixture run is accepted', () => {
   const { errors, warnings } = gate(r, QA_PROFILE, fxCases());
   assert.deepEqual(errors, []);
   assert.ok(!has(warnings, /left behind/));
+});
+
+test('rule 2: an executed fixture setup with no guard record is refused', () => {
+  // The setup is the spec that creates the entity, so it must be guarded like any case.
+  const r = fxRun([one('FIXTURE shared', null), one('CHECKOUT-ORDER-001 a', SW()), one('FIXTURE shared teardown', SW())]);
+  assert.ok(has(gate(r, QA_PROFILE, fxCases()).errors, /^rule 2: fixtures\[shared setup\]: no write record/));
 });
 
 test('rule 5: a fixture the cases file never declared is refused', () => {
