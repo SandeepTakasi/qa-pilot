@@ -1,0 +1,22 @@
+# The plugin's own tests: zero-dependency Node scripts, so there is nothing to install.
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      # Unquoted on purpose: the shell expands the glob, which works on every Node
+      # version. A quoted glob is expanded by node --test only from Node 21.
+      - run: node --test qa-pilot/scripts/tests/*.test.mjs
