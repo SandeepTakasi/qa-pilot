@@ -42,6 +42,84 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 const strList = (v) => Array.isArray(v) && v.every(isStr);
 
+const POLICIES = ['read-only', 'scoped-write', 'unrestricted'];
+const PREFIX_RE = /^[A-Za-z0-9_-]{3,}$/;
+const FIXTURE_NAME_RE = /^[a-z0-9-]+$/;
+const TEARDOWNS = ['keep', 'delete'];
+
+/**
+ * The mutation and fixture rules on their own, so the publish gate can hold the cases file
+ * it is handed to the same standard as authoring does. `policy` is the effective policy,
+ * meaningful only when `errors` is empty.
+ * @returns {{ errors: string[], warnings: string[], policy: string }}
+ */
+export function lintMutation(doc) {
+  const errors = [];
+  const warnings = [];
+  const err = (m) => errors.push(m);
+  if (!isObj(doc)) return { errors: ['cases file: must be a YAML mapping'], warnings };
+
+  // Absent means unrestricted, so 0.2.0 case files stay valid off production.
+  let policy = 'unrestricted';
+  const m = doc.mutation;
+  if (m !== undefined) {
+    if (!isObj(m)) {
+      err('mutation: must be a mapping, e.g. { policy: read-only }');
+    } else {
+      for (const k of Object.keys(m)) if (!['policy', 'prefix'].includes(k)) err(`mutation.${k}: unknown key (allowed: policy, prefix)`);
+      if (m.policy === undefined) err(`mutation.policy: required, one of ${POLICIES.join(' | ')}`);
+      else if (!POLICIES.includes(m.policy)) err(`mutation.policy: "${m.policy}" is not one of ${POLICIES.join(' | ')}`);
+      else policy = m.policy;
+      if (m.policy === 'scoped-write') {
+        // The guard unlocks a control only where its own row carries the prefix, so a
+        // short or spaced prefix would match far more than the feature's own entities.
+        if (m.prefix === undefined) err('mutation.prefix: required under scoped-write, the name prefix every entity this feature creates carries');
+        else if (typeof m.prefix !== 'string' || !PREFIX_RE.test(m.prefix)) err(`mutation.prefix: "${m.prefix}" must match ${PREFIX_RE.source}`);
+      } else if (m.prefix !== undefined) {
+        err('mutation.prefix: only allowed under scoped-write');
+      }
+    }
+  }
+
+  const declared = new Set();
+  const fx = doc.fixtures;
+  if (fx !== undefined) {
+    if (!Array.isArray(fx)) {
+      err('fixtures: must be a list of { name, teardown }');
+    } else {
+      if (fx.length && isObj(m) && m.policy === 'read-only') {
+        err('fixtures: not allowed under mutation.policy: read-only. A fixture creates an entity, which a read-only feature cannot do.');
+      }
+      fx.forEach((f, i) => {
+        const at = `fixtures[${i}]`;
+        if (!isObj(f)) { err(`${at}: must be a mapping of name and teardown`); return; }
+        if (!isStr(f.name)) err(`${at}.name: required`);
+        else if (!FIXTURE_NAME_RE.test(f.name)) err(`${at}.name: "${f.name}" must match ${FIXTURE_NAME_RE.source}`);
+        else if (declared.has(f.name)) err(`${at}.name: "${f.name}" is declared twice`);
+        else declared.add(f.name);
+        if (!TEARDOWNS.includes(f.teardown)) err(`${at}.teardown: required, one of ${TEARDOWNS.join(' | ')}`);
+      });
+    }
+  }
+
+  const named = new Set();
+  for (const [i, c] of (Array.isArray(doc.cases) ? doc.cases : []).entries()) {
+    if (!isObj(c) || c.fixture === undefined) continue;
+    const at = isStr(c.id) ? `cases[${c.id}]` : `cases[${i}]`;
+    if (!isStr(c.fixture)) err(`${at}.fixture: must be a fixture name`);
+    else if (!declared.has(c.fixture)) err(`${at}.fixture: "${c.fixture}" is not declared in fixtures`);
+    else named.add(c.fixture);
+  }
+  if (Array.isArray(fx)) {
+    fx.forEach((f, i) => {
+      if (isObj(f) && declared.has(f.name) && !named.has(f.name)) {
+        warnings.push(`fixtures[${i}]: "${f.name}" is named by no case, so its setup would run, and write, for nothing`);
+      }
+    });
+  }
+  return { errors, warnings, policy };
+}
+
 /**
  * @param {object} doc parsed cases.yaml
  * @param {object} profile validated host profile
@@ -157,6 +235,11 @@ export function validateCases(doc, profile, { featureDir = null } = {}) {
       }
     }
   }
+
+  // --- mutation and fixtures ---
+  const mutation = lintMutation(doc);
+  for (const e of mutation.errors) err(e);
+  for (const w of mutation.warnings) warn(w);
 
   return done();
 }
