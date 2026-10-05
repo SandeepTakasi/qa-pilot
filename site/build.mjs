@@ -36,13 +36,11 @@ const LANDING_DESCRIPTION =
 
 // Fonts: DESIGN.md section 2 name <- file inside the font package.
 const FONTS = {
-  'newsreader-wght-normal': ['@fontsource-variable/newsreader', 'newsreader-latin-wght-normal'],
-  'newsreader-wght-italic': ['@fontsource-variable/newsreader', 'newsreader-latin-wght-italic'],
+  'newsreader-400': ['@fontsource/newsreader', 'newsreader-latin-400-normal'],
   'plex-sans-400': ['@fontsource/ibm-plex-sans', 'ibm-plex-sans-latin-400-normal'],
-  'plex-sans-500': ['@fontsource/ibm-plex-sans', 'ibm-plex-sans-latin-500-normal'],
+  'plex-sans-400-italic': ['@fontsource/ibm-plex-sans', 'ibm-plex-sans-latin-400-italic'],
   'plex-sans-600': ['@fontsource/ibm-plex-sans', 'ibm-plex-sans-latin-600-normal'],
   'plex-mono-400': ['@fontsource/ibm-plex-mono', 'ibm-plex-mono-latin-400-normal'],
-  'plex-mono-500': ['@fontsource/ibm-plex-mono', 'ibm-plex-mono-latin-500-normal'],
 };
 
 // Pages whose body fragment lives in site/src (DESIGN.md section 5, "Landing and other pages").
@@ -139,7 +137,12 @@ function shell({ title, description, pageUrl, canonical, noindex, htmlClass, mai
     title: esc(title),
     description: esc(description),
     head_extra: headExtra,
-    inline_css: INLINE_CSS,
+    inline_css: htmlClass === 'page-doc' ? INLINE_CSS_DOCS : INLINE_CSS,
+    // Preload the faces in each page type's first screen. Landing: the serif display headline.
+    // Docs: bold and mono, which sit in the first screen of text, where a late swap re-wraps
+    // paragraphs even with metric-matched fallbacks; the serif preload would only compete there.
+    preload_fonts: (htmlClass === 'page-doc' ? ['plex-sans-600', 'plex-mono-400'] : ['newsreader-400'])
+      .map((f) => `<link rel="preload" href="${BASE}assets/fonts/${f}.woff2" as="font" type="font/woff2" crossorigin>`).join('\n'),
     html_class: htmlClass,
     main_attrs: mainAttrs,
     menu_toggle: htmlClass === 'page-doc' ? MENU_TOGGLE : '',
@@ -295,6 +298,7 @@ function copyFonts() {
 // less than the render-blocking request it replaces. Font URLs are made absolute because an
 // inline <style> resolves relative URLs against the page, not against assets/.
 let INLINE_CSS = '';
+let INLINE_CSS_DOCS = '';
 
 // Copy assets to dist, minifying site.css and site.js on the way (sources stay readable).
 async function copyAssets(assets) {
@@ -306,10 +310,27 @@ async function copyAssets(assets) {
     const f = path.join(out, name);
     if (fs.existsSync(f)) fs.writeFileSync(f, (await transform(fs.readFileSync(f, 'utf8'), { ...opts, minify: true })).code);
   }
-  const css = path.join(out, 'site.css');
-  if (fs.existsSync(css)) {
-    INLINE_CSS = fs.readFileSync(css, 'utf8').replace(/url\((["']?)fonts\//g, `url($1${BASE}assets/fonts/`);
-    if (INLINE_CSS.includes('</style')) throw new Error('site.css contains "</style", which cannot be inlined');
+  const src = path.join(assets, 'site.css');
+  if (fs.existsSync(src)) {
+    const full = fs.readFileSync(src, 'utf8');
+    // Docs pages skip the landing (7) and style guide (12) sections; section markers are the
+    // stylesheet's own numbered headings, so a renumbered stylesheet fails loudly here.
+    const cut = (from, to) => {
+      const a = full.indexOf(from);
+      const b = to ? full.indexOf(to) : full.length;
+      if (a < 0 || b < 0 || b < a) throw new Error(`site.css section marker missing: ${from}`);
+      return full.slice(0, a) + full.slice(b);
+    };
+    const docs = cut('/* 12. Style guide', null);
+    const docsOnly = docs.slice(0, docs.indexOf('/* 7. Components: landing')) + docs.slice(docs.indexOf('/* 8. Components: docs'));
+    const inline = async (text) => {
+      const code = (await transform(text, { loader: 'css', minify: true })).code
+        .replace(/url\((["']?)fonts\//g, `url($1${BASE}assets/fonts/`);
+      if (code.includes('</style')) throw new Error('site.css contains "</style", which cannot be inlined');
+      return code;
+    };
+    INLINE_CSS = await inline(full);
+    INLINE_CSS_DOCS = await inline(docsOnly);
   }
 }
 

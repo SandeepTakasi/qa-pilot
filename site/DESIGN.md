@@ -34,45 +34,48 @@ rules; generous space; type doing the work.
 
 | Role | Family | Use |
 |---|---|---|
-| Display and headings h1, h2 | **Newsreader** (variable, wght 300-700, opsz) | serif, editorial voice |
-| Body, UI, h3 and below | **IBM Plex Sans** 400, 500, 600 | calm, technical, very legible |
-| Code, artefacts, commands, labels | **IBM Plex Mono** 400, 500 | the product's own material |
+| Display and headings h1, h2 | **Newsreader** 400 (static) | serif, editorial voice |
+| Body, UI, h3 and below | **IBM Plex Sans** 400, 600, and 400 italic | calm, technical, very legible |
+| Code, artefacts, commands, labels | **IBM Plex Mono** 400 | the product's own material |
 
-All fonts are self-hosted (no third-party requests). The build copies them to these exact paths
-in the output, and `site.css` references exactly these:
+All fonts are self-hosted (no third-party requests), 108 KB in total. The build copies them to these
+exact paths in the output, and `site.css` references exactly these:
 
 ```
-assets/fonts/newsreader-wght-normal.woff2
-assets/fonts/newsreader-wght-italic.woff2
+assets/fonts/newsreader-400.woff2
 assets/fonts/plex-sans-400.woff2
-assets/fonts/plex-sans-500.woff2
+assets/fonts/plex-sans-400-italic.woff2   (added by site.js one second after load, only where italics exist)
 assets/fonts/plex-sans-600.woff2
 assets/fonts/plex-mono-400.woff2
-assets/fonts/plex-mono-500.woff2
 ```
 
-Latin subset only. `font-display: swap`. Preload the Newsreader normal and Plex Sans 400 files.
+Latin subset only, `font-display: swap`. There are deliberately no 500 weights and no variable
+files: every face costs first-paint bandwidth on a phone. Preloads: Plex Sans 400 everywhere, plus
+Newsreader on the landing page and Plex Sans 600 and Plex Mono 400 on docs pages (the faces in each
+page's first screen). Each family has a metric-matched local fallback (Georgia, Arial, Arial Bold,
+Courier New, scaled with `size-adjust` and ascent and descent overrides) so text does not re-wrap
+when the web fonts arrive; the values and how they were measured are in `site.css` section 1.
 
 Scale (fluid with `clamp()`, rem at a 16px root):
 
 | Token | Size | Line height | Family / weight | Notes |
 |---|---|---|---|---|
-| `--fs-display` | clamp(2.75rem, 1.6rem + 4.6vw, 5.25rem) | 1.02 | Newsreader 380, opsz auto | letter-spacing -0.022em; landing hero only |
-| `--fs-h1` | clamp(2.125rem, 1.6rem + 2vw, 3rem) | 1.1 | Newsreader 420 | -0.015em |
-| `--fs-h2` | clamp(1.5rem, 1.25rem + 1vw, 2rem) | 1.2 | Newsreader 450 | -0.01em |
+| `--fs-display` | clamp(2.75rem, 1.6rem + 4.6vw, 5.25rem) | 1.02 | Newsreader 400 | letter-spacing -0.022em; landing hero only |
+| `--fs-h1` | clamp(2.125rem, 1.6rem + 2vw, 3rem) | 1.1 | Newsreader 400 | -0.015em |
+| `--fs-h2` | clamp(1.5rem, 1.25rem + 1vw, 2rem) | 1.2 | Newsreader 400 | -0.01em |
 | `--fs-h3` | 1.125rem | 1.4 | Plex Sans 600 | |
 | `--fs-body` | 1.0625rem | 1.65 | Plex Sans 400 | prose measure 68ch |
 | `--fs-lede` | clamp(1.1875rem, 1.1rem + 0.4vw, 1.375rem) | 1.55 | Plex Sans 400 | colour `--ink-2` |
-| `--fs-small` | 0.875rem | 1.5 | Plex Sans 400/500 | |
-| `--fs-label` | 0.75rem | 1.3 | Plex Mono 500 | uppercase, letter-spacing 0.08em |
+| `--fs-small` | 0.875rem | 1.5 | Plex Sans 400 | |
+| `--fs-label` | 0.75rem | 1.3 | Plex Mono 400 | uppercase, letter-spacing 0.08em |
 | `--fs-mono` | 0.875em of context | 1.6 | Plex Mono 400 | |
 
 Landing section titles (`h2.section__title`) deliberately use `--fs-h1`: under an 84px display
 headline they are the page's chapter heads. Docs pages keep the table's h1 and h2 sizes.
 
 Numerals: `font-variant-numeric: tabular-nums` in tables and artefacts.
-Never fake bold or italic; never set body text in the serif (one exception: Plex Sans ships no
-italic here, so `em`, `i` and `cite` use Newsreader italic at 1.06em); never set headings in mono.
+Never fake bold or italic (`font-synthesis: none`); never set body text in the serif; never set
+headings in mono. Until the italic face arrives, or without JavaScript, emphasis shows upright.
 
 ## 3. Colour, space, shape
 
@@ -284,12 +287,14 @@ run"), never "many" or "lots". The landing page may compress the README, never c
 
 ## 8. Quality bar
 
-- Lighthouse: Performance, Accessibility, Best Practices, SEO all 100 on the landing page and a docs
-  page, mobile and desktop.
+- Lighthouse: Performance, Accessibility, Best Practices, SEO all 100 on every public page, mobile
+  and desktop, with layout shift at 0. Measured 2026-10-05 against a gzip server: 22 of 22 pages.
 - No JavaScript is required to read any page. Search, the theme toggle, copy buttons, the drawer and
   the table-of-contents highlight are progressive enhancements.
 - Keyboard: every control reachable and visible on focus (`:focus-visible`, 2px `--accent` outline,
   2px offset). `/` opens search, Escape closes it, arrow keys move through results.
 - Semantics: one `h1` per page, landmarks as in section 5, `aria-current="page"` in navigation.
 - No analytics, no cookies, no third-party requests at all.
-- Total landing page weight under 200 KB transferred, excluding fonts under 150 KB.
+- Total landing page weight under 200 KB transferred; fonts under 150 KB in total (108 KB today).
+- The stylesheet is inlined into each page (docs pages without the landing and style guide
+  sections), so no request blocks the first paint.

@@ -30,6 +30,29 @@
     }, 30);
   };
 
+  /* Italic face, loaded after the page ---------------------------------- */
+  // Emphasis is a word or two per page, so the 24 KB italic face is fetched after `load`
+  // instead of competing with the fonts the first paint needs, and only where italics exist.
+  // Until it arrives (or without JS) emphasised words show upright; nothing is ever faked.
+  feature(() => {
+    if (!("fonts" in document) || typeof FontFace !== "function" || !$("em, i, cite")) return;
+    const base = (root.getAttribute("data-base") || "/").replace(/\/?$/, "/");
+    const add = () => {
+      const face = new FontFace("IBM Plex Sans", `url("${base}assets/fonts/plex-sans-400-italic.woff2") format("woff2")`, {
+        style: "italic",
+        weight: "400",
+        display: "swap",
+      });
+      document.fonts.add(face);
+      face.load().catch(() => {});
+    };
+    // A second after load: `load` and even the first idle period can come before the first
+    // paint has settled, and emphasis is almost always below the fold anyway.
+    const later = () => setTimeout(add, 1000);
+    if (document.readyState === "complete") later();
+    else window.addEventListener("load", later, { once: true });
+  });
+
   /* Theme -------------------------------------------------------------- */
   feature(() => {
     const KEY = "qp-theme";
