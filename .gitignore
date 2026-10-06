@@ -15,3 +15,6 @@ docs/plans/
 # Site build output and dependencies
 site/dist/
 site/node_modules/
+
+# Local Claude Code session settings (preview servers and the like)
+.claude/
