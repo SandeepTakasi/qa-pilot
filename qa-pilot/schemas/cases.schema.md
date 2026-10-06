@@ -121,7 +121,7 @@ A key set to `null` counts as missing for `id`, `title` and `text`, and as prese
 
 "Must match" applies only to an id that is a string, so a message never prints a value that matches the pattern it names. The 64-character cap applies to requirement ids only; criterion ids reach `case-status.mjs` output but never the run summary.
 
-A `covers` entry is resolved only when `requirements` is a non-empty list, against the entries and criteria whose ids are strings; with no `requirements` key the last error replaces the per-entry check, so one mistake is reported once.
+A `covers` entry is resolved only when `requirements` is a non-empty list, against the entries and criteria whose ids are strings. With no `requirements` key, a case gets `cases[<id>].covers: must be a list of strings` if that row applies, then `cases[<id>].covers: used, but no requirements are declared`, and the form and resolution rows are skipped, so `covers: null` with no requirements prints both of those two lines. In a list with a non-string entry (for example `covers: [ORDER-1/AC-1, 5]`), the string entries are still checked for form, resolved, and counted toward the uncovered-criterion warning as usual.
 
 A declared criterion that no case covers is a **warning**, not an error: it is a design gap QA decides on, where a dangling reference is a mistake. One line per criterion, in declaration order, printed to stderr without changing the exit code:
 
