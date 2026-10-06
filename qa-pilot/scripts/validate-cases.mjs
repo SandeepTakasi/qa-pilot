@@ -120,6 +120,101 @@ export function lintMutation(doc) {
   return { errors, warnings, policy };
 }
 
+const REQ_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const REQ_ID_MAX = 64;
+const COVERS_RE = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/;
+const ID_HINT = 'must be a string; quote it, e.g. id: "1"';
+
+// The first rule that holds for an id wins, so an id never gets two errors.
+function idError(id, isRequirement) {
+  if (id === undefined || id === null) return 'required';
+  if (typeof id !== 'string') return ID_HINT;
+  if (!REQ_ID_RE.test(id)) return `"${id}" must match ${REQ_ID_RE.source}`;
+  if (isRequirement && id.length > REQ_ID_MAX) return `"${id}" must be at most ${REQ_ID_MAX} characters`;
+  return null;
+}
+
+/**
+ * The requirement and `covers` rules on their own, so `case-status.mjs` can ask whether the
+ * requirements block is valid (any error whose path starts `requirements`) without keeping a
+ * second definition of it. Rules: qa-pilot/schemas/cases.schema.md, "Requirements and coverage".
+ * @returns {{ errors: string[], warnings: string[] }}
+ */
+export function lintRequirements(doc) {
+  const errors = [];
+  const warnings = [];
+  const err = (m) => errors.push(m);
+  if (!isObj(doc)) return { errors, warnings };
+
+  const reqs = doc.requirements;
+  const hasReqs = reqs !== undefined;
+  // criterion ids that resolve, per requirement id, from entries whose ids are strings
+  const declared = new Map();
+  if (hasReqs) {
+    if (!Array.isArray(reqs) || reqs.length === 0) {
+      err('requirements: must be a non-empty list of { id, title, criteria }');
+    } else {
+      const seenReqs = new Set();
+      reqs.forEach((r, i) => {
+        const at = `requirements[${i}]`;
+        if (!isObj(r)) { err(`${at}: must be a mapping of id, title and criteria`); return; }
+        for (const k of Object.keys(r)) if (!['id', 'title', 'criteria'].includes(k)) err(`${at}.${k}: unknown key (allowed: id, title, criteria)`);
+        const bad = idError(r.id, true);
+        if (bad) err(`${at}.id: ${bad}`);
+        else if (seenReqs.has(r.id)) err(`${at}.id: "${r.id}" is declared twice`);
+        else seenReqs.add(r.id);
+        if (!isStr(r.title)) err(`${at}.title: required, non-empty string`);
+        if (!Array.isArray(r.criteria) || r.criteria.length === 0) {
+          err(`${at}.criteria: required, at least one criterion`);
+          return;
+        }
+        const ids = (typeof r.id === 'string' && declared.get(r.id)) || new Set();
+        if (typeof r.id === 'string') declared.set(r.id, ids);
+        const seenCrit = new Set();
+        r.criteria.forEach((c, j) => {
+          const cat = `${at}.criteria[${j}]`;
+          if (!isObj(c)) { err(`${cat}: must be a mapping of id and text`); return; }
+          for (const k of Object.keys(c)) if (!['id', 'text'].includes(k)) err(`${cat}.${k}: unknown key (allowed: id, text)`);
+          const cbad = idError(c.id, false);
+          if (cbad) err(`${cat}.id: ${cbad}`);
+          else if (seenCrit.has(c.id)) err(`${cat}.id: "${c.id}" is declared twice in ${at}`);
+          else seenCrit.add(c.id);
+          if (typeof c.id === 'string') ids.add(c.id);
+          if (!isStr(c.text)) err(`${cat}.text: required, non-empty string`);
+        });
+      });
+    }
+  }
+  // the warning needs a clean block; `covers` errors are about a case, never about the block
+  const blockClean = errors.length === 0;
+
+  // resolution needs a non-empty list; the form rows apply whenever `requirements` is present
+  const resolvable = Array.isArray(reqs) && reqs.length > 0;
+  const covered = new Set();
+  (Array.isArray(doc.cases) ? doc.cases : []).forEach((c, i) => {
+    if (!isObj(c) || c.covers === undefined) return;
+    const at = isStr(c.id) ? `cases[${c.id}]` : `cases[${i}]`;
+    const entries = Array.isArray(c.covers) ? c.covers : null;
+    if (!entries || !entries.every((e) => typeof e === 'string')) err(`${at}.covers: must be a list of strings`);
+    if (!hasReqs) { err(`${at}.covers: used, but no requirements are declared`); return; }
+    for (const e of entries ?? []) {
+      if (typeof e !== 'string') continue;
+      const m = COVERS_RE.exec(e);
+      if (!m) err(`${at}.covers: "${e}" must have the form <requirement id>/<criterion id>`);
+      else if (!resolvable) continue;
+      else if (declared.get(m[1])?.has(m[2])) covered.add(e);
+      else err(`${at}.covers: "${e}" names no declared criterion`);
+    }
+  });
+
+  if (blockClean && resolvable) {
+    for (const r of reqs) {
+      for (const c of r.criteria) if (!covered.has(`${r.id}/${c.id}`)) warnings.push(`criterion ${r.id}/${c.id} is covered by no case`);
+    }
+  }
+  return { errors, warnings };
+}
+
 /**
  * @param {object} doc parsed cases.yaml
  * @param {object} profile validated host profile
@@ -240,6 +335,11 @@ export function validateCases(doc, profile, { featureDir = null } = {}) {
   const mutation = lintMutation(doc);
   for (const e of mutation.errors) err(e);
   for (const w of mutation.warnings) warn(w);
+
+  // --- requirement links ---
+  const links = lintRequirements(doc);
+  for (const e of links.errors) err(e);
+  for (const w of links.warnings) warn(w);
 
   return done();
 }
