@@ -123,6 +123,7 @@ not on day one.
 | `REGRESSION` | a case QA approved as passing now fails | the team that owns the feature |
 | `ENVIRONMENT FAILED` | over 10% blocked, or the build changed mid-run | whoever owns the environment |
 | `REFUSED: no approved spec is runnable` | nothing is approved, or every spec drifted | QA, via `/qa-pilot:qa-review` |
+| `REFUSED: no approved spec at priority <list> is runnable` | `PRIORITY` is set and no approved, undrifted spec has that priority | QA, via `/qa-pilot:qa-review`, or whoever set `PRIORITY` |
 
 A `flaky` case fails the build. Pass-on-retry is never a pass anywhere else in this
 pipeline, and letting CI be the one place it goes green makes CI the place people go for a
@@ -151,9 +152,9 @@ env:
 ```
 
 When `PRIORITY` is non-empty the select step adds
-`--cases testing/$FEATURE/cases.yaml --priority $PRIORITY`. Priority is not recorded in
-`approved.json` or `specs.json`, only in `cases.yaml`, which is why the filter needs that file.
-The call is:
+`--cases testing/$FEATURE/cases.yaml --priority "$PRIORITY"`, quoted so that `P0, P1` stays
+one argument. Priority is not recorded in `approved.json` or `specs.json`, only in
+`cases.yaml`, which is why the filter needs that file. The call is:
 
 ```
 node ci-gate.mjs select --approved <approved.json> --specs <specs.json> \
@@ -162,19 +163,26 @@ node ci-gate.mjs select --approved <approved.json> --specs <specs.json> \
 
 The rules, in full:
 
-- `--priority` without `--cases` is an error. `--cases` without `--priority` is accepted and
-  changes nothing.
+- `--priority` without `--cases` is an error:
+  `select: --priority needs --cases <cases.yaml>, because priority is recorded only there`.
+  `--cases` without `--priority` is accepted and changes nothing. A `--cases` path that does
+  not exist is an error: `no cases file at <path>`.
 - Values are case-sensitive and comma-separated, each one trimmed: `P0,P1` and `P0, P1` mean
-  the same, `p0` is not `P0`. An unknown value is an error that names it.
+  the same, `p0` is not `P0`. An unknown value is an error that names it:
+  `select: unknown priority "<v>"; use P0, P1 or P2`. An empty element, such as `P0,,P1` or a
+  trailing comma, is an unknown value too, reported as `""`.
 - Filtering happens first. An approved case outside the filter is dropped silently, with no
   skip line and nothing on stderr, because leaving it out is the job's intent and not a problem.
-- An approved case that is missing from the cases file is skipped, with the reason
-  `not in cases.yaml, so its priority is unknown`.
+- An approved case that is missing from the cases file is skipped with the reason
+  `not in cases.yaml, so its priority is unknown`. One that is present but has no valid
+  priority (`P0`, `P1` or `P2`) is skipped with the reason
+  `no valid priority in cases.yaml, so its priority is unknown`.
 - The usual hash check then runs on whatever remains, so a drifted spec is still skipped and
   still printed with both hashes.
 - If nothing is runnable at that priority, `select` exits 1 with
   `REFUSED: no approved spec at priority <list> is runnable, so this job would report green having proved nothing.`
-  A P0 job that finds no P0 spec fails; it never goes green having run nothing.
+  `<list>` is the trimmed values joined by `,`, so `P0, P1` prints as `P0,P1`. A P0 job that
+  finds no P0 spec fails; it never goes green having run nothing.
 
 **Recommended split: P0 on every deploy, everything on the nightly schedule.** A deploy needs
 a fast answer about the cases that matter most, and the nightly run is where the slower P1 and
@@ -239,3 +247,8 @@ The template pins `ref: v0.4.0`. **`--priority` needs 0.4.0 or newer.** An older
 only reads the flags it knows, so below 0.4.0 it silently ignores `--priority` and runs every
 approved spec: the job looks like a P0 job and is not. Keep the pin at 0.4.0 or later for any
 job that sets `PRIORITY`.
+
+Moving the pin to v0.4.0 also applies the breaking `test_account` rule to the whole profile. A
+production environment without `test_account` makes the profile invalid, so every CI job fails,
+including jobs against non-production environments, because the template validates the profile
+first. Add `test_account` to each production environment before you move the pin.
