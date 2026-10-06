@@ -199,6 +199,18 @@ test('skips are printed on stderr, drops are not', () => {
   assert.equal(r.err, 'skipped B: not in cases.yaml, so its priority is unknown\nskipped C: no valid priority in cases.yaml, so its priority is unknown\n');
 });
 
+test('a listed case with no priority key, or an empty one, is skipped as having no valid priority', () => {
+  // D has no priority key, E has `priority:` (YAML null): both are listed, neither has a valid value.
+  for (const n of ['d', 'e']) writeFileSync(at(`e2e/${n}.ts`), SPEC);
+  writeFileSync(at('approved-de.json'), JSON.stringify({ A: H, D: H, E: H }));
+  writeFileSync(at('specs-de.json'), JSON.stringify({ A: at('e2e/a.ts'), D: at('e2e/d.ts'), E: at('e2e/e.ts') }));
+  writeFileSync(at('no-priority.yaml'), 'cases:\n  - id: A\n    priority: P0\n  - id: D\n    title: no priority key\n  - id: E\n    priority:\n');
+  const r = select('--approved', at('approved-de.json'), '--specs', at('specs-de.json'), '--cases', at('no-priority.yaml'), '--priority', 'P0');
+  assert.equal(r.code, 0);
+  assert.equal(r.out, `${at('e2e/a.ts')}\n`);
+  assert.equal(r.err, 'skipped D: no valid priority in cases.yaml, so its priority is unknown\nskipped E: no valid priority in cases.yaml, so its priority is unknown\n');
+});
+
 test('without --priority the existing refusal text is unchanged', () => {
   writeFileSync(at('empty-approved.json'), '{}');
   const r = select('--approved', at('empty-approved.json'), '--specs', at('specs.json'));
