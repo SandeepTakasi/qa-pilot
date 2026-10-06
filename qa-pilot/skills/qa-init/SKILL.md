@@ -92,7 +92,7 @@ Then validate and **loop until it passes**:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/lib/profile.mjs" <path>
 ```
 
-Fix every error. Report every warning to the user rather than silencing it.
+Fix every error. Report every warning to the user rather than silencing it. Never write a test_account value the user did not give: a production environment without one stays an error and goes in the gap report, even though that leaves the profile invalid, because an invented account defeats the attestation.
 
 ## 4. Gap report
 
