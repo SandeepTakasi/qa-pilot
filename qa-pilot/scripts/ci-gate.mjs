@@ -11,7 +11,8 @@
 // person, and a second write path maintained separately from the first is a second thing
 // to keep honest.
 //
-// Usage: node ci-gate.mjs select --approved <approved.json> --specs <specs.json> [--json]
+// Usage: node ci-gate.mjs select --approved <approved.json> --specs <specs.json>
+//                         [--cases <cases.yaml>] [--priority <P0[,P1[,P2]]>] [--json]
 //        node ci-gate.mjs verdict --report <report.json>
 //
 // `select` exits 1 when nothing is runnable, so a misconfigured job fails loudly rather
@@ -20,10 +21,13 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { isMain } from './lib/is-main.mjs';
 import { hashSpec } from './parse-report.mjs';
+import { parse } from './lib/yaml.mjs';
 
 // Over this share of blocked cases, the environment failed rather than the feature. Same
 // threshold the publish gate uses, for the same reason.
 const BLOCKED_HALT_RATIO = 0.1;
+
+const PRIORITIES = ['P0', 'P1', 'P2'];
 
 /**
  * Which specs CI should run.
@@ -35,12 +39,30 @@ const BLOCKED_HALT_RATIO = 0.1;
  * @param {Record<string,string>} approved case id -> approved spec hash
  * @param {Record<string,string>} specPaths case id -> spec file path
  * @param {(p: string) => string|null} readSpec injected for tests
+ * @param {{priorities?: string[], priorityOf?: Record<string,unknown>}} [filter] keep only
+ *   cases at these priorities. `priorityOf` has an own key for every case id in cases.yaml,
+ *   whose value is that case's raw priority. Omitted, every approved case is considered.
  */
-export function selectSpecs(approved, specPaths, readSpec) {
+export function selectSpecs(approved, specPaths, readSpec, { priorities, priorityOf } = {}) {
   const run = [];
   const skipped = [];
 
   for (const [id, approvedHash] of Object.entries(approved ?? {})) {
+    if (priorities) {
+      // A case whose priority cannot be read is reported even when the filter would have
+      // left it out: dropping it silently would hide a case nobody can place.
+      if (!priorityOf || !Object.hasOwn(priorityOf, id)) {
+        skipped.push({ id, reason: 'not in cases.yaml, so its priority is unknown' });
+        continue;
+      }
+      const priority = priorityOf[id];
+      if (!PRIORITIES.includes(priority)) {
+        skipped.push({ id, reason: 'no valid priority in cases.yaml, so its priority is unknown' });
+        continue;
+      }
+      // Leaving it out is the job's intent, not a problem, so there is no skip line.
+      if (!priorities.includes(priority)) continue;
+    }
     const path = specPaths?.[id];
     if (!path) {
       skipped.push({ id, reason: 'no spec path recorded for this case, so there is nothing to run' });
@@ -137,6 +159,29 @@ if (isMain(import.meta.url)) {
       const approvedPath = argValue('--approved');
       const specsPath = argValue('--specs');
       if (!approvedPath || !specsPath) throw new Error('select needs --approved <approved.json> --specs <specs.json>');
+
+      // Presence, not truthiness: `--priority ""` and a trailing `--priority` are the
+      // unknown value "", so a job can never silently fall back to running everything.
+      let filter;
+      let list = '';
+      if (process.argv.includes('--priority')) {
+        const casesPath = argValue('--cases');
+        if (!casesPath) throw new Error('select: --priority needs --cases <cases.yaml>, because priority is recorded only there');
+        const priorities = (argValue('--priority') ?? '').split(',').map((v) => v.trim());
+        const unknown = priorities.find((v) => !PRIORITIES.includes(v));
+        if (unknown !== undefined) throw new Error(`select: unknown priority "${unknown}"; use P0, P1 or P2`);
+        if (!existsSync(casesPath)) throw new Error(`no cases file at ${casesPath}`);
+        const cases = parse(readFileSync(casesPath, 'utf8'))?.cases;
+        // fromEntries defines own keys even for an id like "__proto__".
+        const priorityOf = Object.fromEntries(
+          (Array.isArray(cases) ? cases : [])
+            .filter((c) => typeof c?.id === 'string')
+            .map((c) => [c.id, c.priority]),
+        );
+        filter = { priorities, priorityOf };
+        list = priorities.join(',');
+      }
+
       if (!existsSync(approvedPath)) {
         throw new Error(`no approval ledger at ${approvedPath}. CI runs what QA approved, and nothing has been approved yet. Publish a run and review it first.`);
       }
@@ -144,11 +189,12 @@ if (isMain(import.meta.url)) {
         readJson(approvedPath),
         readJson(specsPath),
         (p) => (existsSync(p) ? readFileSync(p, 'utf8') : null),
+        filter,
       );
       for (const s of skipped) console.error(`skipped ${s.id}: ${s.reason}`);
       if (run.length === 0) {
         // Zero tests passing is not the same as the suite passing.
-        console.error('REFUSED: no approved spec is runnable, so this job would report green having proved nothing.');
+        console.error(`REFUSED: no approved spec ${filter ? `at priority ${list} ` : ''}is runnable, so this job would report green having proved nothing.`);
         process.exit(1);
       }
       console.log(process.argv.includes('--json')
