@@ -165,6 +165,11 @@ says "required on a production environment":
 
 > `environments.<env>.test_account: at least 20 characters when present.`
 
+A `null` value, which is what YAML gives for an empty `test_account:`, counts as present: the
+validator uses the same `!== undefined` presence test it uses for other keys. So on production a
+`null` gets the production message above (it is not a string), and on any other kind it gets the
+message just above.
+
 Say which account the runs use and what restricts it, for example: `qa-runner@example.com, its own
 tenant, no admin rights, no billing`. The value is an **attestation**. Nothing checks it against
 the saved login, so it records a claim QA makes and reviews; it does not prove one.
