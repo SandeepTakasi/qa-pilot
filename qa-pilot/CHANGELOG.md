@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.1 (2026-10-06)
+
+### Fixes
+
+- **The ClickUp guard now blocks only writes to QA-Pilot's own case tasks.** In 0.3.0 it
+  blocked every ClickUp write in a repo that has a host profile, so ordinary work there
+  (bug tickets, comments, attachments, status changes on unrelated tasks) needed the skills'
+  write flag. It now blocks a write only when the tool input names a task ID recorded in one
+  of the repo's `testing/*/clickup-map.json` files, wherever in the input the ID appears
+  (`task_id`, `task_ids`, links, a task URL, `#id`). Creating tasks, editing lists and
+  touching any other task always pass. The skills still open the guard with the write flag
+  before changing their own tasks, so nothing about publishing or review changes.
+  A missing or malformed case map owns nothing and is skipped.
+
 ## 0.3.0 (2026-10-01)
 
 ### Upgrading from 0.2.0

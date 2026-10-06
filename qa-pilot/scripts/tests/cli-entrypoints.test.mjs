@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -53,12 +53,16 @@ test('every CLI prints usage and exits nonzero when given no arguments', () => {
 });
 
 test('the guard still denies from a path containing a space', () => {
-  // The guard acts only where a host profile exists, so give the cwd one.
+  // The guard acts only where a host profile exists, and only on QA-Pilot's own case tasks,
+  // so give the cwd a profile and a case map, and write to a mapped task.
   writeFileSync(join(root, 'qa-pilot.config.yaml'), 'project: x\n');
+  mkdirSync(join(root, 'testing/checkout'), { recursive: true });
+  writeFileSync(join(root, 'testing/checkout/clickup-map.json'), JSON.stringify({ 'CHECKOUT-ORDER-001': 'case7k2m9q' }));
   const { stdout, status } = spawnSync('node', [join(spaced, 'clickup-guard.mjs')], {
     input: JSON.stringify({
       hook_event_name: 'PreToolUse',
       tool_name: 'mcp__claude_ai_ClickUp__clickup_update_task',
+      tool_input: { task_id: 'case7k2m9q', status: 'Approved' },
       cwd: root,
     }),
     encoding: 'utf8',

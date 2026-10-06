@@ -1,18 +1,22 @@
 #!/usr/bin/env node
-// PreToolUse guard: ClickUp writes may only happen inside a QA-Pilot skill's write phase.
+// PreToolUse guard: a QA-Pilot case task changes only inside a QA-Pilot skill's write phase.
 //
 // The point is not to stop anyone from using ClickUp. It is that the QA record's write
 // path has to be the scripted, validated one. Otherwise "just mark that case passed"
 // puts an unevidenced verdict in the record with the same authority as an evidenced one.
 //
+// So the guard blocks a ClickUp write only when it names one of QA-Pilot's own case tasks:
+// the task IDs recorded in the repo's testing/*/clickup-map.json. Every other ClickUp write
+// (bug tickets, comments, uploads, new tasks) passes, in every repo. A repo with no host
+// profile is not policed at all.
+//
 // Skills that legitimately write create .qa-pilot/allow-clickup-writes immediately before
 // their write phase and remove it after, next to the host profile (normally the repo root).
-// A repo with no host profile is not policed at all.
 //
-// ponytail: flag-file scoping, not QA-space scoping, since checking the target space would
-// need an authenticated API call from inside a hook. Upgrade if non-QA ClickUp writes get annoying.
+// ponytail: protects the case tasks, not the lists or folders that hold them; a hand-made task
+// in a QA list is not a verdict, and recognising the lists would need an API call from a hook.
 
-import { statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { isMain } from './lib/is-main.mjs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
@@ -31,11 +35,57 @@ const FLAG_TTL_MS = 30 * 60 * 1000;
 // without a code change here.
 const READ_VERBS = new Set(['get', 'list', 'search', 'filter', 'find', 'resolve', 'download', 'read']);
 
-const DENY_REASON =
-  'QA-Pilot: ClickUp writes are restricted to the QA-Pilot publish path.\n' +
+const denyReason = (taskId) =>
+  `QA-Pilot: task ${taskId} is a QA-Pilot test case, and its record changes only through QA-Pilot.\n` +
   'Verdicts enter the record through /qa-pilot:publish-results, which validates evidence ' +
   '(video, trace, deploy SHA) before anything is written. A verdict written by hand skips that check.\n' +
-  'Use /qa-pilot:publish-results to publish a run, or /qa-pilot:qa-review to record a review decision.';
+  'Use /qa-pilot:publish-results to publish a run, or /qa-pilot:qa-review to record a review decision. ' +
+  'Other ClickUp tasks are not affected.';
+
+/**
+ * Task IDs of QA-Pilot's own case tasks: the values of every testing/<feature>/clickup-map.json
+ * ({"CASE-ID": "task-id"}) under the profile's directory. A missing or malformed map owns
+ * nothing; it is skipped rather than failing the hook, so one bad file never blocks a session.
+ */
+export function ownedTaskIds(home) {
+  const ids = new Set();
+  let features = [];
+  try {
+    features = readdirSync(join(home, 'testing'), { withFileTypes: true }).filter((d) => d.isDirectory());
+  } catch {
+    return ids;
+  }
+  for (const f of features) {
+    try {
+      const map = JSON.parse(readFileSync(join(home, 'testing', f.name, 'clickup-map.json'), 'utf8'));
+      for (const id of Object.values(map ?? {})) {
+        if (typeof id === 'string' && id.trim()) ids.add(id.trim().replace(/^#/, ''));
+      }
+    } catch {
+      // no map for this feature, or an unreadable one
+    }
+  }
+  return ids;
+}
+
+/**
+ * The first owned task ID named anywhere in a tool's input, or null. Field names differ between
+ * ClickUp servers and tools (task_id, taskId, task_ids, links_to, a task URL), so every string
+ * in the input is split into whole tokens and each token checked; "#id" and ".../t/id" count.
+ */
+function namedCaseTask(value, owned) {
+  if (owned.size === 0 || value === null || value === undefined) return null;
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value).split(/[^A-Za-z0-9_-]+/).find((t) => owned.has(t)) ?? null;
+  }
+  if (typeof value === 'object') {
+    for (const v of Object.values(value)) {
+      const hit = namedCaseTask(v, owned);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
 
 /** The verb a ClickUp tool name starts with: mcp__<server>__clickup_<verb>_<noun>. */
 function leadingVerb(toolName) {
@@ -76,12 +126,13 @@ export function findProfileDir(cwd, profilePath, stat) {
 }
 
 /**
- * @param {{tool_name?: string, cwd?: string}} input PreToolUse payload
+ * @param {{tool_name?: string, tool_input?: unknown, cwd?: string}} input PreToolUse payload
  * @param {(p: string) => {mtimeMs: number}} stat
- * @param {{profilePath?: string}} options the plugin's configured profile path
+ * @param {{profilePath?: string, ownedIds?: (home: string) => Set<string>}} options the plugin's
+ *   configured profile path, and the loader of QA-Pilot's case task IDs (injected by tests)
  * @returns {null | {reason: string}} null === allow
  */
-export function decide(input, stat = statSync, { profilePath = DEFAULT_PROFILE } = {}) {
+export function decide(input, stat = statSync, { profilePath = DEFAULT_PROFILE, ownedIds = ownedTaskIds } = {}) {
   const tool = input?.tool_name ?? '';
   if (!/clickup/i.test(tool)) return null;          // not ours to police
   if (READ_VERBS.has(leadingVerb(tool))) return null;
@@ -89,8 +140,11 @@ export function decide(input, stat = statSync, { profilePath = DEFAULT_PROFILE }
   // exists, ClickUp is someone else's workflow, not a QA record to protect.
   const home = findProfileDir(input?.cwd ?? process.cwd(), profilePath || DEFAULT_PROFILE, stat);
   if (home === null) return null;
+  // Only QA-Pilot's own case tasks are the record; a write that names none of them is ordinary work.
+  const task = namedCaseTask(input?.tool_input, ownedIds(home));
+  if (task === null) return null;
   if (flagIsLive(join(home, FLAG), stat)) return null;
-  return { reason: DENY_REASON };
+  return { reason: denyReason(task) };
 }
 
 async function readStdin() {

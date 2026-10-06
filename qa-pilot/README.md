@@ -90,8 +90,8 @@ Execution itself costs no tokens: it is `npx playwright test`.
 skills/            the five entry points plus setup-profiles
 scripts/           deterministic validators and transforms (zero deps, node --test)
 schemas/           the host profile, case, and report contracts
-hooks/             ClickUp write guard, so the scripted path is the only write path,
-                   active only in repos that have a host profile
+hooks/             ClickUp write guard: QA-Pilot's own case tasks change only through
+                   its skills; every other ClickUp write passes
 SETUP-CLICKUP.md   one-time workspace setup you do by hand
 DECISIONS.md       what this plugin enforces on a host, and what swapping it would cost
 SETUP-CI.md        running the approved suite unattended, and what CI cannot do
