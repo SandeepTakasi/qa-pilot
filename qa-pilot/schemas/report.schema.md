@@ -309,7 +309,8 @@ profile does not register is an error, never a fallback to `tracker`.
 are set at generation, not per run. See `skills/publish-results/references/clickup-fields.md` for
 the field names. The run summary, one comment on the feature task, starts with the run id and
 carries the env name, build SHA, counts by verdict, blocked percentage, confidence score and
-readiness, the executor, and the line telling the reviewer that traces open at
+readiness, the requirement coverage (`requirement_coverage`, only when the cases file declares
+requirements), the executor, and the line telling the reviewer that traces open at
 <https://trace.playwright.dev> by drag-and-drop.
 
 **`local`**, which every production environment is: no host application data. Per case, exactly:
@@ -326,8 +327,9 @@ readiness, the executor, and the line telling the reviewer that traces open at
 | trace sha256 | `cases[].trace_sha256` |
 
 The run summary carries exactly: run id, env name, build id, counts by verdict, blocked
-percentage, confidence score and readiness. Nothing else is sent: no attachment, no
-`failure_summary`, no console text, no absolute path, no executor. A bug filed from such a run
+percentage, confidence score and readiness, and the requirement coverage
+(`requirement_coverage`) only when the cases file declares requirements. Nothing else is sent:
+no attachment, no `failure_summary`, no console text, no absolute path, no executor. A bug filed from such a run
 (and a dedup comment on an existing bug) names the case id, run id, env name, build id, trace
 path and trace sha256, and no failure text. `bug-report.mjs` keys this on the same effective
 `evidence_upload: local` from the profile, not on `env_kind`; given no profile, it accepts only a
@@ -340,7 +342,29 @@ the sha256.
 
 **`tracker: none`**: nothing is sent anywhere. The payload is a plan of local writes: status
 transitions applied to `testing/<feature>/statuses.json`, the run summary written into the run
-directory, and bugs written to `testing/<feature>/runs/<run_id>/bugs/<CASE-ID>.md`.
+directory, and bugs written to `testing/<feature>/runs/<run_id>/bugs/<CASE-ID>.md`. The run
+summary written there carries the same fields as under `tracker`, `requirement_coverage` included
+under the same condition.
+
+**`requirement_coverage`**, in all three modes and only when the `case-status.mjs` output passed
+to `publish-payload.mjs` carries `requirements` (see "Requirements and coverage" in
+`cases.schema.md`); when the cases file declares no requirements, the key is absent, not empty:
+
+```json
+"requirement_coverage": {
+  "criteria_total": 4,
+  "proved": 1,
+  "failing": 1,
+  "unproved": 1,
+  "uncovered": 1,
+  "not_proved": ["ORDER-1", "ORDER-2"]
+}
+```
+
+The five counts are copied from that output. `not_proved` lists the id of every requirement with
+at least one criterion that is not `proved` (uncovered included), in declaration order. Only ids
+and counts are sent, since they are authored design rather than application data: never criterion
+text or requirement titles.
 
 ## Confidence score
 
