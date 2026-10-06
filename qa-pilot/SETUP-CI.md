@@ -140,6 +140,49 @@ have QA review it; the approval then carries forward on its own.
 If you see this on every case at once, someone reformatted the spec directory. Re-review
 once and it settles.
 
+## Choosing what runs
+
+By default the job runs every approved spec for the feature. A deploy job usually wants less:
+the cases that must never break, quickly. The template's `PRIORITY` setting does that.
+
+```yaml
+env:
+  PRIORITY: ''      # EDIT: P0 on a deploy-triggered job; empty runs everything approved
+```
+
+When `PRIORITY` is non-empty the select step adds
+`--cases testing/$FEATURE/cases.yaml --priority $PRIORITY`. Priority is not recorded in
+`approved.json` or `specs.json`, only in `cases.yaml`, which is why the filter needs that file.
+The call is:
+
+```
+node ci-gate.mjs select --approved <approved.json> --specs <specs.json> \
+  [--cases <cases.yaml>] [--priority <P0[,P1[,P2]]>] [--json]
+```
+
+The rules, in full:
+
+- `--priority` without `--cases` is an error. `--cases` without `--priority` is accepted and
+  changes nothing.
+- Values are case-sensitive and comma-separated, each one trimmed: `P0,P1` and `P0, P1` mean
+  the same, `p0` is not `P0`. An unknown value is an error that names it.
+- Filtering happens first. An approved case outside the filter is dropped silently, with no
+  skip line and nothing on stderr, because leaving it out is the job's intent and not a problem.
+- An approved case that is missing from the cases file is skipped, with the reason
+  `not in cases.yaml, so its priority is unknown`.
+- The usual hash check then runs on whatever remains, so a drifted spec is still skipped and
+  still printed with both hashes.
+- If nothing is runnable at that priority, `select` exits 1 with
+  `REFUSED: no approved spec at priority <list> is runnable, so this job would report green having proved nothing.`
+  A P0 job that finds no P0 spec fails; it never goes green having run nothing.
+
+**Recommended split: P0 on every deploy, everything on the nightly schedule.** A deploy needs
+a fast answer about the cases that matter most, and the nightly run is where the slower P1 and
+P2 cases are allowed to take their time. Because one template serves both, copy the workflow
+twice or use two jobs: set `PRIORITY: P0` on the deploy-triggered one and leave it empty on the
+scheduled one. Cases carry their priority in `cases.yaml`, so promoting a case to P0 moves it
+into the deploy job with no change to the workflow.
+
 ## Each run has its own directory
 
 Everything a run produces goes under `testing/<feature>/runs/<run_id>/`, as it does locally:
@@ -191,3 +234,8 @@ evidence local uploads nothing.
 The workflow checks QA-Pilot out at a ref. Pin a tag or a commit SHA rather than a branch.
 An unpinned ref means a change to QA-Pilot can turn your build red overnight with nothing
 in your own repository's history to explain it.
+
+The template pins `ref: v0.4.0`. **`--priority` needs 0.4.0 or newer.** An older `ci-gate.mjs`
+only reads the flags it knows, so below 0.4.0 it silently ignores `--priority` and runs every
+approved spec: the job looks like a P0 job and is not. Keep the pin at 0.4.0 or later for any
+job that sets `PRIORITY`.
