@@ -165,12 +165,18 @@ The rules, in full:
 
 - `--priority` without `--cases` is an error:
   `select: --priority needs --cases <cases.yaml>, because priority is recorded only there`.
-  `--cases` without `--priority` is accepted and changes nothing. A `--cases` path that does
-  not exist is an error: `no cases file at <path>`.
+  `--cases` without `--priority` is accepted and changes nothing: the file is not read, so even
+  a `--cases` path that does not exist passes. With `--priority`, a `--cases` path that does not
+  exist is an error: `no cases file at <path>`.
 - Values are case-sensitive and comma-separated, each one trimmed: `P0,P1` and `P0, P1` mean
   the same, `p0` is not `P0`. An unknown value is an error that names it:
   `select: unknown priority "<v>"; use P0, P1 or P2`. An empty element, such as `P0,,P1` or a
-  trailing comma, is an unknown value too, reported as `""`.
+  trailing comma, is an unknown value too, reported as `""`. With several bad values, the
+  first unknown value in list order is the one named.
+- Each of these errors exits 1, like every other error `ci-gate.mjs` throws. The checks run in
+  a fixed sequence, so the first failure is the one reported. They are checked in this order:
+  `--approved` or `--specs` missing, `--priority` without `--cases`, an unknown priority value,
+  a missing cases file (only with `--priority`), and a missing approval ledger.
 - Filtering happens first. An approved case outside the filter is dropped silently, with no
   skip line and nothing on stderr, because leaving it out is the job's intent and not a problem.
 - An approved case that is missing from the cases file is skipped with the reason
