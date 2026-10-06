@@ -216,6 +216,14 @@ twice or use two jobs: set `PRIORITY: P0` on the deploy-triggered one and leave 
 scheduled one. Cases carry their priority in `cases.yaml`, so promoting a case to P0 moves it
 into the deploy job with no change to the workflow.
 
+The deploy P0 run and the nightly run must never hit one environment at the same time, so both
+must share one concurrency group per environment, for example `qa-pilot-<env>`. This holds
+whether the workflow is copied or holds two jobs. The template's group is
+`qa-pilot-${{ github.workflow }}`, so a renamed copy gets its own group and would run in
+parallel with the other; set the same group on both. Two jobs in one workflow are gated by
+trigger with `if: github.event_name == ...`, for example `push` or `deployment` for the P0 job
+and `schedule` for the nightly one, since otherwise both fire on every trigger.
+
 ## Each run has its own directory
 
 Everything a run produces goes under `testing/<feature>/runs/<run_id>/`, as it does locally:

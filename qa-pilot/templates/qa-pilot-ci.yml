@@ -20,6 +20,9 @@ on:
 concurrency:
   # One run at a time per environment. Two suites against one QA environment fight over
   # the same records and produce failures that are neither a regression nor reproducible.
+  # With the P0 and nightly split, both runs must share one group per environment, for
+  # example qa-pilot-<env>: a renamed copy of this file gets its own group below and would
+  # run in parallel with the other. Set the same group on both.
   group: qa-pilot-${{ github.workflow }}
   cancel-in-progress: false
 
@@ -34,7 +37,9 @@ jobs:
       PROFILE: qa-pilot.config.yaml           # EDIT if your profile lives elsewhere
       # Recommended split: a deploy-triggered job with PRIORITY: P0 (the cases that must
       # never break, fast), and the nightly scheduled job with it empty (everything).
-      # One template serves both: copy the workflow, or use two jobs.
+      # One template serves both: copy the workflow, or use two jobs. Either way they share
+      # one concurrency group per environment, and two jobs are gated by trigger with
+      # `if: github.event_name == ...`, or both fire on every trigger.
       PRIORITY: ''                            # EDIT: P0 on a deploy-triggered job; empty runs everything approved
       PLUGIN: .qa-pilot-plugin/qa-pilot/scripts
 

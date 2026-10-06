@@ -8,11 +8,12 @@ One change will stop an existing setup working until you act on it; a second can
 quietly doing the wrong thing.
 
 1. **A production environment must declare `test_account`.** The field is a string of at least
-   20 characters naming the account the runs use and how it is restricted. Without it the
-   whole profile is invalid, so every command and every CI job fails, CI against `qa` or
-   `staging` included: the template validates the profile first, and a profile with a
-   production environment is invalid as a whole whichever environment a job targets. The
-   error reads:
+   20 characters naming the account the runs use and how it is restricted. It is a production
+   environment without it that invalidates the profile, and an invalid profile fails every
+   command and every CI job once its pin is v0.4.0, CI against `qa` or `staging` included: the
+   template validates the profile first, and a profile with a production environment is invalid
+   as a whole whichever environment a job targets. A job still pinned below 0.4.0 keeps working,
+   which is why item 2 says to add the account before moving the pin. The error reads:
 
    ```
    environments.<env>.test_account: required on a production environment, at least 20 characters. Name the account the runs use and how it is restricted (its own tenant, no admin rights, no billing). The write guard is the second layer, not the boundary.
