@@ -131,6 +131,16 @@ export function validateProfile(raw, { profilePath = null } = {}) {
       if (tracker === 'none' && env.evidence_upload === 'tracker') {
         warnings.push(`environments.${envName}.evidence_upload: tracker is ignored under tracker: none; evidence stays local`);
       }
+      // The account a production run signs in as is the real boundary, so it is named.
+      const ta = env.test_account;
+      const taOk = typeof ta === 'string' && ta.trim().length >= 20;
+      if (env.kind === 'production') {
+        if (!taOk) {
+          err(`environments.${envName}.test_account: required on a production environment, at least 20 characters. Name the account the runs use and how it is restricted (its own tenant, no admin rights, no billing). The write guard is the second layer, not the boundary.`);
+        }
+      } else if (ta !== undefined && !taOk) {
+        err(`environments.${envName}.test_account: at least 20 characters when present.`);
+      }
       if (env.kind === 'production' && env.evidence_upload === 'tracker') {
         // A trace carries the session credential that authenticated the run and every
         // request body it touched (see "What a trace contains" in the ClickUp setup guide).

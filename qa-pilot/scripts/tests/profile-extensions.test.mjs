@@ -30,6 +30,7 @@ const addProduction = (p) => {
   p.environments.production = {
     kind: 'production',
     apps: { storefront: 'https://app.host-fake.example.com' },
+    test_account: 'qa-runner@example.com, own tenant, no admin rights',
     sha_source: { url: 'https://app.host-fake.example.com/api/version', json_path: 'build.commit' },
   };
 };
