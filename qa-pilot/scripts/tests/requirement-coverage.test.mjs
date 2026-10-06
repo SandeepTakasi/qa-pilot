@@ -187,10 +187,19 @@ test('without requirements the output is unchanged: no key, no warning', () => {
   assert.deepEqual(withDoc, without);
 });
 
-test('a malformed block omits coverage and adds the warning', () => {
-  const out = part(doc([['X-001']], []));
-  assert.ok(!('requirements' in out));
-  assert.deepEqual(out.warnings, [OMITTED]);
+test('a malformed block omits coverage and adds the warning, whatever its shape', () => {
+  for (const bad of [[], null, {}]) {
+    const out = part(doc([['X-001']], bad));
+    assert.ok(!('requirements' in out), JSON.stringify(bad));
+    assert.deepEqual(out.warnings, [OMITTED], JSON.stringify(bad));
+  }
+});
+
+test('the partition passes the host status names into coverage', () => {
+  const d = doc([['X-001', ['ORDER-1/AC-1']]], REQS);
+  const statusNames = { ...DEFAULT_STATUSES, approved: 'signed off' };
+  const out = partitionCases(d.cases, { 'X-001': 'Signed Off' }, { verdicts: PASSING, doc: d, statusNames });
+  assert.equal(out.requirements.proved, 1);
 });
 
 test('a covers error alone does not omit coverage or warn', () => {
@@ -340,4 +349,12 @@ test('no criterion text, title or case id reaches the summary', () => {
 
 test('a requirements object without by_requirement is refused rather than summarised wrongly', () => {
   assert.throws(() => build(report('qa'), QA, { confidence: CONF, requirements: { proved: 1 } }), /by_requirement/);
+});
+
+test('a by_requirement entry without a criteria list is refused, not a bare TypeError', () => {
+  for (const bad of [{ id: 'ORDER-1' }, { id: 'ORDER-1', criteria: null }, { id: 'ORDER-1', criteria: {} }, null]) {
+    const requirements = { ...REQUIREMENTS, by_requirement: [bad] };
+    assert.throws(() => build(report('qa'), QA, { confidence: CONF, requirements }),
+      (e) => e.constructor === Error && /--confidence: every by_requirement entry must carry a criteria list/.test(e.message), JSON.stringify(bad));
+  }
 });

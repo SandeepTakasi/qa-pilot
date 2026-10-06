@@ -41,6 +41,7 @@ export function buildPayload(report, profile, { transitions, confidence } = {}) 
   let coverage;
   if (reqs && typeof reqs === 'object') {
     if (!Array.isArray(reqs.by_requirement)) throw new Error('--confidence: requirements must carry by_requirement');
+    if (!reqs.by_requirement.every((r) => r && Array.isArray(r.criteria))) throw new Error('--confidence: every by_requirement entry must carry a criteria list');
     const { criteria_total, proved, failing, unproved, uncovered } = reqs;
     coverage = {
       requirement_coverage: {
