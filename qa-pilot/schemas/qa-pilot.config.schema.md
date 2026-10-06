@@ -25,7 +25,8 @@ environments:                       # required, >= 1 entry
                                     # tracker on a production environment is an error.
     test_account: string            # REQUIRED when kind is production: at least 20 characters
                                     # after trimming. Optional on other kinds; when present the
-                                    # same rule applies. See "Production test account".
+                                    # same length rule applies, with its own error message.
+                                    # See "Production test account".
     sha_source:                     # required: how the DEPLOYED build is identified
       url: <http(s) URL>            # required, e.g. https://qa.example.com/api/version
       json_path: string             # exactly ONE of json_path | regex
@@ -152,9 +153,17 @@ restricted.
 `environments.<env>.test_account` is a string of at least 20 characters after trimming (leading
 and trailing whitespace does not count). It is **required** when `kind: production`. On `qa` and
 `staging` it is optional, and when present the same length rule applies, so a value means the same
-thing everywhere. A missing, non-string or too-short value is an **error**:
+thing everywhere. The error depends on the kind.
+
+On `production`, a missing, non-string or too-short value is an **error**:
 
 > `environments.<env>.test_account: required on a production environment, at least 20 characters. Name the account the runs use and how it is restricted (its own tenant, no admin rights, no billing). The write guard is the second layer, not the boundary.`
+
+On any other kind, a missing value is not an error. A present value that is not a string of at
+least 20 characters after trimming is an **error** with its own message, so a staging error never
+says "required on a production environment":
+
+> `environments.<env>.test_account: at least 20 characters when present.`
 
 Say which account the runs use and what restricts it, for example: `qa-runner@example.com, its own
 tenant, no admin rights, no billing`. The value is an **attestation**. Nothing checks it against
@@ -271,9 +280,9 @@ flag, since control labels vary in case.
 restricted account named by `test_account`: an account that cannot change data cannot be made to
 by a missed button. The guard sits under it. A signature list is only as complete as the host's
 inventory, and a write that no signature matches is a write the guard does not see and lets
-through (see `docs/decisions/0001-write-signatures-default-deny.md` for why lists are written
-default-deny per channel). `test_account` is itself an attestation nothing verifies, so neither
-layer is proof alone; QA owns keeping the account restricted and the signature list complete.
+through (see the QA-Pilot repository's `docs/decisions/0001-write-signatures-default-deny.md` for
+why lists are written default-deny per channel). `test_account` is itself an attestation nothing
+verifies, so neither layer is proof alone; QA owns keeping the account restricted and the signature list complete.
 
 **Unknown keys** under `mutation`, `deny_controls`, a signature entry, `stabilization`, `context`
 or a `sources` entry are **errors**, as unknown top-level keys are: a misspelt `write_signature`
