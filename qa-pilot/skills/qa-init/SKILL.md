@@ -51,9 +51,12 @@ Use `AskUserQuestion`. Ask in this order, batching related questions:
    **If any environment is `production`**, say what that commits the host to, before going further:
    - its evidence is `local`; `tracker` there is refused, because a trace carries the session and every request body it touched;
    - `evidence.capture` must be `always`;
+   - it needs a `test_account` (asked just below);
    - a `mutation` block with at least one write signature is required (item 9);
    - `testing/*/runs/` must be gitignored, which `/qa-pilot:run-tests` checks before every production run (step 5 below);
    - the CI template never runs against it.
+
+   **Whenever an environment is `production`, ask for its `test_account`**: which account the runs sign in as and what restricts it (its own tenant, no admin rights, no billing). Write the answer into that environment as `test_account`, for example `qa-runner@example.com, its own tenant, no admin rights, no billing`; it must be at least 20 characters after trimming, or the whole profile is invalid. Say that it is an attestation nothing verifies against the saved login, and that the write guard is the second layer under that account, never the boundary. If the host has no restricted account, record that in the gap report and leave the profile invalid until one exists.
 2. **Deploy-SHA source**: the URL that reports the running build's commit (e.g. `https://qa.example.com/api/version`) and how to extract it, either a dot path into the JSON response (`build.commit`) or a regex with one capture group. **If there is no such endpoint, say so plainly: this is a Phase-0 blocker, not a detail.** Record it in the gap report and leave the profile invalid until it exists, because a SHA that cannot be read means no run can ever be published.
 3. **Auth model**: `dev-handoff` (each dev logs in once through a headed browser), `role-accounts` (dedicated per-role accounts), or `mixed` (both, which is the usual answer when permission cases are in scope).
 4. **Assertions**: ask whether application operations are visible as network requests in the browser Network tab. Engine-dispatched, worker-dispatched, or WebSocket-multiplexed apps answer "no" → `network_events: forbidden` + `style: ui-state`. When forbidden, ask whether the app emits structured console logs that could serve as failure evidence → `evidence.extra: [console_log]`.
@@ -104,6 +107,7 @@ Print (do not write to a file) the prerequisites this host must close before the
 | No role accounts yet | permission-type cases in `/generate-tests` |
 | Deployed builds strip console logs | failure evidence on hosts where console output is the required evidence |
 | A production environment with `testing/*/runs/` not gitignored | `/run-tests` on production: it refuses until the run directories are ignored |
+| No restricted account for a production environment | the whole profile: `test_account` is required there, and the write guard is only the second layer, never the boundary |
 | No write signatures confirmed against real requests | the write guard on production: the profile is invalid without at least one, and an incomplete list is a write the guard cannot see |
 
 With `tracker: clickup` only, add these:

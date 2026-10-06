@@ -29,6 +29,7 @@ Identify which app(s) the feature's cases target, and take their base URLs from 
 
 **When `kind` is `production`**, all of these must hold before anything runs. Each is a STOP, not a warning:
 
+- **A restricted account signs in.** The profile's `test_account` names the account the runs use and how it is restricted (its own tenant, no admin rights, no billing); the loader refuses a production profile without it. Confirm the saved login is that account, because nothing checks it for you: `test_account` is an attestation, and the write guard below is the second layer under it, never the boundary. Not that account → STOP.
 - **The run directory is gitignored.** Production evidence never reaches git:
 
   ```bash

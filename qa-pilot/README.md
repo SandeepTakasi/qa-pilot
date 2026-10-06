@@ -33,6 +33,7 @@ The publish step is a script, not a judgement call, and it rejects each of these
 
 An environment says what it is: `kind: qa | staging | production`, declared rather than guessed from the hostname. Production is allowed, under rules that are refusals, not advice:
 
+- **A restricted account.** A production environment must declare `test_account`: the account the runs sign in as and how it is restricted (its own tenant, no admin rights, no billing), at least 20 characters after trimming. Without it the whole profile is invalid. The write guard is the second layer under that account, never the boundary, and `test_account` is an attestation nothing verifies.
 - **Evidence stays local.** Traces carry the session and every request body they touched, so a production trace is never attached to the tracker, never uploaded by CI, and never committed (`/run-tests` refuses unless the run directory is gitignored). The tracker record carries no application data: case IDs, verdicts, build, run, and each trace's path and sha256 so a reviewer can find and verify it on the executor's machine.
 - **Full capture.** Every case keeps a trace.
 - **A declared write policy and a live guard.** A production feature must be `read-only` or `scoped-write`, and the host profile must say what a write looks like on that host (`mutation.write_signatures`). The guard works without the specs' cooperation: clicks are judged in the page before the app sees them, requests at the network layer.

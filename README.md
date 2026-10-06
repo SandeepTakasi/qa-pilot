@@ -58,7 +58,10 @@ The publish step is a script, not a judgement call. It rejects:
 
 ## Production, without the damage
 
-An environment declares its `kind` instead of the tool guessing from its hostname. On production,
+An environment declares its `kind` instead of the tool guessing from its hostname. A production
+environment must also name its `test_account`, the account the runs sign in as and how it is
+restricted (its own tenant, no admin rights, no billing); the write guard is the second layer under
+that account, never the boundary, and the field is an attestation nothing verifies. On production,
 traces stay on the executor's machine (never attached to the tracker, uploaded by CI or committed),
 every case keeps a full trace, and a feature must be `read-only` or `scoped-write` under a live write
 guard. The guard needs no help from the specs: clicks are judged in the page before the app sees

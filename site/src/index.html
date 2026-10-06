@@ -185,13 +185,13 @@ summary: { pass: 21, fail: 0, flaky: 1, blocked: 2 }</code></pre>
 <section class="section" aria-labelledby="production-title">
   <p class="eyebrow">Production</p>
   <h2 class="section__title" id="production-title">Production, without the damage</h2>
-  <p class="lede">An environment declares what it is: <code>kind: qa | staging | production</code>, never guessed from the hostname. Production is allowed, under rules that are refusals, not advice.</p>
+  <p class="lede">An environment declares what it is: <code>kind: qa | staging | production</code>, never guessed from the hostname. Production is allowed, under rules that are refusals, not advice. The first is a restricted account: a production environment must name its <code>test_account</code>, the account the runs sign in as and what restricts it (its own tenant, no admin rights, no billing). It is an attestation nothing verifies, so QA reviews it.</p>
   <div class="split">
     <div class="split__text">
       <ul>
         <li><strong>Evidence stays local.</strong> A trace carries the session and every request body it touched, so a production trace is never attached to the tracker, never uploaded by CI, and never committed. <code>/qa-pilot:run-tests</code> refuses unless the run directory is gitignored.</li>
         <li><strong>Full capture.</strong> Every case keeps a trace. On production a pass is the claim most worth checking, so <code>evidence.capture</code> must be <code>always</code>.</li>
-        <li><strong>A declared write policy and a live guard.</strong> A production feature must be <code>read-only</code> or <code>scoped-write</code>, and the host profile says what a write looks like on that host. The guard judges clicks in the page before the app sees them, and requests at the network layer.</li>
+        <li><strong>A declared write policy and a live guard.</strong> A production feature must be <code>read-only</code> or <code>scoped-write</code>, and the host profile says what a write looks like on that host. The guard judges clicks in the page before the app sees them, and requests at the network layer. It is the second layer under the restricted account, never the boundary.</li>
       </ul>
       <p><a href="{{base}}docs/production/">Production, in full</a></p>
     </div>
@@ -248,6 +248,7 @@ environments:
       json_path: commit
   production:
     kind: production
+    test_account: qa-runner@example.com, its own tenant, no admin rights, no billing
     apps:
       storefront: https://app.example.com
     sha_source:

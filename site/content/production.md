@@ -16,11 +16,12 @@ A URL that looks like production on an environment whose kind is not `production
 
 ## A production profile
 
-When any environment has `kind: production`, the profile is valid only if all three of these hold. Each is an error, not a warning:
+When any environment has `kind: production`, the profile is valid only if all four of these hold. Each is an error, not a warning:
 
 - that environment's `evidence_upload` is `local` (the default for it), and never `tracker`;
 - `evidence.capture` is `always`;
-- a `mutation` block is present with at least one `write_signatures` entry.
+- a `mutation` block is present with at least one `write_signatures` entry;
+- that environment's `test_account` is present: a string of at least 20 characters after trimming.
 
 Here is the relevant part of a generic profile with a `qa`, a `staging` and a `production` environment. The rest of the file (`apps`, `auth`, `assertions`, `selectors`, `models`, `sandbox` and the tracker block) is omitted; the full contract is in the [host profile reference](../../qa-pilot/schemas/qa-pilot.config.schema.md).
 
@@ -42,6 +43,7 @@ environments:
       json_path: commit
   production:
     kind: production
+    test_account: qa-runner@example.com, its own tenant, no admin rights, no billing
     apps:
       storefront: https://app.example.com
     sha_source:
@@ -67,6 +69,16 @@ mutation:
 ```
 
 `sha_source` is how the deployed build is identified. QA-Pilot reads it before the run and again after it, and every verdict is stamped with that build. If the two reads differ, every case in the run is `blocked`.
+
+## The restricted account
+
+A production run signs in as a real account, and that account's own permissions are the only thing that can truly bound what the run does. An account that cannot change data cannot be made to by a missed button. So the profile names the account and how it is restricted, in `test_account`: a string of at least 20 characters after trimming, required on every production environment. A missing, non-string or too-short value fails the whole profile, so every command refuses to run:
+
+> `environments.<env>.test_account: required on a production environment, at least 20 characters. Name the account the runs use and how it is restricted (its own tenant, no admin rights, no billing). The write guard is the second layer, not the boundary.`
+
+On `qa` and `staging` it is optional, and a value that is present follows the same length rule. The write guard, described below, is the second layer under that account, never the boundary: a signature list is only as complete as the host's inventory, and a write no signature matches is a write the guard does not see.
+
+`test_account` is an attestation. Nothing checks it against the saved login, so it records a claim QA makes and reviews. It does not prove one.
 
 ## Evidence stays local
 
@@ -189,7 +201,7 @@ A production run publishes with no application data. `scripts/publish-payload.mj
 | `trace_path` | `cases[].trace`, relative to the run directory |
 | `trace_sha256` | `cases[].trace_sha256` |
 
-The run summary carries exactly: run id, environment name, build id, counts by verdict, blocked percentage, confidence score and readiness. Nothing else is sent: no attachment, no failure text, no console text, no absolute path, no executor. A bug filed from such a run names the case id, run id, environment, build id, trace path and sha256, and no failure text.
+The run summary carries exactly: run id, environment name, build id, counts by verdict, blocked percentage, confidence score and readiness, plus `requirement_coverage` (counts and the ids of requirements not yet proved, never criterion text) only when the case-status output carries requirements, that is, the cases file declares them and they are lint-clean. Nothing else is sent: no attachment, no failure text, no console text, no absolute path, no executor. A bug filed from such a run names the case id, run id, environment, build id, trace path and sha256, and no failure text.
 
 Under `tracker: none`, nothing is sent anywhere. Approvals, the run summary and bugs are local files, and the bug file in the run directory keeps the failure text because it never leaves the machine.
 
@@ -214,6 +226,7 @@ So someone determined to fabricate a green result could hand-write the inputs. N
 Specific ceilings, each stated in the code or the schemas:
 
 - **The environment name is taken on trust.** `env_name` comes from the report, as the deploy SHA does, because nothing in the run directory identifies the environment independently. A report relabelled to another registered environment is a known ceiling. The planned fix is for the guard to record the request origins it saw and for the gate to match them against the registered app URLs.
+- **The restricted account is an attestation.** `test_account` says which account the runs use and what restricts it. Nothing checks that claim against the saved login, so QA owns keeping the account restricted.
 - **The guard is only as good as the signatures.** Requests are only as well classified as the host's `write_signatures`. This is why decision 0001 asks for a replay check next to the profile that judges every live operation name against the guard's own functions.
 - **Some actions are not seen.** The guard does not see drag-and-drop, pointer or mouse handlers that act before click, keyboard activation other than Enter or Space, WebSocket frames, `routeFromHAR`, popups opened outside the guarded context, or frames other than each page's main frame for `setScope`. Node's own `node:http`, `node:https` and `node:net` are not refused either, and neither is calling a route method off the prototype to get past the guard. The last two are deliberate subversion rather than ordinary spec code, and review catches them. The list lives in the header of [`write-guard.fixture.ts`](../../qa-pilot/templates/write-guard.fixture.ts).
 - **An agentic session has nothing to publish with.** It cannot produce a trace or a machine-readable result, so "Claude clicked through it and it looked fine" never reaches the record by the normal route. That is a strong practical barrier, not a mathematical one.
