@@ -309,9 +309,10 @@ profile does not register is an error, never a fallback to `tracker`.
 are set at generation, not per run. See `skills/publish-results/references/clickup-fields.md` for
 the field names. The run summary, one comment on the feature task, starts with the run id and
 carries the env name, build SHA, counts by verdict, blocked percentage, confidence score and
-readiness, the requirement coverage (`requirement_coverage`, only when the cases file declares
-requirements), the executor, and the line telling the reviewer that traces open at
-<https://trace.playwright.dev> by drag-and-drop.
+readiness, the requirement coverage (`requirement_coverage`, only when the `case-status.mjs` output
+carries `requirements`, that is, the cases file declares requirements and they are lint-clean), the
+executor, and the line telling the reviewer that traces open at <https://trace.playwright.dev> by
+drag-and-drop.
 
 **`local`**, which every production environment is: no host application data. Per case, exactly:
 
@@ -328,7 +329,8 @@ requirements), the executor, and the line telling the reviewer that traces open 
 
 The run summary carries exactly: run id, env name, build id, counts by verdict, blocked
 percentage, confidence score and readiness, and the requirement coverage
-(`requirement_coverage`) only when the cases file declares requirements. Nothing else is sent:
+(`requirement_coverage`) only when the `case-status.mjs` output carries `requirements`, that is,
+the cases file declares requirements and they are lint-clean. Nothing else is sent:
 no attachment, no `failure_summary`, no console text, no absolute path, no executor. A bug filed from such a run
 (and a dedup comment on an existing bug) names the case id, run id, env name, build id, trace
 path and trace sha256, and no failure text. `bug-report.mjs` keys this on the same effective
@@ -348,7 +350,9 @@ under the same condition.
 
 **`requirement_coverage`**, in all three modes and only when the `case-status.mjs` output passed
 to `publish-payload.mjs` carries `requirements` (see "Requirements and coverage" in
-`cases.schema.md`); when the cases file declares no requirements, the key is absent, not empty:
+`cases.schema.md`), that is, when the cases file declares requirements and they are lint-clean. When
+it declares none, or its block is malformed (declared but not lint-clean), the key is absent, not
+empty:
 
 ```json
 "requirement_coverage": {
