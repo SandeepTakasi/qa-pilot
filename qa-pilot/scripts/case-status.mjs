@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs';
 import { parse } from './lib/yaml.mjs';
 import { isMain } from './lib/is-main.mjs';
 import { loadProfile } from './lib/profile.mjs';
+import { lintRequirements } from './validate-cases.mjs';
 import {
   DEFAULT_STATUSES, EXECUTABLE_KEYS, HELD_REASONS, VERDICT_APPROVED_KEYS,
   statusLookup, displayName,
@@ -80,6 +81,57 @@ export function confidence(cases, priorities) {
     label: ready ? `${Math.round(score * 100)}%` : 'Not Ready',
     why,
   };
+}
+
+// The requirements block is malformed when the shared lint reports an error on a
+// `requirements` path. A `covers` error is a mistake in a case, never in the block.
+const blockMalformed = (doc) => lintRequirements(doc).errors.some((e) => e.startsWith('requirements'));
+
+/**
+ * Coverage of the declared requirements, or null when there is nothing to report: no
+ * `requirements` key, or a malformed block (the lint reports that). Rules and output shape:
+ * qa-pilot/schemas/cases.schema.md, "Requirements and coverage". Pure, like confidence().
+ *
+ * A criterion is, first match wins: uncovered (no case covers it), failing (a covering case
+ * failed or was flaky, so another case's pass never hides it), proved (a covering case passed
+ * AND QA approved that verdict, the confidence numerator's rule), else unproved. A `covers`
+ * that is not a list, or an entry that is not a string or names nothing, is ignored.
+ *
+ * @param {object} doc parsed cases.yaml
+ * @param {Record<string,string>} statuses case id -> the status ClickUp reports
+ * @param {Record<string,string>} verdicts case id -> pass|fail|flaky|blocked
+ * @param {Record<string,string>} statusNames the host's names per lifecycle key
+ */
+export function requirementCoverage(doc, statuses, verdicts, statusNames = DEFAULT_STATUSES) {
+  if (doc?.requirements === undefined || blockMalformed(doc)) return null;
+  const lookup = statusLookup(statusNames);
+  const keyFor = (status) => lookup.get(String(status).trim().toLowerCase());
+  const byRef = new Map();
+  const by_requirement = doc.requirements.map((r) => ({
+    id: r.id,
+    criteria: r.criteria.map((c) => {
+      const entry = { id: c.id, state: 'uncovered', cases: [] };
+      byRef.set(`${r.id}/${c.id}`, entry);   // ids cannot contain '/', so a ref is unambiguous
+      return entry;
+    }),
+  }));
+  for (const c of Array.isArray(doc.cases) ? doc.cases : []) {
+    if (typeof c?.id !== 'string' || !Array.isArray(c.covers)) continue;
+    for (const ref of c.covers) {
+      const entry = typeof ref === 'string' ? byRef.get(ref) : undefined;
+      if (entry && !entry.cases.includes(c.id)) entry.cases.push(c.id);
+    }
+  }
+  const count = { proved: 0, failing: 0, unproved: 0, uncovered: 0 };
+  const verdictOf = (id) => verdicts?.[id];
+  for (const entry of byRef.values()) {
+    if (entry.cases.length === 0) entry.state = 'uncovered';
+    else if (entry.cases.some((id) => ['fail', 'flaky'].includes(verdictOf(id)))) entry.state = 'failing';
+    else if (entry.cases.some((id) => verdictOf(id) === 'pass' && VERDICT_APPROVED_KEYS.has(keyFor(statuses?.[id])))) entry.state = 'proved';
+    else entry.state = 'unproved';
+    count[entry.state]++;
+  }
+  return { criteria_total: byRef.size, ...count, by_requirement };
 }
 
 // What publishing a run should do to each case's status. Deterministic, because letting a
@@ -144,14 +196,15 @@ export function publishTransitions(cases, statuses, verdicts, {
  * @param {Array<{id: string, priority: string}>} cases from cases.yaml
  * @param {Record<string,string>} statuses case id -> the status ClickUp reports
  * @param {{includeQuarantined?: boolean, statusNames?: Record<string,string>,
- *           verdicts?: Record<string,string>}} opts
+ *           verdicts?: Record<string,string>, doc?: object}} opts
  *   statusNames: the host's names per lifecycle key, from profile clickup.statuses
  *   verdicts: case id -> pass|fail|flaky|blocked from the latest published run.
  *             Without it the confidence score reports Unknown rather than a number,
  *             because approval alone does not mean the case passed.
+ *   doc: the parsed cases.yaml; when it declares requirements the output gains `requirements`
  * @returns partition + confidence
  */
-export function partitionCases(cases, statuses, { includeQuarantined = false, statusNames = DEFAULT_STATUSES, verdicts = {} } = {}) {
+export function partitionCases(cases, statuses, { includeQuarantined = false, statusNames = DEFAULT_STATUSES, verdicts = {}, doc } = {}) {
   const executable = [];
   const held = [];
   const quarantined = [];
@@ -225,6 +278,11 @@ export function partitionCases(cases, statuses, { includeQuarantined = false, st
     );
   }
 
+  const requirements = requirementCoverage(doc, statuses, verdicts, statusNames);
+  if (doc?.requirements !== undefined && !requirements) {
+    warnings.push('requirements has lint errors, so requirement coverage is omitted; run validate-cases.mjs');
+  }
+
   return {
     executable,
     held,
@@ -234,6 +292,7 @@ export function partitionCases(cases, statuses, { includeQuarantined = false, st
     orphaned,
     awaiting_review: awaitingReview,
     confidence: confidence(scored, priorities),
+    ...(requirements && { requirements }),
     counts: {
       total: cases.length,
       executable: executable.length,
@@ -311,7 +370,7 @@ if (isMain(import.meta.url)) {
     }
 
     const out = partitionCases(doc.cases, statuses, {
-      statusNames, verdicts,
+      statusNames, verdicts, doc,
       includeQuarantined: process.argv.includes('--include-quarantined'),
     });
     for (const w of out.warnings) console.error(`warning: ${w}`);

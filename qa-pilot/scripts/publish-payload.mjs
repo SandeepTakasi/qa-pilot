@@ -24,7 +24,9 @@ const escapesRunDir = (p) => typeof p !== 'string' || isAbsolute(p) || p.split(/
 /**
  * @param {object} report validated report.json
  * @param {object} profile normalized host profile
- * @param {{ transitions: object, confidence: object }} inputs the two case-status outputs
+ * @param {{ transitions: object, confidence: object }} inputs the two case-status outputs;
+ *   confidence is the full output (its `requirements` feeds requirement_coverage) or just its
+ *   confidence object
  */
 export function buildPayload(report, profile, { transitions, confidence } = {}) {
   const env = profile.environments?.[report.env_name];
@@ -32,6 +34,20 @@ export function buildPayload(report, profile, { transitions, confidence } = {}) 
   const conf = confidence?.confidence ?? confidence;
   if (!conf || typeof conf !== 'object' || !('label' in conf)) {
     throw new Error('--confidence is required: the case-status output whose confidence object the run summary reports');
+  }
+  // Ids and counts only, and only when the case-status output carries requirements (the
+  // full output, not just its confidence object). Never titles or criterion text.
+  const reqs = confidence?.requirements;
+  let coverage;
+  if (reqs && typeof reqs === 'object') {
+    if (!Array.isArray(reqs.by_requirement)) throw new Error('--confidence: requirements must carry by_requirement');
+    const { criteria_total, proved, failing, unproved, uncovered } = reqs;
+    coverage = {
+      requirement_coverage: {
+        criteria_total, proved, failing, unproved, uncovered,
+        not_proved: reqs.by_requirement.filter((r) => r.criteria.some((c) => c.state !== 'proved')).map((r) => r.id),
+      },
+    };
   }
   const mode = profile.tracker === 'none' ? 'none'
     : effectiveEvidenceUpload(env, { tracker: profile.tracker });
@@ -69,6 +85,7 @@ export function buildPayload(report, profile, { transitions, confidence } = {}) 
         blocked_pct: blockedPct,
         confidence: { score: conf.score ?? null, label: conf.label },
         ready: Boolean(conf.ready),
+        ...coverage,
       },
     };
   }
@@ -82,6 +99,7 @@ export function buildPayload(report, profile, { transitions, confidence } = {}) 
     blocked_pct: blockedPct,
     confidence: { score: conf.score ?? null, label: conf.label, why: conf.why ?? null },
     ready: Boolean(conf.ready),
+    ...coverage,
     executor: report.executor,
     reviewer_note: 'Traces open at https://trace.playwright.dev by drag-and-drop, entirely in the browser.',
   };
