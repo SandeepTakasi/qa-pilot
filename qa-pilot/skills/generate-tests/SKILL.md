@@ -63,13 +63,20 @@ The rules that matter most:
 
 When several cases need the same built-up entity (one project created once, then edited by many cases), declare it under `fixtures` with `teardown: keep` or `delete` and give each such case `fixture: <name>`, rather than having every case build its own. Fixtures are not allowed under `read-only`. Say in your hand-off which fixtures you declared, since each one is a setup spec `/qa-pilot:run-tests` will write.
 
+**Link the cases to the acceptance criteria**, when step 1 turned up stated criteria for the feature (the task's, or the documentation's). Declare them in an optional top-level `requirements` block: one entry per requirement with its `title` and `criteria`, each criterion an `id` and the `text` as the task states it. Then give every case `covers: ["<requirement id>/<criterion id>", ...]` naming the criteria it tests (see "Requirements and coverage" in the cases schema).
+
+- Quote an id that looks like a number (`id: "1"`, `id: "1.10"`): YAML reads an unquoted one as a number, and the lint refuses it. A requirement id is at most 64 characters.
+- Copy the criteria; never invent one to give a case something to cover. A case that tests no stated criterion simply has no `covers`.
+- A criterion no case covers is a **warning**, not an error: a design gap QA decides on. Either write the case that tests it, or leave the warning and name the criterion in your hand-off. Do not delete a criterion to silence it, and do not point `covers` at a case that does not test it.
+- A feature with no stated criteria keeps working with neither key. Leave both out rather than writing criteria of your own.
+
 ## 3. Validate, and loop until clean
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/validate-cases.mjs" testing/<feature>/cases.yaml --profile <profile-path>
 ```
 
-Fix every error and re-run. Do not proceed to ClickUp with a failing file, and never work around a lint error by weakening the case. If the assertion lint rejects an outcome, the outcome was not verifiable, and rewording it to slip past the check reintroduces exactly the problem the check exists to catch.
+Fix every error and re-run. Warnings print on stderr and do not fail the file; read each one (an uncovered criterion is a decision for QA, so list them in your hand-off). Do not proceed to ClickUp with a failing file, and never work around a lint error by weakening the case. If the assertion lint rejects an outcome, the outcome was not verifiable, and rewording it to slip past the check reintroduces exactly the problem the check exists to catch.
 
 If `model_version` is rejected, your model is not on the profile's approved list. Stop and tell the user: QA adds a model to `models.generation_approved` after a calibration pass, not mid-run.
 
@@ -101,6 +108,6 @@ QA approves cases by editing that file to `Approved for Execution`. `/qa-pilot:r
 
 ## 5. Hand off
 
-State plainly, every time: **these cases are not executable yet.** QA reviews the scenario matrix, the declared mutation policy, and every P0/P1 case individually, approves P2 in bulk at matrix level, and moves approved cases into `approved_for_execution` (in ClickUp, or in `testing/<feature>/statuses.json` under `tracker: none`). `/qa-pilot:run-tests` refuses anything else.
+State plainly, every time: **these cases are not executable yet.** QA reviews the scenario matrix, the declared mutation policy, any uncovered criterion, and every P0/P1 case individually, approves P2 in bulk at matrix level, and moves approved cases into `approved_for_execution` (in ClickUp, or in `testing/<feature>/statuses.json` under `tracker: none`). `/qa-pilot:run-tests` refuses anything else.
 
 Then tell the user the next command: `/qa-pilot:run-tests <feature> --env <name>` once approval lands.

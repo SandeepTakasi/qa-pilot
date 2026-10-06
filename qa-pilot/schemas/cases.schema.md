@@ -133,7 +133,7 @@ warning: criterion <requirement id>/<criterion id> is covered by no case
 
 The warning is computed only when the requirements block has no error, and only `covers` entries that resolve count toward it.
 
-**Coverage states.** At verdict time each declared criterion gets exactly one state. Its covering cases are the cases with a `covers` entry that resolves to it; entries that resolve to nothing are ignored. A case's verdict is the one `case-status.mjs` is given for it from the run; a case with no verdict has none. The rules are evaluated in this order, and the first that holds wins:
+**Coverage states.** At verdict time each declared criterion gets exactly one state. Its covering cases are the cases with a `covers` entry that resolves to it; entries that resolve to nothing are ignored. A `covers` that is not a list contributes nothing, and a non-string entry in a list is ignored, so coverage never fails on a malformed `covers`; the lint reports it. A case with no string `id` covers nothing. A case's verdict is the one `case-status.mjs` is given for it from the run; a case with no verdict has none. The rules are evaluated in this order, and the first that holds wins:
 
 1. `uncovered`: no case covers the criterion.
 2. `failing`: any covering case has a `fail` or `flaky` verdict.

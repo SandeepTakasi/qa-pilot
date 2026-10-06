@@ -126,21 +126,27 @@ One per run, on the **feature** task. Begin with the run ID so a re-publish can 
 Confidence: 31% · Not Ready (14 cases now awaiting QA review)
 Executor: <name> · Playwright 1.62.1 · chromium-141
 
+Requirements: 6 criteria · 2 proved · 1 failing · 2 unproved · 1 uncovered
+Not proved: CHECKOUT-1, CHECKOUT-3
 Failed: CHECKOUT-ORDER-002, CHECKOUT-QTY-007
 Quarantined (flaky): CHECKOUT-QTY-003
 ```
+
+The two `Requirements` lines are the payload's `requirement_coverage` (`criteria_total`, `proved`, `failing`, `unproved`, `uncovered`, `not_proved`), and they appear only when the payload carries it: the cases file declares requirements and they are lint-clean, and `--confidence` was given the whole `case-status.mjs` output. They are ids and counts, never a requirement title or criterion text, so they are written in every mode, local included. A feature with no requirements has no such lines. They sit beside the score and change neither it nor the readiness.
 
 The score is deliberately low here: publishing moves cases to `Under Review`, and only `Approved` counts toward the numerator. It climbs as QA works the queue. A first publish scoring 0% is normal, not alarming, so say so rather than posting a bare number.
 
 Keep it to facts already in the report. A comment that interprets the run is a model opinion wearing the record's authority.
 
-For a run whose evidence stays local, the comment holds only what the payload's summary holds: run ID, environment, build, counts, blocked percentage, confidence and readiness. No executor, no failed-case list with failure text, no trace link:
+For a run whose evidence stays local, the comment holds only what the payload's summary holds: run ID, environment, build, counts, blocked percentage, confidence, readiness and, when present, the requirement coverage lines (ids and counts). No executor, no failed-case list with failure text, no trace link:
 
 ```
 2026-08-30T09:22Z-checkout-a1b2c3d · production @ a1b2c3d
 
 12 pass · 2 fail · 1 flaky · 0 blocked (0% blocked)
 Confidence: 31% · Not Ready
+Requirements: 6 criteria · 2 proved · 1 failing · 2 unproved · 1 uncovered
+Not proved: CHECKOUT-1, CHECKOUT-3
 ```
 
 Each case task carries its own trace path and `trace_sha256`, which is how a reviewer finds and verifies the file; the run directory follows from the feature and the run ID (`testing/<feature>/runs/<run_id>/`).

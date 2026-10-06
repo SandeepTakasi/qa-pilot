@@ -62,6 +62,29 @@ Decide the feature's `mutation.policy` from what its cases do, not from where it
 
 **Shared fixtures** replace "each case creates and deletes its own project" when ten cases all work inside one. Declare the entity once under `fixtures`, name it from the cases that use it (`fixture: shared-project`), and keep the cases' preconditions honest: "Inside the shared project fixture" rather than restating how it was made. Choose `teardown: delete` unless QA needs to inspect the entity afterwards.
 
+## Linking cases to acceptance criteria
+
+When the feature states acceptance criteria, declare them once under `requirements` and let each case name what it tests with `covers`. The criteria are copied from the task or the documentation, so coverage is measured against what was asked for, not against what the cases happen to test.
+
+```yaml
+requirements:
+  - id: ORDER-1
+    title: A customer can place an order
+    criteria:
+      - id: AC-1
+        text: Placing an order with one item shows an order number
+      - id: AC-2
+        text: An order with an empty cart cannot be placed
+cases:
+  - id: ORDER-PLACE-001
+    covers: [ORDER-1/AC-1]
+```
+
+- **One claim per entry.** `ORDER-1/AC-2` is a requirement id, a slash, a criterion id. Ids use letters, digits, `.`, `_` and `-`, and quote one that looks like a number (`"1"`, `"1.10"`), since YAML would read it as a number. A requirement id is at most 64 characters.
+- **A case may cover several criteria, and a criterion several cases.** List only what the case's expected outcomes would actually catch: `covers` is a claim, and a criterion marked covered by a case that does not assert it is a false green in the coverage report.
+- **An uncovered criterion is a warning, not an error.** It is a gap QA decides on: add the case, or leave it and say so.
+- **No stated criteria, no keys.** Do not write requirements to have something to link; a feature with neither `requirements` nor `covers` validates and reports as before.
+
 ## What not to generate
 
 - **Volume.** Twenty shallow cases are worse than eight sharp ones: they consume QA review time and dilute the confidence score with cases nobody trusts.

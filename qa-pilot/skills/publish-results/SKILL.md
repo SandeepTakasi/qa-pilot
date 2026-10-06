@@ -87,7 +87,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" \
 
 Pass `--verdicts`. A case counts toward the numerator only when QA accepted its verdict **and** that verdict was a pass. Without it the score reads `Unknown`, which is the honest answer: approval on its own says a human looked, not that the feature works. This matters because `/qa-pilot:qa-review` correctly tells QA that a confirmed real failure is a bug rather than a broken test, so the right action on a failing P0 is to approve the verdict, and scoring on status alone would then read the feature as Ready precisely when QA had confirmed it was broken.
 
-It exits 1 when no case is currently executable, which says nothing about this step: the file is still complete. Its `confidence` object goes into the payload verbatim. **Any P0 without an accepted verdict reads "Not Ready", whatever the percentage says.** Quarantined and flaky cases stay in the denominator, and that they lower the number is the point.
+It exits 1 when no case is currently executable, which says nothing about this step: the file is still complete. Its `confidence` object goes into the payload verbatim, and when the cases file declares requirements and they are lint-clean, its `requirements` object feeds the summary's `requirement_coverage` (step 6). Keep the whole file: step 6 passes it, not just `.confidence`. **Any P0 without an accepted verdict reads "Not Ready", whatever the percentage says.** Quarantined and flaky cases stay in the denominator, and that they lower the number is the point.
 
 Read the timing honestly when you report it: this publish is about to move these cases into `under_review`, and only `approved` counts toward the numerator. So the score you post is the state *going into* review, and it is expected to be low, often zero on a feature's first run. It rises as QA works the queue in `/qa-pilot:qa-review`. Say that plainly rather than posting a number that looks like a failing grade with no explanation.
 
@@ -125,12 +125,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/publish-payload.mjs" "$RUN_DIR/report.json" 
   --confidence "$RUN_DIR/confidence.json" > "$RUN_DIR/payload.json"
 ```
 
+`--confidence` takes the **whole** step 4 output (`confidence.json` as written), not `.confidence` extracted from it: the requirement coverage lives beside the score, and a trimmed file silently drops it. When that output carries `requirements`, the summary gains `requirement_coverage`: `criteria_total`, `proved`, `failing`, `unproved`, `uncovered` and `not_proved` (the requirement ids with a criterion not `proved`). It is ids and counts only, never a title or criterion text, so it is sent in every mode. When the output has no `requirements` (none declared, or the block has lint errors, which a step 4 warning names), the key is absent: report that, do not compute it yourself.
+
 Its `mode` decides step 7, and it is set from the environment's effective `evidence_upload`, never by you:
 
 | `mode` | When | What reaches the tracker |
 |---|---|---|
 | `tracker` | evidence may upload | the field set in `references/clickup-fields.md`, one trace attachment per case, the full run summary |
-| `local` | evidence stays local; **always on production** | per case only the case ID, verdict, target status, environment, build, run ID, and the trace's run-relative path and sha256; the summary only counts, blocked percentage, confidence and readiness. No attachment, no failure text, no console text, no URL, no executor |
+| `local` | evidence stays local; **always on production** | per case only the case ID, verdict, target status, environment, build, run ID, and the trace's run-relative path and sha256; the summary only counts, blocked percentage, confidence, readiness and, when present, `requirement_coverage` (ids and counts). No attachment, no failure text, no console text, no URL, no executor |
 | `none` | `tracker: none` | nothing; a plan of local file writes instead |
 
 Post exactly what `payload.json` holds. On `local`, **never attach a trace and never add a field from the report**, however useful it looks: the trace carries the session credential and every request body it touched, and the failure text can carry the application's data. A reviewer finds the evidence on the executor's machine, by the path and hash the payload gives.
@@ -156,7 +158,7 @@ The flag expires after 30 minutes, so a session that dies mid-publish cannot lea
 - **On `tracker`, attach the trace named in `attach`, and only that**, with `clickup_attach_task_file`, under `attach.name`, resolving `attach.path` against `$RUN_DIR`. Do not upload the `.webm` or the console log: the trace already contains the video byte-for-byte plus the console output. **On `local` there is no `attach` and nothing is uploaded.**
 - If a trace exceeds 1 GB (the API's per-file cap), something is wrong with the run, not with the upload, so report it rather than working around it.
 
-**Once per feature** (`payload.summary`): a single run-summary comment on the feature task (`clickup_create_task_comment`), not one comment per case, holding exactly the summary's fields and starting with the run ID so a re-publish can find its own prior comment. On `tracker` it includes the executor and the reviewer line (traces open at <https://trace.playwright.dev> by drag-and-drop, entirely in the browser); on `local` it does not, because neither is in the payload.
+**Once per feature** (`payload.summary`): a single run-summary comment on the feature task (`clickup_create_task_comment`), not one comment per case, holding exactly the summary's fields (`requirement_coverage` included when the payload has it, and only then) and starting with the run ID so a re-publish can find its own prior comment. On `tracker` it includes the executor and the reviewer line (traces open at <https://trace.playwright.dev> by drag-and-drop, entirely in the browser); on `local` it does not, because neither is in the payload.
 
 **Rate discipline**: sequential calls, never parallel. On a 429, wait 60 seconds and resume from where you stopped. Do not restart the whole publish. Note that the 100/min budget is **per token**: if several developers publish on one shared token they will exhaust it together. Per-user OAuth tokens give each executor their own budget and make the `executor` field truthful for free.
 
