@@ -33,13 +33,13 @@ and the deployed build the run was against, read before and after the run.
 Six commands, with QA approving between design and execution:
 
 ```
-/qa-pilot:qa-init          describe the project: write qa-pilot.config.yaml       once per project
-/qa-pilot:setup-profiles   save a login once per account                          once per developer
-/qa-pilot:generate-tests   author cases.yaml from the feature's task and code     per feature
-        QA approves the scenario matrix, the write policy and the cases
-/qa-pilot:run-tests        run committed specs against a deployed environment, with evidence
-/qa-pilot:publish-results  validate the run, then write verdicts and evidence to the record
-/qa-pilot:qa-review        QA's queue: approve, reject with a reason, or retest
+/qa-pilot:qa-init          write the project's host profile (once)
+/qa-pilot:setup-profiles   save a login per account (once per developer)
+/qa-pilot:generate-tests   author the feature's cases from its task and code
+    QA approves the scenarios, the write policy and the cases
+/qa-pilot:run-tests        run committed specs against a deployed build
+/qa-pilot:publish-results  validate the run, then publish verdicts
+/qa-pilot:qa-review        approve, reject with a reason, or retest
 ```
 
 ## What it refuses to publish
