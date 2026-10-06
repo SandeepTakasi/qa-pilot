@@ -1,5 +1,75 @@
 # Changelog
 
+## 0.4.0 (2026-10-07)
+
+### Upgrading from 0.3.1
+
+One change will stop an existing setup working until you act on it; a second can leave a CI job
+quietly doing the wrong thing.
+
+1. **A production environment must declare `test_account`.** The field is a string of at least
+   20 characters naming the account the runs use and how it is restricted. Without it the
+   whole profile is invalid, so every command and every CI job fails, CI against `qa` or
+   `staging` included: the template validates the profile first, and a profile with a
+   production environment is invalid as a whole whichever environment a job targets. The
+   error reads:
+
+   ```
+   environments.<env>.test_account: required on a production environment, at least 20 characters. Name the account the runs use and how it is restricted (its own tenant, no admin rights, no billing). The write guard is the second layer, not the boundary.
+   ```
+
+   An example value: `test_account: "qa-runner@example.com, own tenant, no admin rights, no billing"`.
+   On `qa` and `staging` the field is optional, and when present it must also be at least 20
+   characters.
+2. **Move a CI pin to v0.4.0 once the account is in place.** A job pinned below 0.4.0 silently
+   ignores `--priority`, since the older `ci-gate.mjs` only reads the flags it knows, and runs
+   every approved spec: a job that sets `PRIORITY: P0` looks like a P0 job and is not. The
+   template now pins `ref: v0.4.0`; re-copy it, and add `test_account` first or the pinned
+   job fails on the profile.
+
+Everything else in this release is backward compatible: `requirements` and `covers` are
+optional, and a cases file without them lints, reports and scores exactly as under 0.3.1;
+`PRIORITY` is empty by default, which runs every approved spec as before.
+
+### Restricted accounts on production
+
+The write guard is the second layer; the account is the boundary. A restricted account (its
+own tenant, no admin rights, no billing) cannot change data however a click is judged, whereas a
+signature list is only as complete as the host's inventory. `test_account` is an attestation:
+nothing checks it against the login a profile saved, so QA owns keeping the account restricted.
+
+### Requirement coverage
+
+- **`requirements` and `covers` in `cases.yaml`.** A feature may declare its requirements, each
+  with acceptance criteria, independently of its cases, and a case claims the criteria it tests
+  with `covers: [<requirement id>/<criterion id>]`. Both keys are optional.
+- **A lint.** `validate-cases.mjs` reports a malformed block, a dangling `covers` entry and
+  `covers` with no `requirements` as errors, and a criterion that no case covers as a
+  warning, since that is a design gap QA decides on, not a mistake.
+- **Four states per criterion**, decided in this order: `uncovered` (no case covers it),
+  `failing` (a covering case failed or was flaky), `proved` (a covering case passed and QA
+  approved the verdict), and `unproved` (everything else, a blocked case included). A
+  failure is never hidden by another case's pass.
+- **`requirement_coverage` in the run summary**, in every publishing mode (`tracker`, `local`
+  and `none`): the criterion counts per state plus `not_proved`, the ids of the requirements
+  with a criterion not yet proved. Ids and counts only, never criterion text or requirement
+  titles, so it is safe on production. It is absent when the cases file declares no
+  requirements or its block is malformed.
+- **The confidence score is unchanged.** Coverage is reported beside it and does not feed it.
+
+### Priority runs
+
+- **`ci-gate.mjs select --cases <cases.yaml> --priority <P0[,P1[,P2]]>`** keeps only the
+  approved specs whose case has one of those priorities. Priority lives in `cases.yaml`, not
+  in the approval ledger, so `--priority` without `--cases` is refused, as are an unknown
+  priority, a missing cases file and an empty list element.
+- **It refuses to go green on nothing.** If no approved spec at that priority is runnable,
+  `select` exits 1 rather than letting the job report success having proved nothing.
+- **The CI template gains a `PRIORITY` setting.** Empty runs everything approved; `P0` runs the
+  P0 cases. The recommended split is P0 on every deploy and everything on the nightly
+  schedule; promoting a case to P0 moves it into the deploy job with no workflow change. See
+  `SETUP-CI.md`.
+
 ## 0.3.1 (2026-10-06)
 
 ### Fixes
