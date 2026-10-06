@@ -23,6 +23,9 @@ environments:                       # required, >= 1 entry
     evidence_upload: tracker | local  # optional. Where traces go. Default: local when kind is
                                     # production or tracker is none, tracker otherwise.
                                     # tracker on a production environment is an error.
+    test_account: string            # REQUIRED when kind is production: at least 20 characters
+                                    # after trimming. Optional on other kinds; when present the
+                                    # same rule applies. See "Production test account".
     sha_source:                     # required: how the DEPLOYED build is identified
       url: <http(s) URL>            # required, e.g. https://qa.example.com/api/version
       json_path: string             # exactly ONE of json_path | regex
@@ -133,10 +136,29 @@ is an **error**, not a warning:
   `on-failure` keeps nothing for passes.
 - a `mutation` block is present with at least one `write_signatures` entry, so the write guard
   knows what a write looks like on this host.
+- that environment's `test_account` is present: a string of at least 20 characters after
+  trimming. See "Production test account" below.
 
 Production also changes how runs publish: the tracker record of a production run carries no
 application data, and features must declare a mutation policy other than `unrestricted`. Those
 rules live in the case and report schemas, where the data they govern lives.
+
+## Production test account
+
+A production run signs in as a real account, and the account's own permissions are the only thing
+that can truly bound what the run does. So the profile names that account and how it is
+restricted.
+
+`environments.<env>.test_account` is a string of at least 20 characters after trimming (leading
+and trailing whitespace does not count). It is **required** when `kind: production`. On `qa` and
+`staging` it is optional, and when present the same length rule applies, so a value means the same
+thing everywhere. A missing, non-string or too-short value is an **error**:
+
+> `environments.<env>.test_account: required on a production environment, at least 20 characters. Name the account the runs use and how it is restricted (its own tenant, no admin rights, no billing). The write guard is the second layer, not the boundary.`
+
+Say which account the runs use and what restricts it, for example: `qa-runner@example.com, its own
+tenant, no admin rights, no billing`. The value is an **attestation**. Nothing checks it against
+the saved login, so it records a claim QA makes and reviews; it does not prove one.
 
 **A URL that looks like production** (an apex domain, or a `prod`/`production`/`live` hostname) on
 an environment whose kind is not `production` is a **warning**, never an error. The kind you
@@ -244,6 +266,14 @@ So a signature can also match the request body.
 `url` and `body` must compile without flags: they are compiled with `new RegExp(pattern)` and
 matched case-sensitively. `deny_controls.text` patterns are the exception, compiled with the `i`
 flag, since control labels vary in case.
+
+**The write guard is the second layer, not the boundary.** On production the boundary is the
+restricted account named by `test_account`: an account that cannot change data cannot be made to
+by a missed button. The guard sits under it. A signature list is only as complete as the host's
+inventory, and a write that no signature matches is a write the guard does not see and lets
+through (see `docs/decisions/0001-write-signatures-default-deny.md` for why lists are written
+default-deny per channel). `test_account` is itself an attestation nothing verifies, so neither
+layer is proof alone; QA owns keeping the account restricted and the signature list complete.
 
 **Unknown keys** under `mutation`, `deny_controls`, a signature entry, `stabilization`, `context`
 or a `sources` entry are **errors**, as unknown top-level keys are: a misspelt `write_signature`
