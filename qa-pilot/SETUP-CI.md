@@ -153,8 +153,21 @@ env:
 
 When `PRIORITY` is non-empty the select step adds
 `--cases testing/$FEATURE/cases.yaml --priority "$PRIORITY"`, quoted so that `P0, P1` stays
-one argument. Priority is not recorded in `approved.json` or `specs.json`, only in
-`cases.yaml`, which is why the filter needs that file. The call is:
+one argument, and adds nothing when it is empty:
+
+```bash
+PRIORITY_ARGS=()
+if [ -n "$PRIORITY" ]; then
+  PRIORITY_ARGS=(--cases testing/$FEATURE/cases.yaml --priority "$PRIORITY")
+fi
+SPECS=$(node $PLUGIN/ci-gate.mjs select \
+  --approved testing/$FEATURE/approved.json \
+  --specs testing/$FEATURE/specs.json \
+  "${PRIORITY_ARGS[@]}")
+```
+
+Priority is not recorded in `approved.json` or `specs.json`, only in `cases.yaml`, which is
+why the filter needs that file. The call is:
 
 ```
 node ci-gate.mjs select --approved <approved.json> --specs <specs.json> \
@@ -172,17 +185,23 @@ The rules, in full:
   the same, `p0` is not `P0`. An unknown value is an error that names it:
   `select: unknown priority "<v>"; use P0, P1 or P2`. An empty element, such as `P0,,P1` or a
   trailing comma, is an unknown value too, reported as `""`. With several bad values, the
-  first unknown value in list order is the one named.
+  first unknown value in list order is the one named. So is `--priority` given with an empty
+  value, or as the last argument with none: it is the unknown value `""`, because the flag's
+  presence is what counts, not its value. A job can never silently fall back to running
+  everything.
 - Each of these errors exits 1, like every other error `ci-gate.mjs` throws. The checks run in
   a fixed sequence, so the first failure is the one reported. They are checked in this order:
   `--approved` or `--specs` missing, `--priority` without `--cases`, an unknown priority value,
   a missing cases file (only with `--priority`), and a missing approval ledger.
-- Filtering happens first. An approved case outside the filter is dropped silently, with no
-  skip line and nothing on stderr, because leaving it out is the job's intent and not a problem.
-- An approved case that is missing from the cases file is skipped with the reason
-  `not in cases.yaml, so its priority is unknown`. One that is present but has no valid
-  priority (`P0`, `P1` or `P2`) is skipped with the reason
-  `no valid priority in cases.yaml, so its priority is unknown`.
+- Filtering happens first, meaning before the hash check. An approved case outside the filter
+  is dropped silently, with no skip line and nothing on stderr, because leaving it out is the
+  job's intent and not a problem.
+- The two unknown-priority skips are decided before the filter, so a case the filter could not
+  place is never dropped silently. An approved case that is missing from the cases file is
+  skipped with the reason `not in cases.yaml, so its priority is unknown`. One that is present
+  but has no valid priority (`P0`, `P1` or `P2`) is skipped with the reason
+  `no valid priority in cases.yaml, so its priority is unknown`. A case with priority `P3`
+  under `--priority P0` therefore gets a skip line, not a silent drop.
 - The usual hash check then runs on whatever remains, so a drifted spec is still skipped and
   still printed with both hashes.
 - If nothing is runnable at that priority, `select` exits 1 with

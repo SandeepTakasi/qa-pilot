@@ -32,6 +32,10 @@ jobs:
       QA_ENV: qa                              # EDIT: an environment key from your profile
       APP: storefront                         # EDIT: an app key from your profile
       PROFILE: qa-pilot.config.yaml           # EDIT if your profile lives elsewhere
+      # Recommended split: a deploy-triggered job with PRIORITY: P0 (the cases that must
+      # never break, fast), and the nightly scheduled job with it empty (everything).
+      # One template serves both: copy the workflow, or use two jobs.
+      PRIORITY: ''                            # EDIT: P0 on a deploy-triggered job; empty runs everything approved
       PLUGIN: .qa-pilot-plugin/qa-pilot/scripts
 
     steps:
@@ -44,7 +48,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: <owner>/<qa-pilot-repo>   # EDIT
-          ref: v0.3.0                            # EDIT: pin a tag or SHA
+          ref: v0.4.0                            # EDIT: pin a tag or SHA; PRIORITY needs 0.4.0 or newer
           path: .qa-pilot-plugin
           # token: ${{ secrets.QA_PILOT_REPO_TOKEN }}   # only if that repo is private
 
@@ -130,11 +134,19 @@ jobs:
 
       # Runs exactly what QA approved, and only while the spec still matches what they
       # approved. No ClickUp call: approved.json is committed.
+      # When PRIORITY is set, only approved cases at that priority run. Priority lives in
+      # cases.yaml, not in approved.json, so the filter needs that file. Quoted, so a
+      # value such as `P0, P1` stays one argument. An older plugin ignores --priority.
       - name: Select the approved specs
         run: |
+          PRIORITY_ARGS=()
+          if [ -n "$PRIORITY" ]; then
+            PRIORITY_ARGS=(--cases testing/$FEATURE/cases.yaml --priority "$PRIORITY")
+          fi
           SPECS=$(node $PLUGIN/ci-gate.mjs select \
             --approved testing/$FEATURE/approved.json \
-            --specs testing/$FEATURE/specs.json)
+            --specs testing/$FEATURE/specs.json \
+            "${PRIORITY_ARGS[@]}")
           # Belt and braces. An empty SPECS would make the next step
           # `npx playwright test` with no arguments, which runs every spec in the repo,
           # including ones QA never approved, and calls the result a regression pass.
