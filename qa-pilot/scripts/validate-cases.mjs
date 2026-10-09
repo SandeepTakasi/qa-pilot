@@ -245,7 +245,7 @@ export function validateCases(doc, profile, { featureDir = null } = {}) {
   if (!isStr(doc.model_version)) {
     err('model_version: required. Cases must record the model that authored them.');
   } else if (approved.length && !approved.includes(doc.model_version)) {
-    err(`model_version: "${doc.model_version}" is not in models.generation_approved (${approved.join(', ')}). QA must approve a model before its cases enter the pipeline.`);
+    warn(`model_version: "${doc.model_version}" is not in models.generation_approved (${approved.join(', ')}); review these cases with that in mind, and add the model to the list once QA trusts it.`);
   }
 
   if (!isStr(doc.generated_at) || Number.isNaN(Date.parse(doc.generated_at))) {

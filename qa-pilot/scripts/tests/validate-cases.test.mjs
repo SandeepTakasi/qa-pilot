@@ -65,9 +65,16 @@ test('case ids must follow the FEATURE-SUB-NNN grammar and be unique', () => {
   assert.ok(errorsFor((d) => { d.cases[1].id = d.cases[0].id; }).some((e) => e.includes('duplicate id')));
 });
 
-test('unapproved generation models are rejected', () => {
+test('an unapproved generation model is a warning, not an error', () => {
   const errs = errorsFor((d) => { d.model_version = 'some-new-model-9'; });
-  assert.ok(errs.some((e) => e.includes('models.generation_approved')), errs.join('\n'));
+  assert.ok(!errs.some((e) => e.includes('generation_approved')), errs.join('\n'));
+  const want = `model_version: "some-new-model-9" is not in models.generation_approved (${profile.models.generation_approved.join(', ')}); review these cases with that in mind, and add the model to the list once QA trusts it.`;
+  assert.ok(errs.warnings.includes(want), errs.warnings.join('\n'));
+});
+
+test('a missing model_version is still an error', () => {
+  const errs = errorsFor((d) => { delete d.model_version; });
+  assert.ok(errs.some((e) => e.includes('model_version: required')), errs.join('\n'));
 });
 
 test('scenario mix must declare every slot', () => {

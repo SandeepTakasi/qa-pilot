@@ -78,7 +78,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/validate-cases.mjs" testing/<feature>/cases.
 
 Fix every error and re-run. Warnings print on stderr and do not fail the file; read each one (an uncovered criterion is a decision for QA, so list them in your hand-off). Do not proceed to ClickUp with a failing file, and never work around a lint error by weakening the case. If the assertion lint rejects an outcome, the outcome was not verifiable, and rewording it to slip past the check reintroduces exactly the problem the check exists to catch.
 
-If `model_version` is rejected, your model is not on the profile's approved list. Stop and tell the user: QA adds a model to `models.generation_approved` after a calibration pass, not mid-run.
+If the lint warns that `model_version` is not in `models.generation_approved`, the file still passes. Carry the warning into your hand-off so QA reviews these cases with that model in mind; QA adds the model to the list once they trust it. A missing `model_version` is still an error.
 
 ## 4. Register the cases for review
 

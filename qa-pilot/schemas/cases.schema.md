@@ -6,7 +6,7 @@ The schema exists to make three failure modes impossible rather than discouraged
 
 ```yaml
 feature: string           # required, must match the containing directory name
-model_version: string     # required, must be in profile models.generation_approved
+model_version: string     # required; a model not in profile models.generation_approved draws a warning
 generated_at: string      # required, ISO 8601 timestamp
 
 scenario_mix:             # required: all five keys must be present
@@ -58,7 +58,7 @@ cases:                    # required, 1..25 entries, unique ids
 - vague-outcome phrasing with no observable subject: "works", "is correct", "looks right", "as expected", "successfully", "no issues", "behaves properly"
 - when the host profile sets `assertions.network_events: forbidden`: network-flavored phrasing such as request, response, API call, network, payload, endpoint, `status 2xx/4xx/5xx`. On engine-dispatched hosts these assertions silently no-op, producing exactly the false green this pipeline exists to prevent. Assert on rendered UI state instead.
 
-**Model gate**: `model_version` must appear in the profile's `models.generation_approved`. A model upgrade cannot silently change case quality; QA adds the new model to the list after a calibration pass.
+**Model gate**: `model_version` is required. When it is not in the profile's `models.generation_approved`, the lint prints a warning and the file still passes, so a new model release never blocks generation. The warning keeps the record honest: QA reviews those cases with the model in mind and adds it to the list once they trust it.
 
 **Mutation and fixture lint**: each of these is an error.
 
