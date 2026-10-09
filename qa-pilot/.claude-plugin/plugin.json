@@ -1,7 +1,7 @@
 {
   "name": "qa-pilot",
   "displayName": "QA-Pilot",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Evidence-first E2E feature testing: QA-approved test cases, verdicts only from committed Playwright runs against registered deployed environments, a mandatory Playwright trace and deploy SHA per case, a write guard and local-only evidence for production runs, and a case lifecycle in ClickUp or in local files. Portable via a per-project host profile.",
   "author": {
     "name": "Venkata Sandeep Takasi"

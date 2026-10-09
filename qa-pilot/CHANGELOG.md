@@ -1,5 +1,144 @@
 # Changelog
 
+## 0.4.1 (2026-10-09)
+
+A patch release that fixes five flaws found in 0.4.0 before any host relies on it. QA approvals
+never carried forward, so CI selected nothing; traces, which carry the session and can carry a
+long-lived refresh token, went to the tracker by default off production; CI stayed green while
+approved specs were skipped; nothing checked that a generated spec asserts anything; and a few
+settings were dead or too strict. Nothing here changes a verdict, the publish gate's other
+rules, the write guard or the confidence score.
+
+### Upgrading from 0.4.0
+
+Several of these change behaviour without failing loudly, so read all of them before moving
+the CI pin.
+
+1. **The default off production is now `evidence_upload: reference`.** The tracker still gets
+   every per-case field and the failure text, and no longer gets the trace file; each case
+   carries `run_id`, `trace_path` and `trace_sha256` instead, and the trace stays on the
+   machine that ran it. In ClickUp, create the three text fields `Run ID`, `Trace Path` and
+   `Trace SHA256` if you have not (`SETUP-CLICKUP.md`). Add `testing/*/runs/` to `.gitignore`
+   in the host repo.
+2. **To keep attachments, opt in per environment.** Set `evidence_upload: tracker` on that
+   environment, after turning on Private Attachment Links in ClickUp (Settings, Advanced
+   Permissions) and using a restricted account. Production still refuses both `tracker` and
+   `reference`: its evidence is `local`.
+3. **`/qa-pilot:run-tests` now stops on a non-production run until `testing/*/runs/` is
+   gitignored.** In 0.4.0 only production checked. The check now covers every run whose
+   evidence stays on the machine, which is `reference` and `local`.
+4. **Rule 6 now applies off production.** `validate-report.mjs` pins evidence for `reference`
+   as it did for `local`, so a report whose traces sit outside the run directory or lack
+   `trace_sha256` is refused, where 0.4.0 accepted it under `tracker`. Parse reports from the
+   run directory with `parse-report.mjs` as usual and nothing changes.
+5. **`bug-report.mjs` without `--profile` now files qa and staging bugs as `reference`:** the
+   failure text and the trace's path and sha256, no attachment. It was `tracker`. Production
+   without a profile is still refused.
+6. **Cases approved under 0.4.0 have no approval ledger entry, so none of them run in CI.**
+   For each case that is approved now, record its hash once, using the `report.json` of the
+   last run QA reviewed. That file sits in the gitignored run directory on the machine that
+   ran it, and it must have been parsed with `--specs` so it carries `spec_sha`:
+
+   ```
+   node case-status.mjs --record-approvals --verdicts testing/<feature>/runs/<run_id>/report.json --approved testing/<feature>/approved.json --ids <A,B,...>
+   ```
+
+   Write the `approved_ledger` it prints to `testing/<feature>/approved.json` and commit that
+   file. `--approved` is required every time, so an earlier ledger is never overwritten by
+   mistake; a path that does not exist yet starts a new ledger with a warning. It records the
+   hash of that run's spec, so a case whose last reviewed run was not a pass records nothing
+   and an approved failure is removed from the ledger. Or skip the command and re-approve
+   each case in `/qa-pilot:qa-review`, which now records the hash itself. Cases whose report
+   is no longer on any machine stay approved in the tracker but do not run in CI until
+   recorded.
+7. **An edited spec now fails CI until QA re-approves it.** Its hash no longer matches the
+   ledger, so `select` skips it and the strict template fails on the skip. To retire a case,
+   delete its key from `approved.json`; a case dropped from the ledger is not a skip.
+8. **Lint and fix every approved spec before switching to the strict CI template.** Existing
+   specs may fail the new rules (`expect-expect`, `no-wait-for-timeout`, `no-skipped-test`,
+   `no-focused-test`), and fixing one changes its hash, so lint them all once, fix what it
+   reports without weakening an assertion, and re-approve, all before you copy the template in.
+   Keep each spec's assertions in the test body: a helper that holds the only `expect()` hides
+   it from `expect-expect`.
+9. **Re-copy `templates/qa-pilot-ci.yml` and add the lint setup.** The template now pins
+   `ref: v0.4.1`, sets `MAX_SKIPPED: '0'`, lints the selected specs and uploads the run
+   directory as an artifact. Re-copy it rather than patching your copy. Then add the four dev
+   dependencies `eslint@9`, `eslint-plugin-playwright`, `typescript-eslint` and `typescript`,
+   and commit `templates/eslint.qa-pilot.config.mjs` at the root of the host repo as
+   `eslint.qa-pilot.config.mjs`. `/qa-pilot:run-tests` copies it there if it is missing.
+10. **Edit the ESLint config's `files` list to cover every app's `spec_dir`.** It holds one
+    `<spec_dir>/**/*.spec.ts` glob per app and ships with `e2e/**/*.spec.ts`. CI passes file
+    paths, and ESLint ignores a file no glob covers and still exits 0, so the template fails
+    the lint step when it prints `File ignored`. `/qa-pilot:run-tests` passes directories
+    instead, where a glob that matches nothing exits 2: list only directories that exist.
+11. **CI artifacts upload only on a private repository.** The template reads the repository's
+    visibility and skips the upload when the repository is public or the visibility cannot be
+    read, since anyone could download the artifact and a trace can carry a refresh token. A
+    public repository that relied on 0.4.0's tracker-mode upload gets no artifact now; the
+    step summary says so.
+12. **`clickup.plan_tier` is optional and the model list only warns.** A profile that still
+    sets `plan_tier` stays valid, and a value outside `free | unlimited | business |
+    enterprise` is still an error. A case stamped with a `model_version` outside
+    `models.generation_approved` now produces a warning instead of an error; a missing
+    `model_version` is still an error.
+
+Everything else is backward compatible: a host that sets nothing new gets the safer defaults
+above, and `--max-skipped` is optional on `ci-gate.mjs select` (absent, it behaves as in 0.4.0).
+A CI job still pinned below 0.4.1 silently ignores `--max-skipped`, since the older `ci-gate.mjs`
+only reads the flags it knows, so move the pin together with the template.
+
+### Approvals now carry forward
+
+0.4.0 never wrote a case's first ledger entry, so no approval survived to CI and `select`
+chose nothing. `/qa-pilot:qa-review` now records the spec hash when QA approves a result:
+after Approve decisions on a result review (never on a design review) it runs
+`case-status.mjs --record-approvals` once per run, against that run's `report.json`, and
+commits the updated `testing/<feature>/approved.json`. A pass records the hash; approving a
+confirmed failure records the verdict and removes the entry rather than baselining a
+regression. A case missing from the report, or a pass with no `spec_sha`, is refused with a
+message naming it, and a ledger file that is not valid JSON or not a plain object is refused
+instead of replaced. `--transitions` at publish is unchanged.
+
+### Evidence stays off the tracker by default
+
+`evidence_upload` is now `tracker | reference | local`. `reference`, the default off
+production, sends the tracker the same fields and run summary as `tracker` but never the
+trace, plus each case's `run_id`, `trace_path` and `trace_sha256`; the summary's reviewer note
+says to verify the hash and open the trace with `npx playwright show-trace <path>`. QA reviews
+`reference` and `local` traces on the machine that ran them, verified by sha256, and prefers
+`show-trace` to the hosted viewer for any trace that carries credentials. `tracker` remains
+as an opt-in. Under `tracker: none`, any explicit `evidence_upload` other than `local` draws
+the warning `environments.<env>.evidence_upload: <v> is ignored under tracker: none; evidence
+stays local`. The setup guides now state the real risk: long-lived refresh tokens stay
+valid until the account is disabled, deleted or changed, so the old "short-lived" advice is
+gone.
+
+### CI fails on skipped specs and lints the specs it runs
+
+- **`ci-gate.mjs select --max-skipped <n>`** refuses, exit 1 and no run list on stdout, when
+  more than `n` approved specs were skipped, because the job would otherwise report green on
+  part of the suite. A value that is not a whole number, 0 or more, throws. Cases the
+  priority filter drops are not skips. The template sets `MAX_SKIPPED: '0'`; raise it
+  deliberately to tolerate drift. The step summary is still written when `select` fails.
+- **A spec lint.** `templates/eslint.qa-pilot.config.mjs` adopts `eslint-plugin-playwright`
+  with `expect-expect`, `no-wait-for-timeout`, `no-skipped-test` and `no-focused-test` as
+  errors. `/qa-pilot:run-tests` lints the feature's specs before a verdict run and fixes any
+  error without weakening an assertion; the CI template lints the selected specs after
+  `select`. `SETUP-CI.md` also recommends a pull request check that flags weakened or
+  deleted tests.
+
+### Relaxed configuration
+
+- **`clickup.plan_tier` is optional.** Nothing ever read it; `/qa-pilot:qa-init` no longer
+  asks for it.
+- **The model gate warns.** A new model release no longer blocks generation: a `model_version`
+  not in `models.generation_approved` yields `model_version: "<m>" is not in
+  models.generation_approved (<list>); review these cases with that in mind, and add the
+  model to the list once QA trusts it.` The profile still requires a non-empty list.
+- **Dead rules removed.** `run-tests` no longer writes `run-log.json` (nothing read it; the
+  hand-off now says which new specs had three consecutive green runs), and the undefined
+  "false-pass threshold" is gone from `qa-review` and `setup-profiles`.
+
 ## 0.4.0 (2026-10-07)
 
 ### Upgrading from 0.3.1
