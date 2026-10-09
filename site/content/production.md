@@ -8,8 +8,8 @@ Every environment in the host profile carries a `kind`. The tool no longer guess
 
 | `kind` | Means | Consequence |
 |---|---|---|
-| `qa` | A shared test deployment | Traces upload to the tracker by default. |
-| `staging` | A pre-release deployment | Traces upload to the tracker by default. |
+| `qa` | A shared test deployment | Traces stay on the executor's machine by default (`evidence_upload: reference`); attaching them to the tracker is an opt-in. |
+| `staging` | A pre-release deployment | The same as `qa`. |
 | `production` | Real users and real data | Every rule on this page applies. |
 
 A URL that looks like production on an environment whose kind is not `production` is a warning, never an error: the kind you declared wins, and the warning exists so a mistyped kind is noticed. The old `allow_production` switch was retired in 0.3.0. A profile that still sets it fails with `retired in 0.3.0; declare kind: production`.
@@ -18,7 +18,7 @@ A URL that looks like production on an environment whose kind is not `production
 
 When any environment has `kind: production`, the profile is valid only if all four of these hold. Each is an error, not a warning:
 
-- that environment's `evidence_upload` is `local` (the default for it), and never `tracker`;
+- that environment's `evidence_upload` is `local` (the default for it), and never `tracker` or `reference`;
 - `evidence.capture` is `always`;
 - a `mutation` block is present with at least one `write_signatures` entry;
 - that environment's `test_account` is present: a string of at least 20 characters after trimming.
@@ -82,14 +82,16 @@ On `qa` and `staging` it is optional, and a value that is present follows the sa
 
 ## Evidence stays local
 
-A Playwright trace records the session credential that authenticated the run, every request and response body the run touched, and DOM snapshots of every page state. On production that is live data, so a production trace never leaves the machine that ran it:
+A Playwright trace records the session credential that authenticated the run, every request and response body the run touched, and DOM snapshots of every page state. The credential can include a long-lived refresh token: a Firebase refresh token stays valid until the account is disabled, deleted or changed, so a leaked trace is not a leaked token that soon expires. On production that is live data, so a production trace never leaves the machine that ran it:
 
-- **The profile refuses to upload it.** `evidence_upload: tracker` on a production environment is a profile error. The effective value defaults to `local`.
-- **The run step refuses to commit it.** `/qa-pilot:run-tests` stops before anything runs unless the run directory is gitignored. It checks with `git check-ignore -q testing/<feature>/runs/x` and tells you to ignore `testing/*/runs/` when that fails.
+- **The profile refuses to upload it.** `evidence_upload: tracker` or `evidence_upload: reference` on a production environment is a profile error. The effective value defaults to `local`.
+- **The run step refuses to commit it.** `/qa-pilot:run-tests` stops before anything runs unless the run directory is gitignored. It checks with `git check-ignore -q testing/<feature>/runs/x` and tells you to ignore `testing/*/runs/` when that fails. The same check applies off production whenever the evidence stays on the machine (`reference` or `local`).
 - **CI refuses to run it.** See [CI refuses production](#ci-refuses-production).
 - **The tracker never receives it.** See [What the tracker receives](#what-the-tracker-receives).
 
 Because the trace stays on the executor's machine, it is pinned by hash. The gate requires a `trace_sha256` for every locally kept trace, re-hashes the file, and refuses a mismatch (rule 6). A reviewer finds the evidence at the path the tracker records and checks it against the hash. The [Setting up ClickUp](../../qa-pilot/SETUP-CLICKUP.md) guide lists what a trace contains.
+
+Off production the same applies by default. An environment's `evidence_upload` is `reference` unless set: the tracker receives the verdict fields and each trace's path and sha256, and never the file. `tracker`, which attaches the trace to the case task, is an opt-in per environment. Make it only after turning on Private Attachment Links in ClickUp, because attachment links are public without it, and only with a restricted test account. If a trace does leak, disable or rotate that test account.
 
 ## Full capture
 
@@ -182,7 +184,7 @@ Unknown keys under `mutation`, `deny_controls` or a signature are errors, so a m
 - **Rule 2.** The guard was live. Every executed case needs a record with `installed: true` and `routed_requests > 0`, and its `write_signatures` count must equal the number in the profile.
 - **Rule 3.** A read-only run that recorded any write is refused, for example `rule 3: read-only run recorded 2 write(s) in cases[CHECKOUT-ORDER-003]`.
 - **Rule 4.** A scoped-write run that was blocked outside its scope is refused.
-- **Rule 6.** A locally kept trace needs a matching `trace_sha256`, and a relative path that stays inside the run directory.
+- **Rule 6.** A trace kept on the machine (`reference` or `local`) needs a matching `trace_sha256`, and a relative path that stays inside the run directory.
 
 Each refusal message starts with its rule number, so a test or a reviewer can tell which rule refused. Nothing is written to the tracker when any of them fires.
 
@@ -211,7 +213,7 @@ The CI template reads the environment's `kind` from the profile and stops if it 
 
 ## Reviewing production evidence
 
-Nothing is attached to the tracker, so QA reviews production traces on the executor's machine, or at a location the host chooses, and checks each against its `trace_sha256`. A trace opens by drag-and-drop at <https://trace.playwright.dev>, which runs entirely in the browser and transmits nothing, or locally with `npx playwright show-trace`. Treat the trace as a credential wherever it is opened.
+Nothing is attached to the tracker, so QA reviews production traces on the executor's machine, or at a location the host chooses, and checks each against its `trace_sha256`. A trace opens locally with `npx playwright show-trace <path>`, which is the way to open any trace that can carry a credential, or by drag-and-drop at <https://trace.playwright.dev>, which runs entirely in the browser and transmits nothing. Treat the trace as a credential wherever it is opened.
 
 The sampling quotas cannot be met from the tracker alone. A reviewer with no access to the executor's machine cannot meet them, and `/qa-pilot:qa-review` records them as unmet rather than reviewing the tracker record as if it were evidence. The quotas themselves are in the [reviewing guide](../../qa-pilot/skills/qa-review/SKILL.md).
 

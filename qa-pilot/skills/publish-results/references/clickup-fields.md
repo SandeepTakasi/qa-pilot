@@ -67,13 +67,23 @@ apart breaks it.
 | App | dropdown | `app` |
 | Executor | text or person | `executor` |
 | Run Date | date | `finished_at` |
-| Trace | **attachment** | `cases[].trace`, the one evidence artifact |
+| Trace | **attachment** | `cases[].trace`, the one evidence artifact, only under `evidence_upload: tracker` |
 | Flake Count | number | `cases[].retries` |
 | Model Version | text | `model_version` |
 
 `API Mode` earns its place: it is what makes "this pass came from a seeded mock backend" auditable after the fact rather than a thing someone has to remember.
 
-Those values arrive already named: on a `tracker`-mode payload, each case's `fields` object uses exactly the field names above, and `attach` names the trace file. Write them as given.
+Those values arrive already named: on a `tracker`-mode or `reference`-mode payload, each case's `fields` object uses exactly the field names above, and under `tracker` `attach` names the trace file. Write them as given.
+
+### When evidence is a reference
+
+The default off production is `evidence_upload: reference`. The payload carries the same per-case fields as `tracker` mode and the same run summary, and never the trace file: nothing is attached. Each case also carries three more values, written to the fields below, and the summary's reviewer note says traces stay on the machine that ran them, to be verified by sha256 and opened with `npx playwright show-trace <path>`.
+
+| Field | Type | Payload key |
+|---|---|---|
+| Run ID | text | `run_id` |
+| Trace Path | text | `trace_path`: relative to `testing/<feature>/runs/<run_id>/` on the executor's machine |
+| Trace SHA256 | text | `trace_sha256`: the full digest, so a reviewer can verify the file with `shasum -a 256` before opening it |
 
 ### When evidence stays local
 
@@ -88,15 +98,19 @@ A run whose environment keeps evidence local, which every production run does, s
 | Trace Path | text | `trace_path`: relative to `testing/<feature>/runs/<run_id>/` on the executor's machine |
 | Trace SHA256 | text | `trace_sha256`: the full digest, so a reviewer can verify the file with `shasum -a 256` before opening it |
 
-Status comes from `target_status`. Nothing is attached, and API Mode, App, Executor, Run Date, Flake Count and Model Version are left as they were. `Run ID`, `Trace Path` and `Trace SHA256` are created once alongside the other fields (see `../../../SETUP-CLICKUP.md`); a host that never runs on production can skip them.
+Status comes from `target_status`. Nothing is attached, and API Mode, App, Executor, Run Date, Flake Count and Model Version are left as they were. `Run ID`, `Trace Path` and `Trace SHA256` are created once alongside the other fields (see `../../../SETUP-CLICKUP.md`); they are needed by default, because `reference` writes them too. Only a host that opts every environment in to `evidence_upload: tracker` can skip them.
 
-## Evidence lives in ClickUp, unless it stays local
+## Evidence stays on the machine, unless an environment opts in
 
-One artifact per case per run: **`trace.zip`, attached to the case task**, when the environment's effective `evidence_upload` is `tracker`. When it is `local`, nothing is attached: the trace stays in the run directory and the case task records its path and sha256 instead (above).
+One artifact per case per run: **`trace.zip`**. Where it goes depends on the environment's effective `evidence_upload`:
+
+- `reference` (the default off production): nothing is attached. The trace stays in the run directory and the case task records its path and sha256 next to the usual fields (above).
+- `tracker` (opt-in per environment): the trace is attached to the case task. Turn on Private Attachment Links and use a restricted test account first: a trace can carry a long-lived refresh token, which stays valid until the account is disabled, deleted or changed.
+- `local` (always on production): nothing is attached and no application data is sent; the case task records the path and sha256 only.
 
 A Playwright trace contains the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log. Attaching the video and console separately stores the same bytes twice and splits one investigation across three files, so the trace supersedes both.
 
-Reviewers open it by dragging it onto <https://trace.playwright.dev>. Playwright's docs are explicit that the viewer "loads the trace entirely in your browser and does not transmit any data externally": no upload, no account, nothing leaves the reviewer's machine. `npx playwright show-trace <file>` works too.
+Reviewers open a trace with `npx playwright show-trace <path>`, which keeps it on their machine, and for any trace that can carry a credential this is the way to open it. Dragging it onto <https://trace.playwright.dev> also works: Playwright's docs are explicit that the viewer "loads the trace entirely in your browser and does not transmit any data externally".
 
 ### Limits that shaped this
 
@@ -111,9 +125,9 @@ On a 429: wait 60 seconds and resume where you stopped. Never restart the whole 
 
 ### Two operational requirements
 
-**Turn on Private Attachment Links** (Settings → Advanced Permissions; available on all plans, **off by default**). Without it, every attachment URL is public, unauthenticated and non-expiring: security by unguessable string alone. Traces carry application state and can carry tokens. The trade-off: `npx playwright show-trace <url>` stops working against ClickUp URLs, because it sends no auth header, so reviewers download first and then open.
+**Before opting an environment in to `evidence_upload: tracker`, turn on Private Attachment Links** (Settings → Advanced Permissions; available on all plans, **off by default**). Without it, every attachment URL is public, unauthenticated and non-expiring: security by unguessable string alone. Traces carry application state and can carry long-lived tokens, so use a restricted account too; a leaked trace means disabling or rotating that account. The trade-off: `npx playwright show-trace <url>` stops working against ClickUp URLs, because it sends no auth header, so reviewers download first and then open.
 
-**Retention is manual.** ClickUp's API has no delete-attachment endpoint: deleting the parent task is the only programmatic lever, and case tasks must persist because the status lifecycle lives on them. So traces accumulate at roughly 1 to 5 MB per case-run and are pruned by hand from the task's attachment list. Budget a quarterly pass, oldest passing runs first; keep every failure. Nobody re-opens a passing trace once QA has approved it.
+**Retention is manual, under `tracker`.** ClickUp's API has no delete-attachment endpoint: deleting the parent task is the only programmatic lever, and case tasks must persist because the status lifecycle lives on them. So traces accumulate at roughly 1 to 5 MB per case-run and are pruned by hand from the task's attachment list. Budget a quarterly pass, oldest passing runs first; keep every failure. Nobody re-opens a passing trace once QA has approved it.
 
 ## Run-summary comment
 

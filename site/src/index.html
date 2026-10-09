@@ -159,7 +159,7 @@ summary: { pass: 21, fail: 0, flaky: 1, blocked: 2 }</code></pre>
     <div class="split__text">
       <p class="lede">One artifact per case per run: <code>trace.zip</code>. It carries the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log, so there is no separate video and no separate console log to keep in step.</p>
       <p>Reviewers drag it onto <a href="https://trace.playwright.dev" rel="noopener">trace.playwright.dev</a>, which runs entirely in the browser and transmits nothing. No second storage system, and no extra credentials.</p>
-      <p>With ClickUp, the trace is attached to the case&rsquo;s task. Without it, set <code>tracker: none</code>: approvals live in <code>testing/&lt;feature&gt;/statuses.json</code>, evidence stays local, and bugs are markdown files in the run directory.</p>
+      <p>With ClickUp, the case&rsquo;s task gets the verdict fields and the trace&rsquo;s path and sha256, and the trace stays on the machine that ran it (<code>evidence_upload: reference</code>); attaching it is an opt-in, for a restricted test account and Private Attachment Links only. Without ClickUp, set <code>tracker: none</code>: approvals live in <code>testing/&lt;feature&gt;/statuses.json</code>, evidence stays local, and bugs are markdown files in the run directory.</p>
     </div>
     <div class="split__media">
       <figure class="artifact">
@@ -189,7 +189,7 @@ summary: { pass: 21, fail: 0, flaky: 1, blocked: 2 }</code></pre>
   <div class="split">
     <div class="split__text">
       <ul>
-        <li><strong>Evidence stays local.</strong> A trace carries the session and every request body it touched, so a production trace is never attached to the tracker, never uploaded by CI, and never committed. <code>/qa-pilot:run-tests</code> refuses unless the run directory is gitignored.</li>
+        <li><strong>Evidence stays local.</strong> A trace carries the session, which can include a long-lived refresh token, and every request body it touched, so a production trace is never attached to the tracker, never uploaded by CI, and never committed. <code>/qa-pilot:run-tests</code> refuses unless the run directory is gitignored.</li>
         <li><strong>Full capture.</strong> Every case keeps a trace. On production a pass is the claim most worth checking, so <code>evidence.capture</code> must be <code>always</code>.</li>
         <li><strong>A declared write policy and a live guard.</strong> A production feature must be <code>read-only</code> or <code>scoped-write</code>, and the host profile says what a write looks like on that host. The guard judges clicks in the page before the app sees them, and requests at the network layer. It is the second layer under the restricted account, never the boundary.</li>
       </ul>

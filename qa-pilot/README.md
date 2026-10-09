@@ -34,7 +34,7 @@ The publish step is a script, not a judgement call, and it rejects each of these
 An environment says what it is: `kind: qa | staging | production`, declared rather than guessed from the hostname. Production is allowed, under rules that are refusals, not advice:
 
 - **A restricted account.** A production environment must declare `test_account`: the account the runs sign in as and how it is restricted (its own tenant, no admin rights, no billing), at least 20 characters after trimming. Without it the whole profile is invalid. The write guard is the second layer under that account, never the boundary, and `test_account` is an attestation nothing verifies.
-- **Evidence stays local.** Traces carry the session and every request body they touched, so a production trace is never attached to the tracker, never uploaded by CI, and never committed (`/run-tests` refuses unless the run directory is gitignored). The tracker record carries no application data: case IDs, verdicts, build, run, and each trace's path and sha256 so a reviewer can find and verify it on the executor's machine.
+- **Evidence stays local.** Traces carry the session, which can include a long-lived refresh token, and every request body they touched, so a production trace is never attached to the tracker, never uploaded by CI, and never committed (`/run-tests` refuses unless the run directory is gitignored). The tracker record carries no application data: case IDs, verdicts, build, run, and each trace's path and sha256 so a reviewer can find and verify it on the executor's machine.
 - **Full capture.** Every case keeps a trace.
 - **A declared write policy and a live guard.** A production feature must be `read-only` or `scoped-write`, and the host profile must say what a write looks like on that host (`mutation.write_signatures`). The guard works without the specs' cooperation: clicks are judged in the page before the app sees them, requests at the network layer.
 
@@ -50,15 +50,25 @@ An agentic browser session is a good example of the same idea. It cannot produce
 
 ## Evidence
 
-One artifact per case per run: **`trace.zip`, attached to the case's ClickUp task**, or kept on the executor's machine for production and any environment set to `evidence_upload: local`. A trace carries the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log, so it replaces uploading a video and a console log separately, which would store the same bytes twice and split one investigation across three files.
+One artifact per case per run: **`trace.zip`**. A trace carries the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log, so it replaces uploading a video and a console log separately, which would store the same bytes twice and split one investigation across three files.
 
-Reviewers drag it onto <https://trace.playwright.dev>, which runs entirely in the browser and transmits nothing. No second storage system, no extra credentials, and the evidence sits on the task the reviewer is already looking at.
+Where it goes is the environment's `evidence_upload`, one of three values:
+
+| Value | What happens |
+|---|---|
+| `reference` | The default off production. The case task receives the usual fields plus Run ID, Trace Path and Trace SHA256, and the trace stays on the machine that ran it. |
+| `tracker` | Opt-in per environment: the trace is attached to the case's ClickUp task. |
+| `local` | Always on production, and the value under `tracker: none`: no application data leaves the machine. |
+
+Writing `evidence_upload: reference` is optional, since it is the default. Reviewers verify a kept trace by its sha256 and open it with `npx playwright show-trace <path>`, which runs on their own machine.
+
+A trace can carry the session and a long-lived refresh token (Firebase refresh tokens stay valid until the account is disabled, deleted or changed), and ClickUp attachment links are public unless Private Attachment Links is on. So opt an environment in to `tracker` only after turning that on and using a restricted test account, and if a trace leaks, disable or rotate that account.
 
 Without ClickUp, set `tracker: none` in the profile: approvals live in `testing/<feature>/statuses.json`, all evidence stays local, and bugs are markdown files in the run directory.
 
-With ClickUp, you set up its side once, by hand. The plugin writes into it but does not create it. [SETUP-CLICKUP.md](./SETUP-CLICKUP.md) is the exact checklist: the statuses, the custom fields and their options, and the two settings that matter (**Private Attachment Links**, off by default and leaving attachment URLs public; and a **per-developer API token**, since the 100 requests/minute budget is per token, not per person). Fifteen minutes, once per workspace. `/qa-init` reminds you and fills in the host-specific dropdown values.
+With ClickUp, you set up its side once, by hand. The plugin writes into it but does not create it. [SETUP-CLICKUP.md](./SETUP-CLICKUP.md) is the exact checklist: the statuses, the custom fields and their options (including Run ID, Trace Path and Trace SHA256, which the default now needs), and the two settings that matter (**Private Attachment Links**, off by default and leaving attachment URLs public; and a **per-developer API token**, since the 100 requests/minute budget is per token, not per person). Fifteen minutes, once per workspace. `/qa-init` reminds you and fills in the host-specific dropdown values.
 
-Retention is manual, because ClickUp has no delete-attachment endpoint, so traces are pruned from task attachment lists by hand. Budget a quarterly pass: oldest passing runs first, keep every failure.
+Retention is manual for environments on `tracker`, because ClickUp has no delete-attachment endpoint, so uploaded traces are pruned from task attachment lists by hand. Budget a quarterly pass: oldest passing runs first, keep every failure.
 
 ## Portability
 
@@ -79,7 +89,7 @@ Requires Node ≥ 20 (scripts are zero-dependency ESM) and, in the host repo, Pl
 
 | Stage | Model |
 |---|---|
-| `generate-tests` | **The strongest available.** Case design is the only stage where model judgment decides quality, and the 25-case cap makes it cheap. The host profile's `models.generation_approved` gates this: cases stamped with an unapproved model are rejected by the validator, so a model upgrade cannot quietly change what the suite tests. |
+| `generate-tests` | **The strongest available.** Case design is the only stage where model judgment decides quality, and the 25-case cap makes it cheap. The host profile's `models.generation_approved` gates this: cases stamped with a model not on the list get a warning from the validator, not an error, so a model release never blocks generation while the record still shows which cases came from an unapproved model. |
 | `run-tests` | Sonnet-class for ordinary spec authoring; reach higher for cross-app multi-context specs and stubborn flake triage. |
 | everything else | Any current model. Discovery, mechanical writes, and presentation. |
 
@@ -96,8 +106,9 @@ hooks/             ClickUp write guard: QA-Pilot's own case tasks change only th
 SETUP-CLICKUP.md   one-time workspace setup you do by hand
 DECISIONS.md       what this plugin enforces on a host, and what swapping it would cost
 SETUP-CI.md        running the approved suite unattended, and what CI cannot do
-templates/         the write guard (write-guard.mjs, write-guard.fixture.ts) and a
-                   GitHub Actions workflow, to copy into a host repo
+templates/         the write guard (write-guard.mjs, write-guard.fixture.ts), a GitHub
+                   Actions workflow and the spec lint config (eslint.qa-pilot.config.mjs),
+                   to copy into a host repo
 CHANGELOG.md       what changed, and what to do when upgrading
 THIRD_PARTY_NOTICES.md  licence of the one bundled dependency
 ```
