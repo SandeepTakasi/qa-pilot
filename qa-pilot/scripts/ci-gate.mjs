@@ -12,11 +12,14 @@
 // to keep honest.
 //
 // Usage: node ci-gate.mjs select --approved <approved.json> --specs <specs.json>
-//                         [--cases <cases.yaml>] [--priority <P0[,P1[,P2]]>] [--json]
+//                         [--cases <cases.yaml>] [--priority <P0[,P1[,P2]]>]
+//                         [--max-skipped <n>] [--json]
 //        node ci-gate.mjs verdict --report <report.json>
 //
 // `select` exits 1 when nothing is runnable, so a misconfigured job fails loudly rather
-// than passing green having run zero tests.
+// than passing green having run zero tests. `--max-skipped <n>` extends that to part of
+// the suite: more than n skipped approved specs and it exits 1 too. Absent, any number of
+// skips is tolerated, as before.
 
 import { readFileSync, existsSync } from 'node:fs';
 import { isMain } from './lib/is-main.mjs';
@@ -182,6 +185,14 @@ if (isMain(import.meta.url)) {
         list = priorities.join(',');
       }
 
+      // Presence again, for the same reason: `--max-skipped ""` is invalid, never "unlimited".
+      let maxSkipped;
+      if (process.argv.includes('--max-skipped')) {
+        const v = argValue('--max-skipped') ?? '';
+        if (!/^\d+$/.test(v)) throw new Error('select: --max-skipped must be a whole number, 0 or more');
+        maxSkipped = Number(v);
+      }
+
       if (!existsSync(approvedPath)) {
         throw new Error(`no approval ledger at ${approvedPath}. CI runs what QA approved, and nothing has been approved yet. Publish a run and review it first.`);
       }
@@ -195,6 +206,11 @@ if (isMain(import.meta.url)) {
       if (run.length === 0) {
         // Zero tests passing is not the same as the suite passing.
         console.error(`REFUSED: no approved spec ${filter ? `at priority ${list} ` : ''}is runnable, so this job would report green having proved nothing.`);
+        process.exit(1);
+      }
+      // Before the run list is printed, so a refused job hands its caller nothing to run.
+      if (maxSkipped !== undefined && skipped.length > maxSkipped) {
+        console.error(`REFUSED: ${skipped.length} approved spec(s) were skipped and --max-skipped allows ${maxSkipped}, so this job would report green on part of the suite.`);
         process.exit(1);
       }
       console.log(process.argv.includes('--json')

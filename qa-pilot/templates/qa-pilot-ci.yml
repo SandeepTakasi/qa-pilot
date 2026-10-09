@@ -41,6 +41,11 @@ jobs:
       # one concurrency group per environment, and two jobs are gated by trigger with
       # `if: github.event_name == ...`, or both fire on every trigger.
       PRIORITY: ''                            # EDIT: P0 on a deploy-triggered job; empty runs everything approved
+      # The most approved specs that may be skipped (edited since approval, missing, no path
+      # recorded) before the job fails. '0' means any skip fails it, because a green job that
+      # ran only part of the suite is the failure this exists to prevent. EDIT: raise it to
+      # tolerate drift while QA catches up; empty turns the limit off. Needs plugin 0.4.1.
+      MAX_SKIPPED: '0'
       PLUGIN: .qa-pilot-plugin/qa-pilot/scripts
 
     steps:
@@ -53,7 +58,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: <owner>/<qa-pilot-repo>   # EDIT
-          ref: v0.4.0                            # EDIT: pin a tag or SHA; PRIORITY needs 0.4.0 or newer
+          ref: v0.4.1                            # EDIT: pin a tag or SHA; MAX_SKIPPED needs 0.4.1 or newer, PRIORITY 0.4.0
           path: .qa-pilot-plugin
           # token: ${{ secrets.QA_PILOT_REPO_TOKEN }}   # only if that repo is private
 
@@ -142,16 +147,29 @@ jobs:
       # When PRIORITY is set, only approved cases at that priority run. Priority lives in
       # cases.yaml, not in approved.json, so the filter needs that file. Quoted, so a
       # value such as `P0, P1` stays one argument. An older plugin ignores --priority.
+      # MAX_SKIPPED works the same way: passed only when non-empty, and an older plugin
+      # ignores --max-skipped, so the pin above must be 0.4.1 or newer.
+      # select's stderr (the skipped specs and any REFUSED line) goes to a file so the step
+      # summary gets it even when select fails. GitHub runs this under `bash -eo pipefail`,
+      # so a bare failing `SPECS=$(...)` would end the step before any later line ran:
+      # `|| rc=$?` keeps the step alive until the summary is written, then it exits with
+      # select's own status.
       - name: Select the approved specs
         run: |
           PRIORITY_ARGS=()
           if [ -n "$PRIORITY" ]; then
             PRIORITY_ARGS=(--cases testing/$FEATURE/cases.yaml --priority "$PRIORITY")
           fi
+          SKIP_ARGS=()
+          if [ -n "$MAX_SKIPPED" ]; then
+            SKIP_ARGS=(--max-skipped "$MAX_SKIPPED")
+          fi
           SPECS=$(node $PLUGIN/ci-gate.mjs select \
             --approved testing/$FEATURE/approved.json \
             --specs testing/$FEATURE/specs.json \
-            "${PRIORITY_ARGS[@]}")
+            "${PRIORITY_ARGS[@]}" "${SKIP_ARGS[@]}" 2>sel.err) || rc=$?
+          tee -a "$GITHUB_STEP_SUMMARY" < sel.err >&2
+          [ "${rc:-0}" = 0 ] || exit "$rc"
           # Belt and braces. An empty SPECS would make the next step
           # `npx playwright test` with no arguments, which runs every spec in the repo,
           # including ones QA never approved, and calls the result a regression pass.
@@ -160,6 +178,14 @@ jobs:
             exit 1
           fi
           echo "SPECS=$SPECS" >> $GITHUB_ENV
+
+      # Lint the selected specs before they run: a test with no assertion, a fixed sleep or a
+      # skipped test would pass, and a pass proves nothing. The config is committed at your
+      # repo root, copied from templates/eslint.qa-pilot.config.mjs (see SETUP-CI.md), and
+      # needs eslint, eslint-plugin-playwright, typescript-eslint and typescript in your
+      # devDependencies so `npm ci` installs them.
+      - name: Lint the selected specs
+        run: npx eslint -c eslint.qa-pilot.config.mjs $SPECS
 
       # $SPECS is intentionally unquoted: it is a space-separated list of spec paths.
       # `select` refuses any path containing whitespace for that reason, so the split here
@@ -204,10 +230,12 @@ jobs:
           node $PLUGIN/parse-report.mjs $RUN_DIR/results.json $RUN_DIR/meta.json \
             --specs testing/$FEATURE/specs.json
 
-      # Keep the evidence whatever the outcome, unless this environment keeps evidence
-      # local: then it stays on the runner and is discarded with it.
+      # Keep the evidence on every run, whatever the outcome and whatever the profile's
+      # evidence_upload says: this job never runs production, and a GitHub artifact is
+      # visible only to people with read access to the repo, for 14 days. Reviewers need it
+      # to see a CI failure.
       - uses: actions/upload-artifact@v4
-        if: always() && env.EVIDENCE_UPLOAD == 'tracker'
+        if: always()
         with:
           name: qa-pilot-${{ github.run_id }}
           path: ${{ env.RUN_DIR }}
@@ -219,4 +247,6 @@ jobs:
 # This job does not publish to ClickUp, by design. Publishing writes to the tracker as a
 # person and runs through the approval gate over MCP, neither of which a build runner has.
 # When a regression needs to be in ClickUp, download report.json from the artifacts and
-# run /qa-pilot:publish-results against it.
+# run /qa-pilot:publish-results against it. The artifact holds the traces, which carry the
+# test account's session: anyone with read access to the repo can download it, so keep the
+# test account restricted and the retention short (see SETUP-CI.md, "Evidence in CI").

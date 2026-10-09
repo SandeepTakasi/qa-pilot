@@ -11,8 +11,8 @@ system the same steps port directly; nothing here is GitHub-specific except the 
 ## What the CI job does, and what it deliberately does not
 
 It runs the specs QA approved, against a deployed environment, and fails the build when
-one of them stops passing. It uploads the run directory (`report.json`, the Playwright
-results and the traces) as build artifacts, unless the environment keeps its evidence local.
+one of them stops passing. It lints the selected specs, and it uploads the run directory
+(`report.json`, the Playwright results and the traces) as build artifacts on every run.
 
 **It never runs against production.** The job reads the environment's `kind` from the
 profile and stops if it is `production`. Build artifacts leave the machine, and a production
@@ -23,9 +23,8 @@ a person, with evidence kept on their machine (see `/qa-pilot:run-tests`).
 writes to the tracker as a person, and a build runner is neither. Adding a second write
 path, with a CI token and its own copy of the rules, would mean two things to keep honest
 instead of one. When a CI regression needs to be in ClickUp, download the run directory from
-the build artifacts and run `/qa-pilot:publish-results` against it. That route exists only
-where the environment uploads evidence: under `tracker: none`, or on an environment set to
-`evidence_upload: local`, there is no artifact (see "Evidence in CI").
+the build artifacts and run `/qa-pilot:publish-results` against it. The artifact is there on
+every run, whatever the environment's `evidence_upload` says (see "Evidence in CI").
 
 **It does not need ClickUp at all.** `testing/<feature>/approved.json` is committed. It
 names every case QA accepted and the hash of the spec they accepted, so CI can answer
@@ -124,6 +123,8 @@ not on day one.
 | `ENVIRONMENT FAILED` | over 10% blocked, or the build changed mid-run | whoever owns the environment |
 | `REFUSED: no approved spec is runnable` | nothing is approved, or every spec drifted | QA, via `/qa-pilot:qa-review` |
 | `REFUSED: no approved spec at priority <list> is runnable` | `PRIORITY` is set and no approved, undrifted spec has that priority | QA, via `/qa-pilot:qa-review`, or whoever set `PRIORITY` |
+| `REFUSED: <k> approved spec(s) were skipped and --max-skipped allows <n>` | more approved specs were skipped (edited, missing or without a path) than `MAX_SKIPPED` allows; the step summary lists each one | QA, via `/qa-pilot:qa-review`, or whoever owns the spec |
+| `eslint` errors on a spec | a test with no assertion, a fixed sleep, or a skipped or focused test | whoever wrote the spec |
 
 A `flaky` case fails the build. Pass-on-retry is never a pass anywhere else in this
 pipeline, and letting CI be the one place it goes green makes CI the place people go for a
@@ -140,6 +141,47 @@ have QA review it; the approval then carries forward on its own.
 
 If you see this on every case at once, someone reformatted the spec directory. Re-review
 once and it settles.
+
+### Failing the build on a skip: `--max-skipped`
+
+A skipped spec is not run, so a job that skips some and runs the rest reports green on part
+of the suite. `select` takes `--max-skipped <n>`, a whole number, 0 or more, to turn that
+into a failure. When more than `n` approved specs were skipped, `select` prints the skip
+lines, then
+`REFUSED: <k> approved spec(s) were skipped and --max-skipped allows <n>, so this job would report green on part of the suite.`
+to stderr, prints nothing on stdout and exits 1. A limit at or above the skip count passes.
+
+- Any other value, including an empty one or `--max-skipped` as the last argument, is an
+  error: `select: --max-skipped must be a whole number, 0 or more` (exit 1). A job never
+  falls back to "unlimited" by accident.
+- Without the flag the count is not limited, exactly as in 0.4.0.
+- Cases left out by `PRIORITY` are not skips: leaving them out is the job's intent. The
+  zero-runnable refusal comes first and keeps its own message.
+- **The flag needs plugin 0.4.1.** An older `ci-gate.mjs` ignores flags it does not know,
+  so below 0.4.1 it would skip silently and the job would go green on part of the suite.
+
+The template sets `MAX_SKIPPED: '0'`, so any skip fails the job. Raise it deliberately to
+tolerate drift while QA catches up, or set it empty to drop the limit. It passes the flag
+only when `MAX_SKIPPED` is non-empty, through an array like `PRIORITY_ARGS`, and it
+captures select's stderr so the skipped specs reach the step summary even when select
+fails. GitHub runs steps with `bash -eo pipefail`, which ends a step the moment a failing
+command substitution returns, so the capture is written to survive that:
+
+```bash
+SPECS=$(node $PLUGIN/ci-gate.mjs select \
+  --approved testing/$FEATURE/approved.json \
+  --specs testing/$FEATURE/specs.json \
+  "${PRIORITY_ARGS[@]}" "${SKIP_ARGS[@]}" 2>sel.err) || rc=$?
+tee -a "$GITHUB_STEP_SUMMARY" < sel.err >&2
+[ "${rc:-0}" = 0 ] || exit "$rc"
+```
+
+With the limit at 0, two things now fail CI that used to pass quietly:
+
+- **An edited spec fails CI until QA re-approves it and its hash is recorded.** Run it,
+  have QA approve it in `/qa-pilot:qa-review`, and commit the updated `approved.json`.
+- **Retiring a case means deleting its key from `approved.json`.** A case that stays in the
+  ledger with its spec file deleted is a skip on every run.
 
 ## Choosing what runs
 
@@ -171,7 +213,7 @@ why the filter needs that file. The call is:
 
 ```
 node ci-gate.mjs select --approved <approved.json> --specs <specs.json> \
-  [--cases <cases.yaml>] [--priority <P0[,P1[,P2]]>] [--json]
+  [--cases <cases.yaml>] [--priority <P0[,P1[,P2]]>] [--max-skipped <n>] [--json]
 ```
 
 The rules, in full:
@@ -224,6 +266,37 @@ parallel with the other; set the same group on both. Two jobs in one workflow ar
 trigger with `if: github.event_name == ...`, for example `push` or `deployment` for the P0 job
 and `schedule` for the nightly one, since otherwise both fire on every trigger.
 
+## Linting the specs
+
+After `select`, the template lints exactly the specs it selected:
+
+```bash
+npx eslint -c eslint.qa-pilot.config.mjs $SPECS
+```
+
+It catches what a reviewer skims past: a test with no assertion, a fixed `waitForTimeout`,
+a skipped or focused test. Such a spec passes, and a pass proves nothing. The rules come
+from `eslint-plugin-playwright`, which is maintained outside QA-Pilot.
+
+To set it up:
+
+1. Copy `templates/eslint.qa-pilot.config.mjs` to your repo root and commit it. It must sit
+   there, not in the plugin checkout, because ESLint resolves `files` against the config
+   file's directory. `/qa-pilot:run-tests` copies it if it is absent and writes your
+   `spec_dir` values in.
+2. Edit its `files` list, which holds one `<spec_dir>/**/*.spec.ts` glob per app. A glob that
+   matches nothing makes ESLint exit 2, so list only directories that exist.
+3. Add the dev dependencies `eslint@9`, `eslint-plugin-playwright`, `typescript-eslint` and
+   `typescript`, so the job's `npm ci` installs them. `typescript-eslint` needs
+   `typescript` as a peer, and only npm installs peers on its own.
+
+Keep assertions in the test body. `expect-expect` flags a test whose only `expect` sits in a
+helper, so moving the assertion out of the test hides it from the lint.
+
+The lint only helps while the specs stay strict. A pull request check that flags weakened or
+deleted tests is worth adding if your repo does not already have one, for example a
+test-diff bot or a CODEOWNERS rule on the spec directory.
+
 ## Each run has its own directory
 
 Everything a run produces goes under `testing/<feature>/runs/<run_id>/`, as it does locally:
@@ -248,11 +321,11 @@ cannot be read fails the step rather than running unguarded.
 
 ## Evidence in CI
 
-**Under `tracker: none` the job uploads no artifact at all.** Without a tracker every
-environment's effective `evidence_upload` is `local`, so the upload step is skipped and the
-run directory stays on the runner, discarded with it. The red or green build is the whole
-result; a team that wants to keep a CI run's evidence runs the same specs on a machine of its
-own with `/qa-pilot:run-tests`.
+**The job uploads the run directory as a build artifact on every run**, pass or fail,
+whatever the profile's `evidence_upload` is, `evidence_upload: local` and `tracker: none`
+included. This is safe because CI never runs production, and a GitHub artifact is visible
+only to people with read access to the repository, for 14 days. Reviewers need it: without
+the trace, a red CI build is a message with nothing behind it.
 
 The job reads `evidence.capture` from the profile and passes the matching `--trace` mode to
 Playwright (`always` keeps a trace for every test, `on-failure` only for failures), and it
@@ -265,10 +338,9 @@ Playwright has no command-line flag for video, so the job cannot set it. **Make 
 under `always`), as `/qa-pilot:run-tests` describes; otherwise every passing test still records
 and keeps a video, which throws away most of what `on-failure` saves.
 
-Traces upload as build artifacts with a 14-day retention, and only when the environment's
-effective `evidence_upload` is `tracker`. They contain the test account's session token, so
-treat the artifacts as credentials and keep the retention short. An environment that keeps
-evidence local uploads nothing.
+Traces contain the test account's session token, so treat the artifacts as credentials:
+everyone with read access to the repo can download them. Keep the retention short (the
+template uses 14 days) and the test account restricted.
 
 ## Pin the plugin
 
@@ -276,10 +348,11 @@ The workflow checks QA-Pilot out at a ref. Pin a tag or a commit SHA rather than
 An unpinned ref means a change to QA-Pilot can turn your build red overnight with nothing
 in your own repository's history to explain it.
 
-The template pins `ref: v0.4.0`. **`--priority` needs 0.4.0 or newer.** An older `ci-gate.mjs`
-only reads the flags it knows, so below 0.4.0 it silently ignores `--priority` and runs every
-approved spec: the job looks like a P0 job and is not. Keep the pin at 0.4.0 or later for any
-job that sets `PRIORITY`.
+The template pins `ref: v0.4.1`. **`--priority` needs 0.4.0 or newer, and `--max-skipped`
+needs 0.4.1 or newer.** An older `ci-gate.mjs` only reads the flags it knows, so below 0.4.0
+it silently ignores `--priority` and runs every approved spec: the job looks like a P0 job and
+is not. Below 0.4.1 it silently ignores `--max-skipped` and tolerates every skip. Keep the pin
+at 0.4.1 or later for a job with `MAX_SKIPPED`, which the template sets by default.
 
 Moving the pin to v0.4.0 also applies the breaking `test_account` rule to the whole profile. A
 production environment without `test_account` makes the profile invalid, so every CI job fails,
