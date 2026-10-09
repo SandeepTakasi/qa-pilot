@@ -266,7 +266,7 @@ jobs:
 
       - name: Say why no artifact was uploaded
         if: always() && env.PRIVATE_REPO != 'true'
-        run: echo "QA-Pilot artifacts were skipped because anyone can download them from a public repository and a trace can carry a refresh token." >> "$GITHUB_STEP_SUMMARY"
+        run: 'echo "QA-Pilot artifacts were skipped: this repository is public, or its visibility could not be read, and a trace can carry a refresh token." >> "$GITHUB_STEP_SUMMARY"'
 
       - name: Verdict
         run: node $PLUGIN/ci-gate.mjs verdict --report $RUN_DIR/report.json

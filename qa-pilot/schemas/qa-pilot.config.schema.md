@@ -206,8 +206,8 @@ The effective value is resolved by the loader and written into the normalized pr
 skill or script re-derives it:
 
 1. if `tracker` is `none`, it is `local` on every environment. An environment that sets
-   `evidence_upload: tracker` anyway gets a **warning**,
-   `environments.<env>.evidence_upload: tracker is ignored under tracker: none`, and is still `local`;
+   any explicit `evidence_upload` other than `local` gets a **warning**,
+   `environments.<env>.evidence_upload: <v> is ignored under tracker: none; evidence stays local`, and is still `local`;
 2. otherwise, if the environment sets `evidence_upload`, that value (and `tracker` or `reference`
    on a `production` environment is an error that names the value given);
 3. otherwise `local` for `kind: production` and `reference` for everything else.
@@ -409,7 +409,8 @@ Matching is case-insensitive and trimmed. Two lifecycle states may not share one
   (no network evidence *and* no console evidence leaves failures video-only)
 - a URL that looks like production on an environment whose kind is not `production`
 - a `clickup` block present while `tracker: none`
-- `environments.<env>.evidence_upload: tracker` while `tracker: none` (ignored; the value is `local`)
+- `environments.<env>.evidence_upload: <v>` with any value other than `local` while `tracker: none`
+  (warned as `environments.<env>.evidence_upload: <v> is ignored under tracker: none; evidence stays local`; the value is `local`)
 
 ## CLI
 
