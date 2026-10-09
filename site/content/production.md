@@ -91,7 +91,7 @@ A Playwright trace records the session credential that authenticated the run, ev
 
 Because the trace stays on the executor's machine, it is pinned by hash. The gate requires a `trace_sha256` for every locally kept trace, re-hashes the file, and refuses a mismatch (rule 6). A reviewer finds the evidence at the path the tracker records and checks it against the hash. The [Setting up ClickUp](../../qa-pilot/SETUP-CLICKUP.md) guide lists what a trace contains.
 
-Off production the same applies by default. An environment's `evidence_upload` is `reference` unless set: the tracker receives the verdict fields and each trace's path and sha256, and never the file. `tracker`, which attaches the trace to the case task, is an opt-in per environment. Make it only after turning on Private Attachment Links in ClickUp, because attachment links are public without it, and only with a restricted test account. If a trace does leak, disable or rotate that test account.
+Off production the same applies by default. An environment's `evidence_upload` is `reference` unless set: the tracker receives the verdict fields, the failure text, and each trace's path and sha256, and never the file. `tracker`, which attaches the trace to the case task, is an opt-in per environment. Make it only after turning on Private Attachment Links in ClickUp, because attachment links are public without it, and only with a restricted test account. If a trace does leak, disable or rotate that test account.
 
 ## Full capture
 

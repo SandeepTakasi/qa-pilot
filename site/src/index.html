@@ -158,8 +158,8 @@ summary: { pass: 21, fail: 0, flaky: 1, blocked: 2 }</code></pre>
   <div class="split">
     <div class="split__text">
       <p class="lede">One artifact per case per run: <code>trace.zip</code>. It carries the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log, so there is no separate video and no separate console log to keep in step.</p>
-      <p>Reviewers drag it onto <a href="https://trace.playwright.dev" rel="noopener">trace.playwright.dev</a>, which runs entirely in the browser and transmits nothing. No second storage system, and no extra credentials.</p>
-      <p>With ClickUp, the case&rsquo;s task gets the verdict fields and the trace&rsquo;s path and sha256, and the trace stays on the machine that ran it (<code>evidence_upload: reference</code>); attaching it is an opt-in, for a restricted test account and Private Attachment Links only. Without ClickUp, set <code>tracker: none</code>: approvals live in <code>testing/&lt;feature&gt;/statuses.json</code>, evidence stays local, and bugs are markdown files in the run directory.</p>
+      <p>Open it locally with <code>npx playwright show-trace</code>, which is the safe way for a trace that carries a credential; <a href="https://trace.playwright.dev" rel="noopener">trace.playwright.dev</a> also opens one in the browser, entirely client-side. No second storage system, and no extra credentials.</p>
+      <p>With ClickUp, the case&rsquo;s task gets the verdict fields, the failure text, and the trace&rsquo;s path and sha256, and the trace stays on the machine that ran it (<code>evidence_upload: reference</code>); attaching it is an opt-in, for a restricted test account and Private Attachment Links only. Without ClickUp, set <code>tracker: none</code>: approvals live in <code>testing/&lt;feature&gt;/statuses.json</code>, evidence stays local, and bugs are markdown files in the run directory.</p>
     </div>
     <div class="split__media">
       <figure class="artifact">

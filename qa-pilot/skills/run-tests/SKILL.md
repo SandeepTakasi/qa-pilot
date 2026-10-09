@@ -42,7 +42,7 @@ Identify which app(s) the feature's cases target, and take their base URLs from 
 
 Production traces stay on this machine. Say so up front, and say that QA will review them here (`/qa-pilot:qa-review`), since nothing is attached to the tracker.
 
-**When the effective `evidence_upload` is `reference` or `local`** (production is always `local`), on any environment, evidence stays on this machine, and the same check applies: `git check-ignore -q testing/<feature>/runs/x`. Nonzero → STOP and tell the user to ignore `testing/*/runs/` first, since otherwise the traces leave through git. Under `reference` the tracker still receives the case fields and failure text, never the trace file, so say that QA opens traces here by their `trace_sha256` and `npx playwright show-trace <path>`.
+**When the effective setting is `evidence_upload: reference` (the default off production) or `evidence_upload: local`** (production is always `local`), on any environment, evidence stays on this machine, and the same check applies: `git check-ignore -q testing/<feature>/runs/x`. Nonzero → STOP and tell the user to ignore `testing/*/runs/` first, since otherwise the traces leave through git. Under `reference` the tracker still receives the case fields and failure text, never the trace file, so say that QA opens traces here by their `trace_sha256` and `npx playwright show-trace <path>`.
 
 ## 2. Approval gate
 

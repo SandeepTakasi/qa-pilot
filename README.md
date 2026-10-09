@@ -69,9 +69,9 @@ them, requests at the network layer. The tracker record of a production run carr
 data. [Production](https://sandeeptakasi.github.io/qa-pilot/docs/production/) has the details, and
 says plainly what the gates cannot verify.
 
-Off production, traces stay on the machine that ran them by default too (`evidence_upload:
-reference`): the tracker gets the verdict fields, the failure text, and each trace's path and
-sha256, never the file. A trace can carry a long-lived refresh token, so attaching traces to the
+Off production, traces stay on the machine that ran them by default too
+(`evidence_upload: reference`): the tracker gets the verdict fields, the failure text, and each
+trace's path and sha256, never the file. A trace can carry a long-lived refresh token, so attaching traces to the
 tracker (`evidence_upload: tracker`) is an opt-in per environment, to make only after turning on
 the tracker's Private Attachment Links and using a restricted test account.
 
