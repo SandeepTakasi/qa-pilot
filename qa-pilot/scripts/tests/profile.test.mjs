@@ -100,6 +100,15 @@ test('models.generation_approved is required and non-empty', () => {
     .some((e) => e.includes('generation_approved')));
 });
 
+test('clickup.plan_tier is optional', () => {
+  assert.deepEqual(errorsFor((p) => { delete p.clickup.plan_tier; }), []);
+});
+
+test('clickup.plan_tier must be a known tier when present', () => {
+  const errs = errorsFor((p) => { p.clickup.plan_tier = 'bogus'; });
+  assert.ok(errs.includes('clickup.plan_tier: one of free | unlimited | business | enterprise when present'), errs.join('\n'));
+});
+
 test('clickup.folder is accepted and optional', () => {
   assert.deepEqual(validateProfile(golden()).errors, [], 'fixture declares a folder');
   const p = golden();

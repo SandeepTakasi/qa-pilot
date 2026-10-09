@@ -74,7 +74,7 @@ test('tracker: none makes every environment local and warns about an explicit tr
 test('effectiveEvidenceUpload is local under tracker: none whatever the environment says', () => {
   assert.equal(effectiveEvidenceUpload({ kind: 'qa' }, { tracker: 'none' }), 'local');
   assert.equal(effectiveEvidenceUpload({ kind: 'qa', evidence_upload: 'tracker' }, { tracker: 'none' }), 'local');
-  assert.equal(effectiveEvidenceUpload({ kind: 'qa' }, { tracker: 'clickup' }), 'tracker');
+  assert.equal(effectiveEvidenceUpload({ kind: 'qa' }, { tracker: 'clickup' }), 'reference');
 });
 
 test('effectiveEvidenceUpload is local for production even when handed an explicit tracker', () => {

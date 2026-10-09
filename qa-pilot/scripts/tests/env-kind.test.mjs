@@ -71,9 +71,9 @@ test('a production-looking URL on a non-production kind warns and never errors',
 
 // --- evidence_upload ----------------------------------------------------------
 
-test('evidence_upload must be tracker or local', () => {
+test('evidence_upload must be tracker, reference or local', () => {
   const errs = errorsFor((p) => { p.environments.qa.evidence_upload = 'clickup'; });
-  assert.ok(has(errs, /environments\.qa\.evidence_upload: .*tracker \| local/), errs.join('\n'));
+  assert.ok(has(errs, /environments\.qa\.evidence_upload: .*tracker \| reference \| local/), errs.join('\n'));
 });
 
 test('tracker on a production environment is an error', () => {
@@ -81,9 +81,10 @@ test('tracker on a production environment is an error', () => {
   assert.ok(has(errs, /environments\.production\.evidence_upload: tracker is refused on a production environment/), errs.join('\n'));
 });
 
-test('effective evidence_upload: an explicit value wins, else local for production, else tracker', () => {
-  assert.equal(effectiveEvidenceUpload({ kind: 'qa' }), 'tracker');
-  assert.equal(effectiveEvidenceUpload({ kind: 'staging' }), 'tracker');
+test('effective evidence_upload: local for production, else an explicit value, else reference', () => {
+  assert.equal(effectiveEvidenceUpload({ kind: 'qa' }), 'reference');
+  assert.equal(effectiveEvidenceUpload({ kind: 'staging' }), 'reference');
+  assert.equal(effectiveEvidenceUpload({ kind: 'staging', evidence_upload: 'tracker' }), 'tracker');
   assert.equal(effectiveEvidenceUpload({ kind: 'staging', evidence_upload: 'local' }), 'local');
   assert.equal(effectiveEvidenceUpload({ kind: 'production' }), 'local');
   assert.equal(effectiveEvidenceUpload({ kind: 'production', evidence_upload: 'local' }), 'local');
@@ -96,14 +97,19 @@ test('an explicit evidence_upload survives into the normalized profile', () => {
 });
 
 test('the normalized profile carries the effective evidence_upload for qa and staging', () => {
-  const { profile, errors } = validateProfile(golden());
+  // The fixture opts both into tracker; without that they get the default.
+  const { profile, errors } = run((p) => {
+    delete p.environments.qa.evidence_upload;
+    delete p.environments.staging.evidence_upload;
+  });
   assert.deepEqual(errors, []);
-  assert.equal(profile.environments.qa.evidence_upload, 'tracker');
-  assert.equal(profile.environments.staging.evidence_upload, 'tracker');
+  assert.equal(profile.environments.qa.evidence_upload, 'reference');
+  assert.equal(profile.environments.staging.evidence_upload, 'reference');
 });
 
 test('validation does not mutate the input it was given', () => {
   const p = golden();
+  delete p.environments.qa.evidence_upload;
   validateProfile(p);
   assert.equal(Object.hasOwn(p.environments.qa, 'evidence_upload'), false);
 });

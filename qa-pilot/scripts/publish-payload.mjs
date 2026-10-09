@@ -7,8 +7,9 @@
 //          --transitions <case-status --transitions output> --confidence <case-status output>
 //
 // The mode follows the environment's effective evidence_upload, read from the profile:
-//   tracker  the 0.2.0 field set, and the trace to attach
-//   local    no application data: ids, verdicts, build, run, trace path and sha256 only
+//   tracker    the 0.2.0 field set, and the trace to attach
+//   reference  the same fields and summary, never the trace: run, trace path and sha256 instead
+//   local      no application data: ids, verdicts, build, run, trace path and sha256 only
 //   none     tracker: none, a plan of local file writes; nothing is sent anywhere
 // It makes no network call and writes nothing.
 
@@ -58,15 +59,19 @@ export function buildPayload(report, profile, { transitions, confidence } = {}) 
   const cases = Array.isArray(report.cases) ? report.cases : [];
   const counts = Object.fromEntries(VERDICTS.map((v) => [v, cases.filter((c) => c.verdict === v).length]));
   const blockedPct = cases.length ? Math.round((counts.blocked / cases.length) * 1000) / 10 : 0;
+  // A trace path is sent only when it stays inside the run directory.
+  const checkTrace = (c) => {
+    if (c.trace && escapesRunDir(c.trace)) {
+      throw new Error(`trace path "${c.trace}" for ${c.id} must be a relative path inside the run directory before it can be sent`);
+    }
+  };
 
   if (mode === 'local') {
     // Decision 4: exactly these fields. Adding one here is a decision, not a convenience.
     return {
       mode,
       cases: cases.map((c) => {
-        if (c.trace && escapesRunDir(c.trace)) {
-          throw new Error(`trace path "${c.trace}" for ${c.id} must be a relative path inside the run directory before it can be sent`);
-        }
+        checkTrace(c);
         return {
           case_id: c.id,
           verdict: c.verdict,
@@ -102,7 +107,9 @@ export function buildPayload(report, profile, { transitions, confidence } = {}) 
     ready: Boolean(conf.ready),
     ...coverage,
     executor: report.executor,
-    reviewer_note: 'Traces open at https://trace.playwright.dev by drag-and-drop, entirely in the browser.',
+    reviewer_note: mode === 'reference'
+      ? `Traces stay on the machine that ran them, under testing/${report.feature}/runs/${report.run_id}/. Verify one against its sha256 (the Trace SHA256 field) with shasum -a 256 <path>, then open it there with npx playwright show-trace <path>.`
+      : 'Traces open at https://trace.playwright.dev by drag-and-drop, entirely in the browser.',
   };
 
   if (mode === 'none') {
@@ -117,22 +124,44 @@ export function buildPayload(report, profile, { transitions, confidence } = {}) 
     };
   }
 
+  const fields = (c) => ({
+    Verdict: c.verdict,
+    'Build SHA': report.commit_sha,
+    Env: report.env_name,
+    'API Mode': report.api_mode,
+    App: report.app,
+    Executor: report.executor,
+    'Run Date': report.finished_at,
+    'Flake Count': c.retries ?? 0,
+    'Model Version': report.model_version,
+  });
+
+  if (mode === 'reference') {
+    // The tracker fields, but the trace file never leaves this machine: the case names
+    // where it is and how to verify it instead.
+    return {
+      mode,
+      cases: cases.map((c) => {
+        checkTrace(c);
+        return {
+          case_id: c.id,
+          target_status: target.get(c.id) ?? null,
+          fields: fields(c),
+          run_id: report.run_id,
+          trace_path: c.trace ?? null,
+          trace_sha256: c.trace_sha256 ?? null,
+        };
+      }),
+      summary,
+    };
+  }
+
   return {
     mode,
     cases: cases.map((c) => ({
       case_id: c.id,
       target_status: target.get(c.id) ?? null,
-      fields: {
-        Verdict: c.verdict,
-        'Build SHA': report.commit_sha,
-        Env: report.env_name,
-        'API Mode': report.api_mode,
-        App: report.app,
-        Executor: report.executor,
-        'Run Date': report.finished_at,
-        'Flake Count': c.retries ?? 0,
-        'Model Version': report.model_version,
-      },
+      fields: fields(c),
       // One artifact per case per run, named so a task's attachments read as run history.
       attach: c.trace ? { path: c.trace, name: `${c.id}-${report.run_id}.zip` } : null,
     })),

@@ -72,10 +72,12 @@ test('without a profile, an env_kind that is not exactly qa or staging is refuse
   assert.equal(buildBugs(report('staging'), cases(), [FAIL]).create.length, 1);
 });
 
-test('without a profile, a qa report still files as before', () => {
+test('without a profile, a qa report files as reference: the failure text, but no attachment', () => {
   const out = buildBugs(report(), cases(), [FAIL]);
   assert.equal(out.create.length, 1);
   assert.ok(out.create[0].body.includes(failureText()));
+  assert.ok(out.create[0].body.includes(SHA), 'names the trace sha256 instead');
+  assert.equal(out.create[0].trace_attachment, null);
 });
 
 test('a profile that does not register the report environment is refused', () => {

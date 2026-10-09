@@ -14,7 +14,7 @@ const TOP_KEYS = ['project', 'tracker', 'apps', 'environments', 'stabilization',
   'cross_app', 'clickup'];
 const TRACKERS = ['clickup', 'none'];
 const ENV_KINDS = ['qa', 'staging', 'production'];
-const EVIDENCE_UPLOADS = ['tracker', 'local'];
+const EVIDENCE_UPLOADS = ['tracker', 'reference', 'local'];
 const HTTP_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', '*'];
 const SIGNATURE_KEYS = ['method', 'url', 'body', 'note'];
 const AUTH_MODELS = ['dev-handoff', 'role-accounts', 'mixed'];
@@ -50,16 +50,18 @@ function parseSemver(v) {
 
 /**
  * Where an environment's traces go: `local` everywhere under `tracker: none` (there is
- * nowhere to upload to), else its explicit `evidence_upload`, else `local` for production
- * and `tracker` for everything else. The loader writes this into the normalized profile so
- * no skill or script re-derives it.
+ * nowhere to upload to) and on production, else its explicit `evidence_upload`, else
+ * `reference` (the tracker gets the fields and failure text, the trace stays on the machine
+ * that ran it). The loader writes this into the normalized profile so no skill or script
+ * re-derives it.
  */
 export function effectiveEvidenceUpload(env, { tracker = 'clickup' } = {}) {
   if (tracker === 'none') return 'local';
-  // The loader refuses tracker on production; this keeps an unvalidated profile from leaking.
+  // The loader refuses tracker and reference on production; this keeps an unvalidated
+  // profile from leaking.
   if (env?.kind === 'production') return 'local';
   if (EVIDENCE_UPLOADS.includes(env?.evidence_upload)) return env.evidence_upload;
-  return env?.kind === 'production' ? 'local' : 'tracker';
+  return 'reference';
 }
 
 /**
@@ -141,10 +143,11 @@ export function validateProfile(raw, { profilePath = null } = {}) {
       } else if (ta !== undefined && !taOk) {
         err(`environments.${envName}.test_account: at least 20 characters when present.`);
       }
-      if (env.kind === 'production' && env.evidence_upload === 'tracker') {
+      if (env.kind === 'production' && ['tracker', 'reference'].includes(env.evidence_upload)) {
         // A trace carries the session credential that authenticated the run and every
-        // request body it touched (see "What a trace contains" in the ClickUp setup guide).
-        err(`environments.${envName}.evidence_upload: tracker is refused on a production environment. Its traces carry the session credential and every request body they touched, so production evidence stays local.`);
+        // request body it touched (see "What a trace contains" in the ClickUp setup guide),
+        // and reference would still send the failure text.
+        err(`environments.${envName}.evidence_upload: ${env.evidence_upload} is refused on a production environment. Its traces carry the session credential and every request body they touched, so production evidence stays local.`);
       }
       // The hostname guess survives only to catch a mistyped kind.
       if (env.kind !== 'production') {
@@ -344,8 +347,9 @@ export function validateProfile(raw, { profilePath = null } = {}) {
   } else if (!isObj(raw.clickup)) {
     err('clickup: required');
   } else {
-    if (!PLAN_TIERS.includes(raw.clickup.plan_tier)) {
-      err(`clickup.plan_tier: required, one of ${PLAN_TIERS.join(' | ')} (sets the API rate budget)`);
+    // Optional and read by nothing; checked only so a typo does not pass silently.
+    if (raw.clickup.plan_tier !== undefined && !PLAN_TIERS.includes(raw.clickup.plan_tier)) {
+      err(`clickup.plan_tier: one of ${PLAN_TIERS.join(' | ')} when present`);
     }
     if (!isStr(raw.clickup.space)) err('clickup.space: required, the ClickUp space holding QA work');
 

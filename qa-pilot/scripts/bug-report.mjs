@@ -82,7 +82,8 @@ function localBugBody(c, kase, report, { specPath = null } = {}) {
 
 /**
  * The bug body. Every line is copied from the report, the cases file or the profile.
- * `mode`: `tracker` (0.2.0, trace attached), `local` (evidence stays local: no failure text)
+ * `mode`: `tracker` (0.2.0, trace attached), `reference` (the failure text, the trace named
+ * by path and sha256 but never attached), `local` (evidence stays local: no failure text)
  * or `file` (tracker: none, a markdown file in the run directory, so the text stays).
  */
 export function bugBody(c, kase, report, { specPath = null, traceName = null, mode = 'tracker' } = {}) {
@@ -140,6 +141,17 @@ export function bugBody(c, kase, report, { specPath = null, traceName = null, mo
     return sections.join('\n\n');
   }
 
+  if (mode === 'reference') {
+    sections.push(
+      `## Evidence\n\n` +
+      `The Playwright trace stays on the machine that ran this case: \`${c.trace ?? 'none recorded'}\`, relative to the run directory \`testing/${report.feature}/runs/${report.run_id}/\`.\n` +
+      `sha256: \`${c.trace_sha256 ?? 'none recorded'}\`. Verify the file with \`shasum -a 256\`, then open it there with \`npx playwright show-trace <path>\`.\n\n` +
+      `Treat the trace as a credential: it contains the session token that authenticated the run.`,
+    );
+    sections.push(`Filed by QA-Pilot from case ${c.id}. Reopen the case rather than editing this description if the failure changes.`);
+    return sections.join('\n\n');
+  }
+
   sections.push(
     `## Evidence\n\n` +
     (traceName
@@ -173,8 +185,9 @@ export function buildBugs(report, cases, confirmed, {
 
   // What a bug may carry follows the environment's effective evidence_upload, the same key
   // as everything else the tracker receives. Without a profile that cannot be known, which
-  // is only acceptable for a run that is known not to be production.
-  let mode = 'tracker';
+  // is only acceptable for a run that is known not to be production, and then it is the
+  // default: the failure text goes, the trace does not.
+  let mode = 'reference';
   if (!profile?.environments) {
     // Only a kind known not to be production may go on without a profile; anything else,
     // including a misspelt kind, fails closed.
@@ -184,8 +197,7 @@ export function buildBugs(report, cases, confirmed, {
   } else {
     const env = profile.environments[report.env_name];
     if (!env) throw new Error(`refused: env_name "${report.env_name}" is not a registered environment in the profile`);
-    if (profile.tracker === 'none') mode = 'file';
-    else if (effectiveEvidenceUpload(env, { tracker: profile.tracker }) === 'local') mode = 'local';
+    mode = profile.tracker === 'none' ? 'file' : effectiveEvidenceUpload(env, { tracker: profile.tracker });
   }
 
   // Where bugs go. Naming a list is optional so a first pilot is not blocked on ClickUp
@@ -215,7 +227,7 @@ export function buildBugs(report, cases, confirmed, {
 
     const signature = failureSignature(id, result.failure_summary);
     const known = ledger[id];
-    // Only a tracker upload attaches anything; local evidence and local files point at it.
+    // Only a tracker upload attaches anything; reference, local evidence and local files point at it.
     const traceName = mode === 'tracker' && result.trace ? `${id}-${report.run_id}.zip` : null;
 
     // Under tracker: none there is no task to comment on: each run's bugs are its own files.
@@ -229,6 +241,11 @@ export function buildBugs(report, cases, confirmed, {
           ? `Still failing on \`${report.run_id}\` against ${report.env_name} at build \`${report.commit_sha}\`, ` +
             `with the same failure signature as when this was filed. The failure text is withheld because this run's evidence stays local: ` +
             `trace \`${result.trace ?? 'none recorded'}\` in \`testing/${report.feature}/runs/${report.run_id}/\`, sha256 \`${result.trace_sha256 ?? 'none recorded'}\`.`
+          : mode === 'reference'
+            ? `Still failing on \`${report.run_id}\` against ${report.env_name} at build \`${report.commit_sha}\`.\n\n` +
+              `\`\`\`\n${result.failure_summary}\n\`\`\`\n\n` +
+              `Same failure signature as when this was filed, so it is the same defect rather than a new one. ` +
+              `The trace for this run stays on the machine that ran it: \`${result.trace ?? 'none recorded'}\` in \`testing/${report.feature}/runs/${report.run_id}/\`, sha256 \`${result.trace_sha256 ?? 'none recorded'}\`.`
           : `Still failing on \`${report.run_id}\` against ${report.env_name} at build \`${report.commit_sha}\`.\n\n` +
             `\`\`\`\n${result.failure_summary}\n\`\`\`\n\n` +
             `Same failure signature as when this was filed, so it is the same defect rather than a new one. ` +

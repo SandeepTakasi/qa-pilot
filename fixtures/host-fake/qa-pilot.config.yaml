@@ -16,6 +16,7 @@ apps:
 environments:
   qa:
     kind: qa
+    evidence_upload: tracker   # opted in, so tests of tracker mode keep their meaning
     apps:
       storefront: https://qa.host-fake.example.com
       admin: https://qa-admin.host-fake.example.com
@@ -24,6 +25,7 @@ environments:
       json_path: build.commit
   staging:
     kind: staging
+    evidence_upload: tracker
     apps:
       storefront: https://staging.host-fake.example.com
       admin: https://staging-admin.host-fake.example.com

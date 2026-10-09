@@ -278,8 +278,8 @@ function validateMutation(report, profile, casesDoc, { base, needsEvidence, arti
     }
   }
 
-  // --- rule 6: local evidence is pinned ---
-  if (upload === 'local') {
+  // --- rule 6: evidence that stays on this machine is pinned ---
+  if (upload === 'reference' || upload === 'local') {
     for (const { at, e } of entities) {
       if (!isStr(e.trace)) continue;
       if (escapesRunDir(e.trace)) {
