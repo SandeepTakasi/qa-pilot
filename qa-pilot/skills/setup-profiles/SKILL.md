@@ -79,4 +79,4 @@ Specs consume profiles with `test.use({ storageState: '<path>' })`, or per-proje
 
 ## 6. Refresh
 
-Sessions expire. When a run fails with cases landing on a login page, the profile is stale, not the feature broken, so re-run this skill for that profile. Note in the report that the run was `blocked`, not `fail`: an expired session is an environment problem, and recording it as a failure pollutes the false-pass tracking that keeps the pipeline honest.
+Sessions expire. When a run fails with cases landing on a login page, the profile is stale, not the feature broken, so re-run this skill for that profile. Note in the report that the run was `blocked`, not `fail`: an expired session is an environment problem, and recording it as a failure would blame the feature for a stale login.

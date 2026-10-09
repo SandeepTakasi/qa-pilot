@@ -127,6 +127,8 @@ await expect(page.getByTestId('order-confirmation')).toBeHidden();
 
 **Web-first assertions only.** `expect(locator).toBeVisible()` retries; `expect(await locator.isVisible()).toBe(true)` does not, and turns every timing difference into flake. Never use `page.waitForTimeout` as a synchronization tool.
 
+**The lint enforces these rules.** `/qa-pilot:run-tests` lints every spec with `eslint.qa-pilot.config.mjs` before a verdict run: `playwright/expect-expect` fails a test with no assertion, `playwright/no-wait-for-timeout` fails a fixed sleep, and `playwright/no-skipped-test` and `playwright/no-focused-test` fail `test.skip` and `test.only`. Keep the assertions in the test body: `expect-expect` does not see through a helper, so a test whose only `expect` lives in a helper fails the lint, and a reader cannot see what the test checks either.
+
 ## Console evidence
 
 When the profile's `evidence.extra` includes `console_log`, attach console output to every test. On hosts where operations bypass the network, this is the only machine-readable record of what the application actually did. The publish gate does not require the attachment, because the trace already carries the console output and the trace is required; the separate log is there so a failure can be read without opening the trace.

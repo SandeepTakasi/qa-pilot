@@ -42,6 +42,8 @@ Identify which app(s) the feature's cases target, and take their base URLs from 
 
 Production traces stay on this machine. Say so up front, and say that QA will review them here (`/qa-pilot:qa-review`), since nothing is attached to the tracker.
 
+**When the effective `evidence_upload` is `reference` or `local`** (production is always `local`), on any environment, evidence stays on this machine, and the same check applies: `git check-ignore -q testing/<feature>/runs/x`. Nonzero → STOP and tell the user to ignore `testing/*/runs/` first, since otherwise the traces leave through git. Under `reference` the tracker still receives the case fields and failure text, never the trace file, so say that QA opens traces here by their `trace_sha256` and `npx playwright show-trace <path>`.
+
 ## 2. Approval gate
 
 Find each case's current status:
@@ -107,6 +109,20 @@ cp "${CLAUDE_PLUGIN_ROOT}/templates/write-guard.mjs" "${CLAUDE_PLUGIN_ROOT}/temp
 
 Specs then `import { test, expect } from '../write-guard.fixture'` (or from a `fixtures.ts` that extends it, see `references/spec-conventions.md`). A spec that bypasses it leaves no write record, and the publish gate refuses the run. Under `scoped-write`, every entity a spec creates carries the feature's `mutation.prefix` in its name, or its own controls are blocked.
 
+**Lint the specs before the verdict run.** The host keeps `eslint.qa-pilot.config.mjs` at its repo root. If it is absent, copy it from the plugin and write every app's `spec_dir` into its `files` globs as `<spec_dir>/**/*.spec.ts`:
+
+```bash
+cp "${CLAUDE_PLUGIN_ROOT}/templates/eslint.qa-pilot.config.mjs" ./
+```
+
+It needs the dev dependencies `eslint@9`, `eslint-plugin-playwright`, `typescript-eslint` and `typescript`; tell the user to add them if they are missing. Then lint the feature's specs:
+
+```bash
+npx eslint -c eslint.qa-pilot.config.mjs <spec_dir>/<feature>
+```
+
+Fix every error without weakening or removing an assertion: a spec with no `expect`, a `waitForTimeout`, or a skipped or focused test would pass without checking anything, which is the failure this pipeline exists to prevent.
+
 **Shared fixtures.** For each `fixtures[]` entry in `cases.yaml`, write `<spec_dir>/<feature>/FIXTURE-<name>.setup.ts` (test title `FIXTURE <name>`) and, only for `teardown: delete`, `FIXTURE-<name>.teardown.ts` (title `FIXTURE <name> teardown`). Wire them as Playwright projects. Each needs an explicit `testMatch`, because the default `testMatch` does not find `*.setup.ts` or `*.teardown.ts` files, and `retries: 0`, because a setup that only works on retry has already created a first entity:
 
 ```js
@@ -158,7 +174,7 @@ Do not turn off `screenshots` within the trace to save space. It is roughly 95% 
 
 ## 6. Stabilize new specs before they count
 
-A spec that has never run gets **three consecutive green runs** on the sandbox, or on `stabilization.env` when the profile names one, before its first verdict run is treated as evidence. Track this in `testing/<feature>/run-log.json`. This is cheap insurance against publishing a verdict from a spec that was simply lucky. `stabilization.env` is never production; the profile loader refuses that.
+A spec that has never run gets **three consecutive green runs** on the sandbox, or on `stabilization.env` when the profile names one, before its first verdict run is treated as evidence. This is cheap insurance against publishing a verdict from a spec that was simply lucky. `stabilization.env` is never production; the profile loader refuses that.
 
 ## 7. Run
 
@@ -232,6 +248,6 @@ Copy `testing/<feature>/runs/statuses.json` from step 2 into `$RUN_DIR/`, so the
 
 ## 10. Report and hand off
 
-Summarize: counts by verdict, the SHA and environment, anything excluded for lack of approval, any spec that needed hand-fixing, and, for a guarded run, any write the guard blocked (each `writes.json` lists them). A read-only run with a blocked write cannot publish; say which spec tried and what it clicked. Then point at `/qa-pilot:publish-results <feature>` for a verdict run, or say plainly that a stabilization run is not published.
+Summarize: counts by verdict, the SHA and environment, anything excluded for lack of approval, any spec that needed hand-fixing, for each new spec that it had three consecutive green runs, and, for a guarded run, any write the guard blocked (each `writes.json` lists them). A read-only run with a blocked write cannot publish; say which spec tried and what it clicked. Then point at `/qa-pilot:publish-results <feature>` for a verdict run, or say plainly that a stabilization run is not published.
 
-Commit the specs and the two write-guard templates. They are the asset: CI regression comes free from specs that accumulated as a side effect of normal testing, which is how this survives the crunch it was built for. Never commit `testing/*/runs/`, and on production it must already be ignored.
+Commit the specs and the two write-guard templates. They are the asset: CI regression comes free from specs that accumulated as a side effect of normal testing, which is how this survives the crunch it was built for. Never commit `testing/*/runs/`, and wherever evidence stays on this machine (`reference` or `local`, which includes all of production) it must already be ignored.
