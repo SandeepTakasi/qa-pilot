@@ -130,8 +130,8 @@ export function validateProfile(raw, { profilePath = null } = {}) {
       if (env.evidence_upload !== undefined && !EVIDENCE_UPLOADS.includes(env.evidence_upload)) {
         err(`environments.${envName}.evidence_upload: must be ${EVIDENCE_UPLOADS.join(' | ')}`);
       }
-      if (tracker === 'none' && env.evidence_upload === 'tracker') {
-        warnings.push(`environments.${envName}.evidence_upload: tracker is ignored under tracker: none; evidence stays local`);
+      if (tracker === 'none' && env.evidence_upload !== undefined && env.evidence_upload !== 'local' && EVIDENCE_UPLOADS.includes(env.evidence_upload)) {
+        warnings.push(`environments.${envName}.evidence_upload: ${env.evidence_upload} is ignored under tracker: none; evidence stays local`);
       }
       // The account a production run signs in as is the real boundary, so it is named.
       const ta = env.test_account;

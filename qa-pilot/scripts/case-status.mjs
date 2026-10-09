@@ -15,7 +15,8 @@
 //                             --ids <A,B,...>
 //   --record-approvals seeds the approval ledger when QA approves (needs no --cases or --statuses):
 //   a passing case records the run's spec hash, any other verdict removes the id. It prints
-//   { "approved_ledger": { ... } }; a missing approved.json starts a new ledger.
+//   { "approved_ledger": { ... } }; --approved is required, a missing file starts a new ledger,
+//   and a file that is not a JSON object is refused.
 //   statuses.json: { "<CASE-ID>": "<ClickUp status>", ... }
 //   --verdicts accepts a report.json, or a plain { "<CASE-ID>": "pass|fail|..." } map.
 //   Without it the confidence score reads Unknown, since approval alone is not a pass.
@@ -349,19 +350,20 @@ if (isMain(import.meta.url) && process.argv.includes('--record-approvals')) {
     if (!idsArg) throw new Error('--record-approvals needs --ids <A,B>');
     const report = JSON.parse(readFileSync(verdictsPath, 'utf8'));
     if (!Array.isArray(report?.cases)) throw new Error(`no cases[] in ${verdictsPath}`);
+    // Required: printing a ledger without the earlier entries invites a silent overwrite.
     const ledgerPath = argValue('--approved');
+    if (!ledgerPath) throw new Error('--record-approvals needs --approved <approved.json>');
     let ledger = {};
-    if (ledgerPath) {
-      // Only a missing file starts a new ledger; a corrupt one would silently drop every
-      // earlier approval, so it is refused.
-      let raw = null;
-      try { raw = readFileSync(ledgerPath, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-      if (raw === null) console.error(`warning: no approval ledger at ${ledgerPath}; starting a new one`);
-      else {
-        try { ledger = JSON.parse(raw); } catch { throw new Error(`record-approvals: ${ledgerPath} is not valid JSON; fix or remove it before recording approvals`); }
+    // Only a missing file starts a new ledger; a corrupt or non-object one would silently
+    // drop every earlier approval, so it is refused.
+    let raw = null;
+    try { raw = readFileSync(ledgerPath, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    if (raw === null) console.error(`warning: no approval ledger at ${ledgerPath}; starting a new one`);
+    else {
+      try { ledger = JSON.parse(raw); } catch { throw new Error(`record-approvals: ${ledgerPath} is not valid JSON; fix or remove it before recording approvals`); }
+      if (ledger === null || typeof ledger !== 'object' || Array.isArray(ledger)) {
+        throw new Error(`record-approvals: ${ledgerPath} must hold a JSON object of case id to spec hash`);
       }
-    } else {
-      console.error('warning: no --approved ledger given; starting a new one');
     }
     const ids = idsArg.split(',').map((s) => s.trim()).filter(Boolean);
     console.log(JSON.stringify({ approved_ledger: recordApprovals(report, ledger, ids) }, null, 2));

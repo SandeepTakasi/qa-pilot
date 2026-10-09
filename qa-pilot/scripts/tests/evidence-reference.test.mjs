@@ -104,6 +104,15 @@ test('tracker: none is local whatever the environment says, reference included',
   }
 });
 
+test('under tracker: none, any explicit evidence_upload other than local warns that it is ignored', () => {
+  for (const v of ['tracker', 'reference']) {
+    const { warnings } = validate((p) => { p.tracker = 'none'; p.environments.qa.evidence_upload = v; });
+    assert.ok(has(warnings, new RegExp(`^environments\\.qa\\.evidence_upload: ${v} is ignored under tracker: none; evidence stays local$`)), `${v}: ${warnings.join('\n')}`);
+  }
+  const { warnings } = validate((p) => { p.tracker = 'none'; p.environments.qa.evidence_upload = 'local'; });
+  assert.ok(!has(warnings, /environments\.qa\.evidence_upload: .* is ignored under tracker: none/), warnings.join('\n'));
+});
+
 // --- the payload -------------------------------------------------------------------------
 
 test('a reference case carries the tracker fields plus run_id, trace_path and trace_sha256, and no attach', () => {

@@ -91,7 +91,25 @@ test('the CLI refuses a corrupt ledger instead of replacing it', () => {
 });
 
 test('the CLI exits 1 on an id that is not in the report', () => {
-  const r = cli('--record-approvals', '--verdicts', reportPath, '--ids', 'Z');
+  const r = cli('--record-approvals', '--verdicts', reportPath, '--approved', join(dir, 'none.json'), '--ids', 'Z');
   assert.equal(r.status, 1);
   assert.match(r.stderr, /record-approvals: Z is not in the report/);
+});
+
+test('the CLI refuses a missing --approved, since printing a ledger without the earlier entries invites an overwrite', () => {
+  const r = cli('--record-approvals', '--verdicts', reportPath, '--ids', 'A');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /--record-approvals needs --approved <approved\.json>/);
+  assert.equal(r.stdout, '');
+});
+
+test('the CLI refuses a ledger whose JSON is not a plain object', () => {
+  for (const body of ['null', '[]', '3', '"x"']) {
+    const p = join(dir, 'not-object.json');
+    writeFileSync(p, body);
+    const r = cli('--record-approvals', '--verdicts', reportPath, '--approved', p, '--ids', 'A');
+    assert.equal(r.status, 1, body);
+    assert.match(r.stderr, /record-approvals: .*not-object\.json must hold a JSON object of case id to spec hash/, body);
+    assert.equal(r.stdout, '', body);
+  }
 });
