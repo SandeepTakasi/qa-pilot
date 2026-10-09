@@ -11,6 +11,11 @@
 //                             [--include-quarantined]
 //        node case-status.mjs --transitions --cases <cases.yaml> --statuses <statuses.json>
 //                             --verdicts <report.json> --approved <approved.json> --profile <p>
+//        node case-status.mjs --record-approvals --verdicts <report.json> --approved <approved.json>
+//                             --ids <A,B,...>
+//   --record-approvals seeds the approval ledger when QA approves (needs no --cases or --statuses):
+//   a passing case records the run's spec hash, any other verdict removes the id. It prints
+//   { "approved_ledger": { ... } }; a missing approved.json starts a new ledger.
 //   statuses.json: { "<CASE-ID>": "<ClickUp status>", ... }
 //   --verdicts accepts a report.json, or a plain { "<CASE-ID>": "pass|fail|..." } map.
 //   Without it the confidence score reads Unknown, since approval alone is not a pass.
@@ -193,6 +198,32 @@ export function publishTransitions(cases, statuses, verdicts, {
 }
 
 /**
+ * The ledger after QA approves `ids` at result review: the first entry for a case, and the
+ * only place one is written. publishTransitions can keep an entry but never creates it, so
+ * without this no approval carries forward and CI selects nothing.
+ *
+ * A passing verdict records the run's spec hash. Any other verdict removes the id: approving
+ * a confirmed failure records that QA agreed the feature is broken, which is not a baseline
+ * a later run should be compared with. Pure; `ledger` is never mutated.
+ *
+ * @param {{cases: Array<{id: string, verdict: string, spec_sha?: string}>}} report a report.json
+ * @param {Record<string,string>} ledger case id -> approved spec hash
+ * @param {string[]} ids the cases QA just approved
+ */
+export function recordApprovals(report, ledger, ids) {
+  const byId = new Map(report.cases.map((c) => [c.id, c]));
+  const next = { ...ledger };
+  for (const id of ids) {
+    const c = byId.get(id);
+    if (!c) throw new Error(`record-approvals: ${id} is not in the report`);
+    if (c.verdict !== 'pass') delete next[id];
+    else if (!c.spec_sha) throw new Error(`record-approvals: ${id} has no spec_sha in the report`);
+    else next[id] = c.spec_sha;
+  }
+  return next;
+}
+
+/**
  * @param {Array<{id: string, priority: string}>} cases from cases.yaml
  * @param {Record<string,string>} statuses case id -> the status ClickUp reports
  * @param {{includeQuarantined?: boolean, statusNames?: Record<string,string>,
@@ -309,7 +340,37 @@ function argValue(flag) {
   return i === -1 ? null : process.argv[i + 1];
 }
 
-if (isMain(import.meta.url)) {
+if (isMain(import.meta.url) && process.argv.includes('--record-approvals')) {
+  // Handled before the --cases/--statuses guard: seeding the ledger needs only a report.
+  try {
+    const verdictsPath = argValue('--verdicts');
+    if (!verdictsPath) throw new Error('--record-approvals needs --verdicts <report.json>');
+    const idsArg = argValue('--ids');
+    if (!idsArg) throw new Error('--record-approvals needs --ids <A,B>');
+    const report = JSON.parse(readFileSync(verdictsPath, 'utf8'));
+    if (!Array.isArray(report?.cases)) throw new Error(`no cases[] in ${verdictsPath}`);
+    const ledgerPath = argValue('--approved');
+    let ledger = {};
+    if (ledgerPath) {
+      // Only a missing file starts a new ledger; a corrupt one would silently drop every
+      // earlier approval, so it is refused.
+      let raw = null;
+      try { raw = readFileSync(ledgerPath, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      if (raw === null) console.error(`warning: no approval ledger at ${ledgerPath}; starting a new one`);
+      else {
+        try { ledger = JSON.parse(raw); } catch { throw new Error(`record-approvals: ${ledgerPath} is not valid JSON; fix or remove it before recording approvals`); }
+      }
+    } else {
+      console.error('warning: no --approved ledger given; starting a new one');
+    }
+    const ids = idsArg.split(',').map((s) => s.trim()).filter(Boolean);
+    console.log(JSON.stringify({ approved_ledger: recordApprovals(report, ledger, ids) }, null, 2));
+    process.exit(0);
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
+} else if (isMain(import.meta.url)) {
   const casesPath = argValue('--cases');
   const statusesPath = argValue('--statuses');
   const profilePath = argValue('--profile');

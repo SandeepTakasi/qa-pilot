@@ -104,6 +104,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" --transitions \
 
 It returns each case's target lifecycle key with a reason, plus the updated approval ledger. Write `approved_ledger` back to `testing/<feature>/approved.json` and commit it.
 
+This step keeps and clears ledger entries; it never creates a case's first one. That is written when QA approves, by `/qa-pilot:qa-review` running `case-status.mjs --record-approvals` against the reviewed run's `report.json`. A case QA approved without that step has no entry, so its next passing run goes back to review.
+
 **A case whose spec has not changed and which passed again keeps its approval.** Only cases that failed, went flaky, or ran from an edited spec go back to `under_review`. Sending the whole feature back on every run means one person re-reviewing several hundred cases weekly, which ends in either abandoned regression runs or rubber-stamping, and both are worse than no review.
 
 `approved.json` is the record of which spec QA accepted, as `{"<CASE-ID>": "<spec_sha>"}`. Committing it is what makes "approved" mean approved-for-this-spec rather than approved-once-forever across the team, and it is the only thing CI reads to decide what it may run.
@@ -131,17 +133,18 @@ Its `mode` decides step 7, and it is set from the environment's effective `evide
 
 | `mode` | When | What reaches the tracker |
 |---|---|---|
-| `tracker` | evidence may upload | the field set in `references/clickup-fields.md`, one trace attachment per case, the full run summary |
+| `tracker` | the environment opts in with `evidence_upload: tracker` (never production) | the field set in `references/clickup-fields.md`, one trace attachment per case, the full run summary |
+| `reference` | `evidence_upload: reference`, the default off production | the same fields and summary as `tracker`, but never the trace file: each case also carries `run_id`, `trace_path` (run-relative) and `trace_sha256`, and the summary says traces stay on the machine that ran them. No attachment |
 | `local` | evidence stays local; **always on production** | per case only the case ID, verdict, target status, environment, build, run ID, and the trace's run-relative path and sha256; the summary only counts, blocked percentage, confidence, readiness and, when present, `requirement_coverage` (ids and counts). No attachment, no failure text, no console text, no URL, no executor |
 | `none` | `tracker: none` | nothing; a plan of local file writes instead |
 
-Post exactly what `payload.json` holds. On `local`, **never attach a trace and never add a field from the report**, however useful it looks: the trace carries the session credential and every request body it touched, and the failure text can carry the application's data. A reviewer finds the evidence on the executor's machine, by the path and hash the payload gives.
+Post exactly what `payload.json` holds. On `reference` never attach a trace either, and on `local`, **never attach a trace and never add a field from the report**, however useful it looks: the trace carries the session credential and every request body it touched, and the failure text can carry the application's data. A reviewer finds the evidence on the executor's machine, by the path and hash the payload gives.
 
 ## 7. Write it
 
 **`mode: none`**: no tracker call, no write flag. Merge `status_writes` into `statuses_file` (`testing/<feature>/statuses.json`), keeping every case it does not name; write `summary` as JSON to `summary_file` in the run directory. That is the publish.
 
-**`mode: tracker` or `local`**: create the write flag the guard hook checks, at the repo root next to the profile, and remove it when you are done:
+**`mode: tracker`, `reference` or `local`**: create the write flag the guard hook checks, at the repo root next to the profile, and remove it when you are done:
 
 ```bash
 mkdir -p .qa-pilot && touch .qa-pilot/allow-clickup-writes
@@ -155,10 +158,10 @@ The flag expires after 30 minutes, so a session that dies mid-publish cannot lea
 
 - One `clickup_update_task` call per task, setting every field the payload gives for it at once (the mapping to ClickUp field names is in `references/clickup-fields.md`). Coalescing matters: the Business tier allows 100 requests per minute per token, and a 25-case feature plus attachments gets close.
 - Status: `target_status`, already resolved to this host's name. `null` means leave the status alone. Never decide the target status yourself: a case that passed on an unchanged approved spec stays `approved`, and moving it back to `under_review` is what turns a regression suite into a weekly re-review of everything.
-- **On `tracker`, attach the trace named in `attach`, and only that**, with `clickup_attach_task_file`, under `attach.name`, resolving `attach.path` against `$RUN_DIR`. Do not upload the `.webm` or the console log: the trace already contains the video byte-for-byte plus the console output. **On `local` there is no `attach` and nothing is uploaded.**
+- **On `tracker`, attach the trace named in `attach`, and only that**, with `clickup_attach_task_file`, under `attach.name`, resolving `attach.path` against `$RUN_DIR`. Do not upload the `.webm` or the console log: the trace already contains the video byte-for-byte plus the console output. **On `reference` and `local` there is no `attach` and nothing is uploaded.**
 - If a trace exceeds 1 GB (the API's per-file cap), something is wrong with the run, not with the upload, so report it rather than working around it.
 
-**Once per feature** (`payload.summary`): a single run-summary comment on the feature task (`clickup_create_task_comment`), not one comment per case, holding exactly the summary's fields (`requirement_coverage` included when the payload has it, and only then) and starting with the run ID so a re-publish can find its own prior comment. On `tracker` it includes the executor and the reviewer line (traces open at <https://trace.playwright.dev> by drag-and-drop, entirely in the browser); on `local` it does not, because neither is in the payload.
+**Once per feature** (`payload.summary`): a single run-summary comment on the feature task (`clickup_create_task_comment`), not one comment per case, holding exactly the summary's fields (`requirement_coverage` included when the payload has it, and only then) and starting with the run ID so a re-publish can find its own prior comment. On `tracker` and `reference` it includes the executor and the reviewer line (on `tracker`, download the trace and open it with `npx playwright show-trace`; on `reference`, the traces stay on the machine that ran them, to be verified by sha256 and opened with `npx playwright show-trace <path>`); on `local` it does not, because neither is in the payload.
 
 **Rate discipline**: sequential calls, never parallel. On a 429, wait 60 seconds and resume from where you stopped. Do not restart the whole publish. Note that the 100/min budget is **per token**: if several developers publish on one shared token they will exhaust it together. Per-user OAuth tokens give each executor their own budget and make the `executor` field truthful for free.
 
@@ -168,6 +171,6 @@ Re-publishing the same run must produce the same state, not a second copy of it.
 
 ## 9. Report back
 
-Tell the user what landed: case count by verdict, the confidence score and whether the feature reads Ready, anything quarantined, and the ClickUp list link (or the statuses file under `tracker: none`). For a `local` run, say that the traces are on this machine under `$RUN_DIR` and that QA reviews them here. Then point QA at `/qa-pilot:qa-review <feature>`.
+Tell the user what landed: case count by verdict, the confidence score and whether the feature reads Ready, anything quarantined, and the ClickUp list link (or the statuses file under `tracker: none`). For a `reference` or `local` run, say that the traces are on this machine under `$RUN_DIR` and that QA reviews them here. Then point QA at `/qa-pilot:qa-review <feature>`.
 
 If validation refused, report only that: the refusals, verbatim, and what to fix. Do not soften them, and do not offer to publish "just the passing cases".
