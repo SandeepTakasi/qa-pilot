@@ -51,6 +51,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Artifacts are downloadable by anyone on a public repository, and a trace can carry
+      # a refresh token, so the upload below runs only on a private one. Fail closed: if the
+      # lookup fails for any reason, the repository counts as public and nothing is uploaded.
+      - name: Check the repository's visibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRIVATE=$(gh api "repos/$GITHUB_REPOSITORY" --jq .private 2>/dev/null) || PRIVATE=false
+          [ "$PRIVATE" = true ] || PRIVATE=false
+          echo "PRIVATE_REPO=$PRIVATE" >> "$GITHUB_ENV"
+
       # The plugin is installed in Claude Code, not in your repo, so CI checks it out
       # separately. Pin a tag or SHA: an unpinned ref means a change to QA-Pilot can turn
       # your build red overnight with nothing in your own history to explain it.
@@ -99,11 +110,9 @@ jobs:
             exit 1
           fi
           QA_URL=$(jq -er ".environments.$QA_ENV.apps.$APP" .qa-pilot-profile.json)
-          EVIDENCE_UPLOAD=$(jq -er ".environments.$QA_ENV.evidence_upload" .qa-pilot-profile.json)
           CAPTURE=$(jq -er '.evidence.capture // "always"' .qa-pilot-profile.json)
           echo "KIND=$KIND" >> $GITHUB_ENV
           echo "QA_URL=$QA_URL" >> $GITHUB_ENV
-          echo "EVIDENCE_UPLOAD=$EVIDENCE_UPLOAD" >> $GITHUB_ENV
           echo "CAPTURE=$CAPTURE" >> $GITHUB_ENV
           # The write guard's view of what a write is on this host, uncompiled.
           echo "QA_PILOT_MUTATION_CONFIG=$(jq -c '.mutation // empty' .qa-pilot-profile.json)" >> $GITHUB_ENV
@@ -184,8 +193,22 @@ jobs:
       # repo root, copied from templates/eslint.qa-pilot.config.mjs (see SETUP-CI.md), and
       # needs eslint, eslint-plugin-playwright, typescript-eslint and typescript in your
       # devDependencies so `npm ci` installs them.
+      # Here the specs are passed as file paths. ESLint 9 does not fail on an explicit path
+      # that the config's `files` globs do not cover: it prints "File ignored because no
+      # matching configuration was supplied" and exits 0, which would lint nothing and go
+      # green. So the output is captured and that message fails the step; otherwise the step
+      # keeps ESLint's own exit code. `|| rc=$?` survives GitHub's `bash -eo pipefail`.
       - name: Lint the selected specs
-        run: npx eslint -c eslint.qa-pilot.config.mjs $SPECS
+        run: |
+          rc=0
+          out=$(npx eslint -c eslint.qa-pilot.config.mjs $SPECS 2>&1) || rc=$?
+          printf '%s\n' "$out"
+          case "$out" in
+            *'File ignored'*)
+              echo "refusing: ESLint ignored a selected spec, so it was not linted. Add the app's spec_dir to the files list in eslint.qa-pilot.config.mjs." >&2
+              exit 1 ;;
+          esac
+          exit "$rc"
 
       # $SPECS is intentionally unquoted: it is a space-separated list of spec paths.
       # `select` refuses any path containing whitespace for that reason, so the split here
@@ -231,15 +254,19 @@ jobs:
             --specs testing/$FEATURE/specs.json
 
       # Keep the evidence on every run, whatever the outcome and whatever the profile's
-      # evidence_upload says: this job never runs production, and a GitHub artifact is
-      # visible only to people with read access to the repo, for 14 days. Reviewers need it
-      # to see a CI failure.
+      # evidence_upload says, but only on a private repository: this job never runs
+      # production, and there a GitHub artifact is visible only to people with read access
+      # to the repo, for 14 days. On a public repository anyone can download it.
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && env.PRIVATE_REPO == 'true'
         with:
           name: qa-pilot-${{ github.run_id }}
           path: ${{ env.RUN_DIR }}
           retention-days: 14
+
+      - name: Say why no artifact was uploaded
+        if: always() && env.PRIVATE_REPO != 'true'
+        run: echo "QA-Pilot artifacts were skipped because anyone can download them from a public repository and a trace can carry a refresh token." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verdict
         run: node $PLUGIN/ci-gate.mjs verdict --report $RUN_DIR/report.json
@@ -247,6 +274,7 @@ jobs:
 # This job does not publish to ClickUp, by design. Publishing writes to the tracker as a
 # person and runs through the approval gate over MCP, neither of which a build runner has.
 # When a regression needs to be in ClickUp, download report.json from the artifacts and
-# run /qa-pilot:publish-results against it. The artifact holds the traces, which carry the
-# test account's session: anyone with read access to the repo can download it, so keep the
-# test account restricted and the retention short (see SETUP-CI.md, "Evidence in CI").
+# run /qa-pilot:publish-results against it. The artifact (private repositories only) holds
+# the traces, which carry the test account's session: anyone with read access to the repo
+# can download it, so keep the test account restricted and the retention short (see
+# SETUP-CI.md, "Evidence in CI").

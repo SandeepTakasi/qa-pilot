@@ -12,7 +12,8 @@ system the same steps port directly; nothing here is GitHub-specific except the 
 
 It runs the specs QA approved, against a deployed environment, and fails the build when
 one of them stops passing. It lints the selected specs, and it uploads the run directory
-(`report.json`, the Playwright results and the traces) as build artifacts on every run.
+(`report.json`, the Playwright results and the traces) as build artifacts on every run of a
+private repository. On a public repository it uploads nothing (see "Evidence in CI").
 
 **It never runs against production.** The job reads the environment's `kind` from the
 profile and stops if it is `production`. Build artifacts leave the machine, and a production
@@ -23,8 +24,9 @@ a person, with evidence kept on their machine (see `/qa-pilot:run-tests`).
 writes to the tracker as a person, and a build runner is neither. Adding a second write
 path, with a CI token and its own copy of the rules, would mean two things to keep honest
 instead of one. When a CI regression needs to be in ClickUp, download the run directory from
-the build artifacts and run `/qa-pilot:publish-results` against it. The artifact is there on
-every run, whatever the environment's `evidence_upload` says (see "Evidence in CI").
+the build artifacts and run `/qa-pilot:publish-results` against it. On a private repository
+the artifact is there on every run, whatever the environment's `evidence_upload` says (see
+"Evidence in CI"). On a public repository there is no artifact, so run the specs locally.
 
 **It does not need ClickUp at all.** `testing/<feature>/approved.json` is committed. It
 names every case QA accepted and the hash of the spec they accepted, so CI can answer
@@ -125,6 +127,7 @@ not on day one.
 | `REFUSED: no approved spec at priority <list> is runnable` | `PRIORITY` is set and no approved, undrifted spec has that priority | QA, via `/qa-pilot:qa-review`, or whoever set `PRIORITY` |
 | `REFUSED: <k> approved spec(s) were skipped and --max-skipped allows <n>` | more approved specs were skipped (edited, missing or without a path) than `MAX_SKIPPED` allows; the step summary lists each one | QA, via `/qa-pilot:qa-review`, or whoever owns the spec |
 | `eslint` errors on a spec | a test with no assertion, a fixed sleep, or a skipped or focused test | whoever wrote the spec |
+| `File ignored` in the lint step | the config's `files` globs do not cover a selected spec, so it was not linted | whoever owns the config: add the app's `spec_dir` |
 
 A `flaky` case fails the build. Pass-on-retry is never a pass anywhere else in this
 pipeline, and letting CI be the one place it goes green makes CI the place people go for a
@@ -268,13 +271,27 @@ and `schedule` for the nightly one, since otherwise both fire on every trigger.
 
 ## Linting the specs
 
-After `select`, the template lints exactly the specs it selected:
+After `select`, the template lints exactly the specs it selected, passing them to ESLint as
+file paths:
 
 ```bash
-npx eslint -c eslint.qa-pilot.config.mjs $SPECS
+rc=0
+out=$(npx eslint -c eslint.qa-pilot.config.mjs $SPECS 2>&1) || rc=$?
+printf '%s\n' "$out"
+case "$out" in
+  *'File ignored'*) echo "add the app's spec_dir to the files list" >&2; exit 1 ;;
+esac
+exit "$rc"
 ```
 
-It catches what a reviewer skims past: a test with no assertion, a fixed `waitForTimeout`,
+ESLint 9 does not fail on an explicit file path that the config's `files` globs do not cover.
+It prints `File ignored because no matching configuration was supplied` and exits 0, so a
+config that covers none of your specs would lint nothing and go green. The template fails the
+step when the output contains `File ignored`, and otherwise keeps ESLint's exit code. The
+`|| rc=$?` form is what lets the step survive GitHub's `bash -eo pipefail`. `/qa-pilot:run-tests`
+passes directories instead, where a glob that matches nothing exits 2.
+
+The lint catches what a reviewer skims past: a test with no assertion, a fixed `waitForTimeout`,
 a skipped or focused test. Such a spec passes, and a pass proves nothing. The rules come
 from `eslint-plugin-playwright`, which is maintained outside QA-Pilot.
 
@@ -284,7 +301,9 @@ To set it up:
    there, not in the plugin checkout, because ESLint resolves `files` against the config
    file's directory. `/qa-pilot:run-tests` copies it if it is absent and writes your
    `spec_dir` values in.
-2. Edit its `files` list, which holds one `<spec_dir>/**/*.spec.ts` glob per app. A glob that
+2. Edit its `files` list, which holds one `<spec_dir>/**/*.spec.ts` glob per app. Cover every
+   app's `spec_dir`: CI passes file paths, and a file no glob covers is ignored and now fails
+   the CI lint step with `File ignored`. When run-tests passes directories, a glob that
    matches nothing makes ESLint exit 2, so list only directories that exist.
 3. Add the dev dependencies `eslint@9`, `eslint-plugin-playwright`, `typescript-eslint` and
    `typescript`, so the job's `npm ci` installs them. `typescript-eslint` needs
@@ -321,11 +340,20 @@ cannot be read fails the step rather than running unguarded.
 
 ## Evidence in CI
 
-**The job uploads the run directory as a build artifact on every run**, pass or fail,
-whatever the profile's `evidence_upload` is, `evidence_upload: local` and `tracker: none`
-included. This is safe because CI never runs production, and a GitHub artifact is visible
-only to people with read access to the repository, for 14 days. Reviewers need it: without
-the trace, a red CI build is a message with nothing behind it.
+**Public repositories: the job uploads nothing.** On a public repository anyone can download a
+build artifact, and a trace can carry the test account's refresh token. An early step asks
+GitHub whether the repository is private (`gh api "repos/$GITHUB_REPOSITORY" --jq .private`)
+and sets `PRIVATE_REPO`. If the lookup fails for any reason the repository counts as public:
+it fails closed. The upload step runs only when `PRIVATE_REPO` is `true`; otherwise the step
+summary says the artifacts were skipped, and the run directory stays on the runner. A public
+repository that relied on artifacts should run the specs locally, or move the workflow to a
+private repository.
+
+**On a private repository the job uploads the run directory as a build artifact on every
+run**, pass or fail, whatever the profile's `evidence_upload` is, `evidence_upload: local` and
+`tracker: none` included. This is safe because CI never runs production, and a GitHub artifact
+is visible only to people with read access to the repository, for 14 days. Reviewers need it:
+without the trace, a red CI build is a message with nothing behind it.
 
 The job reads `evidence.capture` from the profile and passes the matching `--trace` mode to
 Playwright (`always` keeps a trace for every test, `on-failure` only for failures), and it

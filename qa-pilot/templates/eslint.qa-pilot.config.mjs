@@ -12,8 +12,12 @@ const recommended = playwright.configs['flat/recommended'];
 
 export default [{
   ...recommended,
-  // EDIT: one `<spec_dir>/**/*.spec.ts` glob per app, from your profile's spec_dir. A glob
-  // that matches nothing makes ESLint exit 2, so list only directories that exist.
+  // EDIT: one `<spec_dir>/**/*.spec.ts` glob per app, from your profile's spec_dir.
+  // The two callers differ. CI passes spec FILE paths: a file these globs do not cover is
+  // ignored ("File ignored because no matching configuration was supplied", exit 0), and the
+  // CI template fails the step on that message. run-tests passes DIRECTORIES: a glob that
+  // matches nothing makes ESLint exit 2. So list every app's spec_dir, and only directories
+  // that exist.
   files: ['e2e/**/*.spec.ts'],
   // Keep the parser after the spread of languageOptions: reversed, TypeScript specs fail to parse.
   languageOptions: { ...recommended.languageOptions, parser: tseslint.parser },
