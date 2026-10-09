@@ -9,6 +9,22 @@ claude plugin validate ./qa-pilot
 
 Leave the glob unquoted (see `qa-pilot/README.md`, "Development").
 
+Scripts run on Node 20, 22 and 24 (the CI matrix), so use nothing newer than Node 20: no
+`Object.groupBy`, no new `Set` methods.
+
+After changing any document the site renders (plugin docs, schemas, skills, `site/`):
+
+```bash
+cd site && npm run build:local
+```
+
+It fails on a broken link, and on an em or en dash only in a site-authored page; check plugin docs
+for dashes yourself.
+
+`qa-pilot/templates/qa-pilot-ci.yml` has no unit tests. After changing a `run:` step, run it under
+`bash -eo pipefail` (how GitHub runs it) with stub commands for each exit path, and capture a
+command that may fail as `out=$(cmd) || rc=$?`, since a bare `out=$(cmd)` ends the step at once.
+
 The write guard has a real-browser proof that the unit suite cannot give. Run it after any change
 to `qa-pilot/templates/write-guard.*`:
 

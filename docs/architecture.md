@@ -23,3 +23,22 @@ a design once.
 What the guard cannot see, by design (Node's own `node:http`, WebSocket frames, popups opened
 outside the guarded context and more), is listed once, in the header of
 `qa-pilot/templates/write-guard.fixture.ts`. Change it there, not here.
+
+## Where a trace may go
+
+`effectiveEvidenceUpload` in `qa-pilot/scripts/lib/profile.mjs` is the only place that decides,
+and the loader writes its answer into the normalized profile: `local` under `tracker: none` and
+on production, else the environment's explicit value, else `reference`. Four consumers must
+agree with it: `publish-payload.mjs` (only `tracker` produces an `attach`), `validate-report.mjs`
+rule 6 (pins `reference` and `local` traces by sha256), `bug-report.mjs` (only `tracker` attaches,
+and no profile means `reference`), and the CI template, which uploads the run directory only when
+GitHub confirms the repository is private. A new consumer of traces checks the same value; a new
+evidence value is added to all five.
+
+## The approval ledger has two writers
+
+`case-status.mjs --transitions` (at publish) keeps an entry when an approved, unchanged spec passes
+again and deletes every other; it never adds one. `case-status.mjs --record-approvals` (at review)
+adds the hash of each pass QA approved and removes an approved failure. It requires `--approved`,
+starts a new ledger only when that file is missing, and refuses a corrupt or non-object one,
+because printing a partial ledger invites overwriting every earlier approval.
