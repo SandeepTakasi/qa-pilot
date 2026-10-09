@@ -289,10 +289,11 @@ Neither is ever taken from the report. "Executed" below means a verdict of `pass
    `teardown: delete`, a `teardown` entry whose verdict is not `pass`, or a passing setup with no
    `teardown` entry, is a **warning** naming the fixture and the environment, because an entity
    was left behind.
-6. **Local evidence is pinned.** When the effective `evidence_upload` is `local`, every case or
-   fixture that has a `trace` needs `trace_sha256`; the gate re-hashes the file and refuses a
-   mismatch. The `trace` must also be a relative path that stays inside the run directory (no
-   leading `/`, no `..` segment), because that path is what the tracker receives.
+6. **Evidence that stays on the machine is pinned.** When the effective `evidence_upload` is
+   `reference` or `local`, every case or fixture that has a `trace` needs `trace_sha256`; the gate
+   re-hashes the file and refuses a mismatch. The `trace` must also be a relative path that stays
+   inside the run directory (no leading `/`, no `..` segment), because that path is what the
+   tracker receives.
 
 Fixtures follow the same trace requirement as cases under the recorded `evidence_capture`.
 
@@ -301,9 +302,11 @@ Fixtures follow the same trace requirement as cases under the recorded `evidence
 `scripts/publish-payload.mjs` computes everything a publish sends to the tracker; the skill
 posts only what it prints. What it prints depends on the effective `evidence_upload` of the
 report's `env_name`, read from the normalized profile given by `--profile`. An `env_name` the
-profile does not register is an error, never a fallback to `tracker`.
+profile does not register is an error, never a fallback to another mode. The effective value is
+`tracker`, `reference` or `local`: `reference` unless the environment sets another value, and
+`local` on production and under `tracker: none`.
 
-**`tracker`** (the 0.2.0 field set). Per case: verdict, build SHA (`commit_sha`), env
+**`tracker`** (the 0.2.0 field set, an opt-in per environment since 0.4.1). Per case: verdict, build SHA (`commit_sha`), env
 (`env_name`), API mode (`api_mode`), app, executor, run date (`finished_at`), flake count
 (`retries`), model version, the target status, and the trace file to attach; priority and type
 are set at generation, not per run. See `skills/publish-results/references/clickup-fields.md` for
@@ -313,6 +316,14 @@ readiness, the requirement coverage (`requirement_coverage`, only when the `case
 carries `requirements`, that is, the cases file declares requirements and they are lint-clean), the
 executor, and the line telling the reviewer that traces open at <https://trace.playwright.dev> by
 drag-and-drop.
+
+**`reference`** (`evidence_upload: reference`, the default off production). The same per-case
+fields and the same run summary as `tracker`, and never the trace file: no attachment. Each case
+also carries `run_id`, `trace_path` (`cases[].trace`, run-dir relative, with the same escape check
+as `local`) and `trace_sha256` (`cases[].trace_sha256`). The summary's reviewer note says the
+traces stay on the machine that ran them, to be verified by sha256 and opened with
+`npx playwright show-trace <path>`. A bug filed from such a run carries the tracker body, failure
+text included, without an attachment, and names the trace path and sha256.
 
 **`local`**, which every production environment is: no host application data. Per case, exactly:
 
@@ -335,10 +346,12 @@ no attachment, no `failure_summary`, no console text, no absolute path, no execu
 (and a dedup comment on an existing bug) names the case id, run id, env name, build id, trace
 path and trace sha256, and no failure text. `bug-report.mjs` keys this on the same effective
 `evidence_upload: local` from the profile, not on `env_kind`; given no profile, it accepts only a
-report whose `env_kind` is exactly `qa` or `staging` and refuses any other value or none, and given a profile that does not register the
+report whose `env_kind` is exactly `qa` or `staging`, files it as `reference`, and refuses any
+other value or none, and given a profile that does not register the
 report's `env_name`, it refuses, as `publish-payload.mjs` does. Under `tracker: none` no tracker
 receives the bug: the bug file inside the run directory keeps the failure text, since it never
-leaves the machine (the run directory must be gitignored on production).
+leaves the machine (the run directory must be gitignored whenever evidence stays on the machine:
+`reference` or `local`).
 A reviewer finds the evidence by opening that path on the executor's machine and checking it with
 the sha256.
 

@@ -20,9 +20,9 @@ environments:                       # required, >= 1 entry
     kind: qa | staging | production # REQUIRED. What this environment is. See "Environment kinds".
     apps:                           # required; keys must be a subset of apps{}
       <app-name>: <http(s) URL>     # base URL of that app in this environment
-    evidence_upload: tracker | local  # optional. Where traces go. Default: local when kind is
-                                    # production or tracker is none, tracker otherwise.
-                                    # tracker on a production environment is an error.
+    evidence_upload: tracker | reference | local  # optional. Where traces go. Default: local when
+                                    # kind is production or tracker is none, reference otherwise.
+                                    # tracker or reference on a production environment is an error.
     test_account: string            # REQUIRED when kind is production: at least 20 characters
                                     # after trimming. Optional on other kinds; when present the
                                     # same length rule applies, with its own error message.
@@ -61,8 +61,8 @@ selectors:
 
 models:
   generation_approved:              # required, >= 1 model id
-    - claude-fable-5                # only these models may author cases.yaml;
-    - claude-opus-5                 # validate-cases.mjs fails on anything else
+    - claude-fable-5                # the models QA trusts to author cases.yaml;
+    - claude-opus-5                 # validate-cases.mjs warns on any other model
 
 sandbox:                            # required: stabilization-only mode, never verdict-eligible
   mode:
@@ -96,7 +96,8 @@ cross_app:                          # required when apps has > 1 entry
 
 clickup:                            # required when tracker is clickup (the default);
                                     # optional and ignored when tracker is none
-  plan_tier: free | unlimited | business | enterprise   # required (rate budget)
+  plan_tier: free | unlimited | business | enterprise   # optional, read by nothing; when
+                                    # present it must be one of these, which catches typos
   space: string                     # required, ClickUp space name for QA
   bug_list: string                  # optional: the list confirmed defects are filed into
                                     # by /qa-pilot:qa-review. Unset is legal; bugs then
@@ -123,16 +124,17 @@ was wrong in the commonest case: `https://app.example.com` read as non-productio
 
 | `kind` | Means | Consequences |
 |---|---|---|
-| `qa` | A shared test deployment | Traces upload to the tracker by default. |
-| `staging` | A pre-release deployment | Traces upload to the tracker by default. |
+| `qa` | A shared test deployment | Traces stay on the machine that ran them by default; the tracker gets a reference. |
+| `staging` | A pre-release deployment | Traces stay on the machine that ran them by default; the tracker gets a reference. |
 | `production` | Real users and real data | Every rule below applies. |
 
 When any environment has `kind: production`, the profile is valid only if all of these hold. Each
 is an **error**, not a warning:
 
-- that environment's `evidence_upload` is `local` (the default for it). `tracker` is refused,
-  because a trace carries the session credential that authenticated the run and every request
-  body it touched (see "What a trace contains" in `SETUP-CLICKUP.md`).
+- that environment's `evidence_upload` is `local` (the default for it). `tracker` and `reference`
+  are refused, and the error names the value given, because a trace carries the session
+  credential that authenticated the run and every request body it touched (see "What a trace
+  contains" in `SETUP-CLICKUP.md`).
 - `evidence.capture` is `always`. On production a pass is the claim most worth checking, and
   `on-failure` keeps nothing for passes.
 - a `mutation` block is present with at least one `write_signatures` entry, so the write guard
@@ -184,12 +186,21 @@ there is no guess left to turn off.
 
 ## Where evidence goes
 
-`evidence_upload` decides whether a run's traces are attached to the tracker or stay on disk.
+`evidence_upload` decides whether a run's traces are attached to the tracker or stay on disk. A
+trace carries the session and can carry a long-lived refresh token (Firebase refresh tokens stay
+valid until the account is disabled, deleted or changed), and ClickUp attachment links are public
+unless Private Attachment Links is turned on. So the default keeps the trace off the tracker.
 
 | Effective value | What happens |
 |---|---|
-| `tracker` | The trace is attached to the case's tracker task, as in 0.2.0. |
-| `local` | Nothing is attached. The trace stays under `testing/<feature>/runs/<run_id>/`, and the tracker gets its run-relative path and sha256 so a reviewer can find the exact file and verify it. |
+| `tracker` | Opt-in per environment. The trace is attached to the case's tracker task, as in 0.4.0. Turn on Private Attachment Links and use a restricted account first. |
+| `reference` | The default off production. The tracker gets the same per-case fields and run summary as `tracker` but never the trace file. Each case also carries its `run_id`, the trace's run-relative `trace_path` and `trace_sha256`, and the summary says the traces stay on the machine that ran them, to be verified by sha256 and opened with `npx playwright show-trace <path>`. |
+| `local` | Nothing is attached and no application data reaches the tracker. The trace stays under `testing/<feature>/runs/<run_id>/`, and the tracker gets its run-relative path and sha256 so a reviewer can find the exact file and verify it. |
+
+`/qa-pilot:run-tests` requires `testing/*/runs/` to be gitignored before any run whose evidence
+stays on the machine (`reference` or `local`), since otherwise traces leave through git. The
+tracker's Run ID, Trace Path and Trace SHA256 fields are needed by default, because `reference`
+fills them on every case.
 
 The effective value is resolved by the loader and written into the normalized profile, so no
 skill or script re-derives it:
@@ -197,9 +208,12 @@ skill or script re-derives it:
 1. if `tracker` is `none`, it is `local` on every environment. An environment that sets
    `evidence_upload: tracker` anyway gets a **warning**,
    `environments.<env>.evidence_upload: tracker is ignored under tracker: none`, and is still `local`;
-2. otherwise, if the environment sets `evidence_upload`, that value (and `tracker` on a
-   `production` environment is an error);
-3. otherwise `local` for `kind: production` and `tracker` for everything else.
+2. otherwise, if the environment sets `evidence_upload`, that value (and `tracker` or `reference`
+   on a `production` environment is an error that names the value given);
+3. otherwise `local` for `kind: production` and `reference` for everything else.
+
+A host that wants attachments writes `evidence_upload: tracker` on the environments that should
+have them; one that wants the default can omit the key or write `evidence_upload: reference`.
 
 ## How much evidence to capture
 

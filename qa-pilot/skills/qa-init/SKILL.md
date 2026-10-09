@@ -46,23 +46,23 @@ Use `AskUserQuestion`. Ask in this order, batching related questions:
 0. **Tracker**: does the team record QA in ClickUp (`tracker: clickup`, the default) or run the pipeline on local files with no tracker (`tracker: none`)? Under `none`, skip items 7 and 8, write no `clickup` block, and tell the user that approvals live in `testing/<feature>/statuses.json` and that all evidence stays local.
 1. **Environments**: names (typically `qa`, `staging`), the base URL of each app in each, and **what each one is**: its `kind`, one of `qa`, `staging` or `production`. Ask it explicitly for every environment, never infer it from the hostname: `app.example.com` is usually production and looks like nothing in particular. These must be **deployed** environments; localhost is not verdict-eligible.
 
-   For each environment ask where its evidence goes, `evidence_upload: tracker` (traces attached to the tracker) or `local` (traces stay on the executor's machine and the tracker gets only their path and sha256). Leave it unset to take the default: `local` for production, `tracker` otherwise.
+   For each environment ask where its evidence goes: `evidence_upload: reference` (traces stay on the executor's machine; the tracker gets the same fields and failure text plus each trace's path and sha256), `evidence_upload: tracker` (traces attached to the tracker; opt-in, and only after Private Attachment Links is on and the runs use a restricted account, because a trace carries the session and can carry a long-lived refresh token) or `local` (traces stay on the executor's machine and the tracker gets no application data, only the path and sha256). Leave it unset to take the default: `local` for production, `reference` otherwise.
 
    **If any environment is `production`**, say what that commits the host to, before going further:
-   - its evidence is `local`; `tracker` there is refused, because a trace carries the session and every request body it touched;
+   - its evidence is `local`; `tracker` and `reference` there are refused, because a trace carries the session and every request body it touched;
    - `evidence.capture` must be `always`;
    - it needs a `test_account` (asked just below);
    - a `mutation` block with at least one write signature is required (item 9);
-   - `testing/*/runs/` must be gitignored, which `/qa-pilot:run-tests` checks before every production run (step 5 below);
+   - `testing/*/runs/` must be gitignored, which `/qa-pilot:run-tests` checks before every run whose evidence stays on the machine, production included (step 5 below);
    - the CI template never runs against it.
 
    **Whenever an environment is `production`, ask for its `test_account`**: which account the runs sign in as and what restricts it (its own tenant, no admin rights, no billing). Write the answer into that environment as `test_account`, for example `qa-runner@example.com, its own tenant, no admin rights, no billing`; it must be at least 20 characters after trimming, or the whole profile is invalid. Say that it is an attestation nothing verifies against the saved login, and that the write guard is the second layer under that account, never the boundary. If the host has no restricted account, record that in the gap report and leave the profile invalid until one exists.
 2. **Deploy-SHA source**: the URL that reports the running build's commit (e.g. `https://qa.example.com/api/version`) and how to extract it, either a dot path into the JSON response (`build.commit`) or a regex with one capture group. **If there is no such endpoint, say so plainly: this is a Phase-0 blocker, not a detail.** Record it in the gap report and leave the profile invalid until it exists, because a SHA that cannot be read means no run can ever be published.
 3. **Auth model**: `dev-handoff` (each dev logs in once through a headed browser), `role-accounts` (dedicated per-role accounts), or `mixed` (both, which is the usual answer when permission cases are in scope).
 4. **Assertions**: ask whether application operations are visible as network requests in the browser Network tab. Engine-dispatched, worker-dispatched, or WebSocket-multiplexed apps answer "no" → `network_events: forbidden` + `style: ui-state`. When forbidden, ask whether the app emits structured console logs that could serve as failure evidence → `evidence.extra: [console_log]`.
-5. **Approved generation models**: which model IDs may author test cases. Default to the current strongest available model. This list is a gate: `validate-cases.mjs` rejects cases stamped with anything else, so a model upgrade cannot silently change case quality without QA adding it here.
+5. **Approved generation models**: which model IDs may author test cases. Default to the current strongest available model. This list is a warning, not a gate: `validate-cases.mjs` warns on cases stamped with any other model, so a model upgrade never blocks generation but cannot silently change case quality either; QA reviews those cases with that in mind and adds the model here once it trusts it.
 6. **Cross-app propagation** (multi-app only): if a change in app A becomes visible in app B only after a delay (polling bridge, queue, cache), ask for the worst-case window in seconds, then set `propagation_window_s` to roughly 3× the observed window as a ceiling for `expect.poll`.
-7. **ClickUp**: space name holding QA work, and the plan tier (sets the API rate budget: Free through Business = 100 requests/min per token). Also ask which **folder** inside that space holds the feature lists, and record it as `clickup.folder`. Most spaces already contain unrelated folders, and without this a feature list can be created beside someone's manual QA work. A dedicated folder for the automated pipeline is the usual answer, which keeps its statuses and fields off the manual lists.
+7. **ClickUp**: space name holding QA work. Do not ask about the ClickUp tier: `clickup.plan_tier` is optional and nothing reads it. Also ask which **folder** inside that space holds the feature lists, and record it as `clickup.folder`. Most spaces already contain unrelated folders, and without this a feature list can be created beside someone's manual QA work. A dedicated folder for the automated pipeline is the usual answer, which keeps its statuses and fields off the manual lists.
 8. **Status names.** The pipeline has seven lifecycle states; this host names them. Ask whether the QA space already has statuses and what they are called. Many teams already run manual QA in ClickUp and have their own vocabulary, so reusing it beats imposing new wording. Map their names onto the seven keys and write the result to `clickup.statuses`:
 
    | Key | What it means |
@@ -115,9 +115,9 @@ With `tracker: clickup` only, add these:
 | Gap | Blocks |
 |---|---|
 | ClickUp space, statuses or custom fields not created | `/publish-results`: see below |
-| Private Attachment Links not enabled in ClickUp | evidence privacy: attachment URLs are public, unauthenticated and non-expiring by default, and traces carry application state |
+| Private Attachment Links not enabled in ClickUp | `evidence_upload: tracker` on any environment: attachment URLs are public, unauthenticated and non-expiring by default, and traces carry the session and application state; the default `reference` mode attaches nothing |
 | All developers sharing one ClickUp API token | `/publish-results` under concurrency, because the 100 req/min budget is per token, so a shared token is shared by everyone publishing at once |
-| `Run ID`, `Trace Path`, `Trace SHA256` fields not created in ClickUp | `/publish-results` for any environment whose evidence stays local |
+| `Run ID`, `Trace Path`, `Trace SHA256` fields not created in ClickUp | `/publish-results` by default, since `evidence_upload: reference` and `local` fill them on every case |
 
 Under `tracker: none` there is no ClickUp setup at all: skip the rest of this section, and tell the user instead that QA approves cases by editing `testing/<feature>/statuses.json`.
 

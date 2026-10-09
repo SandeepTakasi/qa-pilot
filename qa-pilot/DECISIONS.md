@@ -13,6 +13,7 @@ Last verified 2026-10-01, against the commands in the final section.
 | Claude Code | Absolute | It is a plugin. There is no version of this that runs elsewhere. |
 | Playwright | Hard, deliberate | The deepest coupling in the system, and the one worth having. See below. |
 | Node 20 or newer | Trivial | Scripts are zero-dependency ESM. Node 18 is end-of-life; the plugin's own CI runs 20, 22 and 24. |
+| ESLint with `eslint-plugin-playwright`, `typescript-eslint` and `typescript` | Light, one lint step | Since 0.4.1 `/qa-pilot:run-tests` and the CI template lint specs with the committed `eslint.qa-pilot.config.mjs`, so a spec with no assertion, a fixed sleep or a skipped test fails before it can earn a verdict. The rules are the plugin's own, adopted instead of a home-grown check; the host adds them as dev dependencies. Swapping the linter means rewriting one template and two lint commands. |
 | Git | Trivial | Nothing is required to be committed. Committing the profile, the specs and the per-feature ledgers is what makes the pipeline work for a team rather than one machine, and CI needs them, but every skill warns and continues instead of refusing. |
 | ClickUp | Optional, surface only | `tracker: none` runs the whole pipeline on local files. With a tracker, ClickUp is the one supported, and it is much shallower than the name suggests. See below. |
 | YAML for config | Cosmetic | One file, one vendored parser. Chosen over JSON because the profile is hand-edited by QA and needs comments. |
