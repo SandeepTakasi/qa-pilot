@@ -117,7 +117,7 @@ summary: { pass: 21, fail: 0, flaky: 1, blocked: 2 }</code></pre>
 <section class="section" aria-labelledby="refusals-title">
   <p class="eyebrow">What it refuses to publish</p>
   <h2 class="section__title" id="refusals-title">Six things it will not publish</h2>
-  <p class="lede">The publish step is a script, not a judgement call. It rejects each of these outright, and QA never has to police any of them. The lines below are the gate&rsquo;s own output, as printed under <code>REFUSED. This report cannot be published</code>.</p>
+  <p class="lede">The publish step is a script, not a judgement call. It rejects each of these outright. The lines below are the gate&rsquo;s own output, as printed under <code>REFUSED. This report cannot be published</code>.</p>
   <ol class="refusals">
     <li class="refusal">
       <h3>A verdict without evidence</h3>
@@ -159,7 +159,7 @@ summary: { pass: 21, fail: 0, flaky: 1, blocked: 2 }</code></pre>
     <div class="split__text">
       <p class="lede">One artifact per case per run: <code>trace.zip</code>. It carries the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log, so there is no separate video and no separate console log to keep in step.</p>
       <p>Open it locally with <code>npx playwright show-trace</code>, which is the safe way for a trace that carries a credential; <a href="https://trace.playwright.dev" rel="noopener">trace.playwright.dev</a> also opens one in the browser, entirely client-side. No second storage system, and no extra credentials.</p>
-      <p>With ClickUp, the case&rsquo;s task gets the verdict fields, the failure text, and the trace&rsquo;s path and sha256, and the trace stays on the machine that ran it (<code>evidence_upload: reference</code>); attaching it is an opt-in, for a restricted test account and Private Attachment Links only. Without ClickUp, set <code>tracker: none</code>: approvals live in <code>testing/&lt;feature&gt;/statuses.json</code>, evidence stays local, and bugs are markdown files in the run directory.</p>
+      <p>With ClickUp, the case&rsquo;s task gets the verdict fields, the failure text, and the trace&rsquo;s path and sha256, and the trace stays on the machine that ran it by default; attaching it is an opt-in per environment. Without ClickUp, set <code>tracker: none</code> and everything stays in local files.</p>
     </div>
     <div class="split__media">
       <figure class="artifact">
@@ -229,7 +229,7 @@ summary: { pass: 21, fail: 0, flaky: 1, blocked: 2 }</code></pre>
   <div class="split">
     <div class="split__text">
       <p class="lede">The plugin ships generic. Environment URLs, auth mechanics, selector policy, assertion constraints and evidence requirements live in <code>qa-pilot.config.yaml</code>, committed in the consuming repo and reviewed by QA.</p>
-      <p>Onboarding a second project is one <code>/qa-pilot:qa-init</code> run and a profile review, with no plugin-code changes. Every other skill refuses to run without a schema-valid profile.</p>
+      <p>A second project needs no plugin-code changes. Its profile, including the write signatures that say what counts as a write on that host, is the work, and <code>/qa-pilot:qa-init</code> starts it. Every other skill refuses to run without a schema-valid profile.</p>
       <p><a href="{{base}}docs/profile/">The host profile reference</a></p>
     </div>
     <div class="split__media">
@@ -270,7 +270,7 @@ selectors:
   <h2 class="section__title" id="limits-title">How strong these gates actually are</h2>
   <p>The checks are deterministic scripts, so a rushed developer cannot skip them by accident, and that is the failure this system is built for. What they verify is that a report is internally consistent and that its evidence exists on disk.</p>
   <p>They do not cryptographically bind a report to a Playwright run that happened. Someone determined to fabricate a green result could hand-write the inputs, and nothing here stops that. QA-Pilot makes the evidenced path the path of least resistance, not the only conceivable one. The environment name in a report is taken on trust, like the deploy SHA, and the write guard&rsquo;s ceilings are listed in its source.</p>
-  <p>The backstop for deliberate fabrication is QA&rsquo;s sampling: 100% of P0 passes watched, at least 30% of P1 and 10% of P2, and every failure. A fake trace does not survive being opened.</p>
+  <p>Sampling does not close that gap. QA opens a share of passing evidence (all of P0, at least 30% of P1 and 10% of P2) and every failure, which checks that the evidence shows what the case claims. A pass that rests on a weak assertion looks green in its trace. The spec lint catches a missing assertion, a fixed sleep or a skipped test, and the case lint rejects vague expected outcomes; how strong an assertion is stays with QA&rsquo;s design review, not sampling.</p>
 </section>
 
 <section class="section" aria-labelledby="install-title">

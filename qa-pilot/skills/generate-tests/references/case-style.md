@@ -4,35 +4,33 @@
 
 `<FEATURE>-<SUBFEATURE>-<NNN>`, e.g. `AUTH-LOGIN-003`, `CHECKOUT-QTY-011`.
 
-Feature and subfeature are uppercase, alphanumeric, stable. The number is zero-padded to three digits and **never reused**: when a case is deleted, its number retires with it, so a case ID in an old ClickUp task or run report always means the same thing.
+Feature and subfeature are uppercase, alphanumeric, stable. The number is zero-padded to three digits and **never reused**: a deleted case's number retires with it, so an ID in an old task or run report always means the same thing.
 
 ## Priorities
 
 | | Meaning | Consequence |
 |---|---|---|
-| **P0** | The feature is broken without it. Core path, security, data integrity. | Any P0 not Approved makes the whole feature display "Not Ready" regardless of score. QA watches 100% of P0 evidence. |
-| **P1** | Important behavior, but the feature is still usable if it regresses. | QA samples ≥30% of P1 passes. |
-| **P2** | Polish, rare paths, cosmetic states. | Approved in bulk at matrix level; QA samples ≥10%. |
+| **P0** | The feature is broken without it. Core path, security, data integrity. | Any P0 not Approved makes the feature display "Not Ready" regardless of score. QA watches 100% of P0 evidence. |
+| **P1** | Important, but the feature is usable if it regresses. | QA samples >=30% of P1 passes. |
+| **P2** | Polish, rare paths, cosmetic states. | Approved in bulk at matrix level; QA samples >=10%. |
 
-Be honest about P0. Marking everything P0 makes the readiness gate meaningless; marking nothing P0 makes it toothless.
+Be honest about P0: everything P0 makes the readiness gate meaningless, nothing P0 makes it toothless.
 
 ## The scenario mix
 
-Every feature declares all five slots. Each is covered by at least one case or marked `n_a` with a reason a reviewer would accept.
+Every feature declares all five slots. Each is covered by at least one case or marked `n_a` with a reason a reviewer would accept (one that names why, not merely asserts it).
 
 | Slot | What it is | Typical miss |
 |---|---|---|
 | **happy** | The intended path, end to end. | Testing only this. |
 | **negative** | The user does something wrong, or the operation legitimately fails. | Asserting the error appears but not that the success state is *absent*. |
-| **boundary** | Limits: zero, one, maximum, one past maximum, empty, longest allowed. | Testing the middle of the range, where nothing breaks. |
-| **permission** | A different role, tenant, or ownership relationship. | Assuming your own account's role is the only one. Needs a role account. |
-| **data-validation** | Field-level rules: format, required, length, type. | Marking `n_a` when the form does have free-text input. |
-
-`n_a` is legitimate, since a read-only dashboard has no data-validation surface, but the reason must name why, not merely assert it.
+| **boundary** | Limits: zero, one, maximum, one past maximum, empty, longest allowed. | Testing the middle of the range. |
+| **permission** | A different role, tenant or ownership relationship. | Assuming your own role is the only one. Needs a role account. |
+| **data-validation** | Field-level rules: format, required, length, type. | Marking `n_a` when the form has free-text input. |
 
 ## Writing an expected outcome
 
-An expected outcome is a **claim about observable state** that a Playwright assertion can check. Write what a person would see, precisely enough that two developers would write the same assertion.
+An expected outcome is a **claim about observable state** that a Playwright assertion can check: what a person would see, precisely enough that two developers would write the same assertion.
 
 | Rejected | Why | Write instead |
 |---|---|---|
@@ -40,31 +38,31 @@ An expected outcome is a **claim about observable state** that a Playwright asse
 | "Page looks correct" | Nothing to assert. | "The heading reads 'Order complete' and the cart badge shows 0." |
 | "The POST /orders call returns 201" | Invisible on engine-dispatched hosts; the wait no-ops and the test passes regardless. | "The order row appears at the top of the order history table." |
 | "Error is shown" | Which error, where? | "An alert with text 'Your cart is empty' is visible." |
-| "The button works" | Not an outcome, an action. | "After clicking, the button shows a spinner and becomes disabled." |
+| "The button works" | An action, not an outcome. | "After clicking, the button shows a spinner and becomes disabled." |
 
-**Assert absence too.** A negative case that only checks the error appeared can pass while the action *also* went through. Pair "the error is visible" with "the confirmation panel is not rendered".
+**Assert absence too.** A negative case that only checks the error can pass while the action *also* went through. Pair "the error is visible" with "the confirmation panel is not rendered".
 
 ## Steps
 
-Steps are what the executor does, in order, in the UI. Keep them at the level of user intent: "Set the quantity field to 11", not "click the input, select all, type 11". The spec converter fills in mechanics; over-specified steps age badly and constrain the selector strategy.
+Steps are what the executor does, in order, in the UI, at the level of user intent: "Set the quantity field to 11", not "click the input, select all, type 11". The spec converter fills in the mechanics; over-specified steps age badly and constrain selector strategy.
 
-Preconditions carry state the steps assume: who is signed in, what data exists, which role. Every precondition involving data is a hint to the executor about namespacing, because five developers share one deployed environment, so cases must not assume they are alone in it.
+Preconditions carry state the steps assume: who is signed in, what data exists, which role. Several developers share one deployed environment, so cases must not assume they are alone in it.
 
 ## Cases that write
 
-Decide the feature's `mutation.policy` from what its cases do, not from where it will run:
+Decide `mutation.policy` from what the cases do, not where they will run (policies and fixtures: see the cases schema).
 
 | The cases | Policy | Then |
 |---|---|---|
-| only read, list, open or filter | `read-only` | no step may save, delete, submit or upload; a case that needs to is a different feature, or this one is not read-only |
-| create and change their own entities | `scoped-write` with a `prefix` | every step that names a new entity starts the name with the prefix: "Create a project named `QA_TEST_<run>-alpha`" |
+| only read, list, open or filter | `read-only` | no step may save, delete, submit or upload |
+| create and change their own entities | `scoped-write` with a `prefix` | every step naming a new entity starts the name with the prefix: "Create a project named `QA_TEST_<run>-alpha`" |
 | touch shared data on purpose | `unrestricted` | never runnable on production |
 
-**Shared fixtures** replace "each case creates and deletes its own project" when ten cases all work inside one. Declare the entity once under `fixtures`, name it from the cases that use it (`fixture: shared-project`), and keep the cases' preconditions honest: "Inside the shared project fixture" rather than restating how it was made. Choose `teardown: delete` unless QA needs to inspect the entity afterwards.
+When many cases work inside one entity, declare it once under `fixtures` and keep preconditions honest: "Inside the shared project fixture", not a restatement of how it was made.
 
 ## Linking cases to acceptance criteria
 
-When the feature states acceptance criteria, declare them once under `requirements` and let each case name what it tests with `covers`. The criteria are copied from the task or the documentation, so coverage is measured against what was asked for, not against what the cases happen to test.
+Declare stated acceptance criteria once under `requirements`; each case names what it tests with `covers` (id and quoting rules: see the cases schema).
 
 ```yaml
 requirements:
@@ -80,14 +78,14 @@ cases:
     covers: [ORDER-1/AC-1]
 ```
 
-- **One claim per entry.** `ORDER-1/AC-2` is a requirement id, a slash, a criterion id. Ids use letters, digits, `.`, `_` and `-`, and quote one that looks like a number (`"1"`, `"1.10"`), since YAML would read it as a number. A requirement id is at most 64 characters.
-- **A case may cover several criteria, and a criterion several cases.** List only what the case's expected outcomes would actually catch: `covers` is a claim, and a criterion marked covered by a case that does not assert it is a false green in the coverage report.
-- **An uncovered criterion is a warning, not an error.** It is a gap QA decides on: add the case, or leave it and say so.
-- **No stated criteria, no keys.** Do not write requirements to have something to link; a feature with neither `requirements` nor `covers` validates and reports as before.
+- **One claim per entry**: a requirement id, a slash, a criterion id.
+- List only what the case's outcomes would actually catch: a criterion marked covered by a case that does not assert it is a false green.
+- An uncovered criterion is a warning; QA decides whether to add the case or accept the gap.
+- No stated criteria, no keys.
 
 ## What not to generate
 
-- **Volume.** Twenty shallow cases are worse than eight sharp ones: they consume QA review time and dilute the confidence score with cases nobody trusts.
-- **Cases that restate the same assertion with different inputs**, unless the inputs are boundaries. Three "valid quantity" cases test one thing.
-- **Cases for behavior the code does not have.** If the ClickUp task describes something the code does not do yet, that is a question for the user, not a test case that will fail forever.
-- **Anything you could not explain to QA in one sentence.** If the case needs a paragraph to justify, it is probably two cases or none.
+- **Volume.** Twenty shallow cases are worse than eight sharp ones: they cost QA review time and dilute the confidence score.
+- **Cases that restate the same assertion with different inputs**, unless the inputs are boundaries.
+- **Cases for behavior the code does not have.** If the task describes something the code does not do yet, that is a question for the user, not a test that fails forever.
+- **Anything you could not explain to QA in one sentence.** If it needs a paragraph, it is probably two cases or none.

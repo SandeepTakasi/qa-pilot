@@ -60,20 +60,16 @@ The publish step is a script, not a judgement call. It rejects:
 
 An environment declares its `kind` instead of the tool guessing from its hostname. A production
 environment must also name its `test_account`, the account the runs sign in as and how it is
-restricted (its own tenant, no admin rights, no billing); the write guard is the second layer under
-that account, never the boundary, and the field is an attestation nothing verifies. On production,
-traces stay on the executor's machine (never attached to the tracker, uploaded by CI or committed),
-every case keeps a full trace, and a feature must be `read-only` or `scoped-write` under a live write
-guard. The guard needs no help from the specs: clicks are judged in the page before the app sees
-them, requests at the network layer. The tracker record of a production run carries no application
-data. [Production](https://sandeeptakasi.github.io/qa-pilot/docs/production/) has the details, and
-says plainly what the gates cannot verify.
+restricted. On production, traces stay on the executor's machine (not attached to the tracker,
+uploaded by CI or committed), every case keeps a full trace, and a feature must be `read-only` or
+`scoped-write` under a live write guard that judges clicks in the page and requests at the network
+layer. The tracker record of a production run carries no application data.
+[Production](https://sandeeptakasi.github.io/qa-pilot/docs/production/) has the details, and says
+plainly what the gates cannot verify, including that `test_account` is an attestation and the guard
+a second layer, not the boundary.
 
-Off production, traces stay on the machine that ran them by default too
-(`evidence_upload: reference`): the tracker gets the verdict fields, the failure text, and each
-trace's path and sha256, never the file. A trace can carry a long-lived refresh token, so attaching traces to the
-tracker (`evidence_upload: tracker`) is an opt-in per environment, to make only after turning on
-the tracker's Private Attachment Links and using a restricted test account.
+Off production, traces also stay on the machine by default; attaching them to the tracker is an
+opt-in per environment (see the [host profile](https://sandeeptakasi.github.io/qa-pilot/docs/profile/)).
 
 ## Documentation
 

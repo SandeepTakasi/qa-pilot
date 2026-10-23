@@ -2,7 +2,7 @@
 
 Evidence-first feature testing for Claude Code. Any developer can generate and execute feature tests in their own session; every executed case produces the same report structure with mandatory evidence; QA reviews instead of executing; ClickUp, or local files when you run without a tracker, holds one live view of testing confidence per feature.
 
-The design rests on two ideas. **Uniformity is enforced by tooling, not discipline**, because anything that depends on five people remembering a convention during crunch fails inside a week. And **the committed Playwright spec is the durable asset**: agentic sessions are scaffolding that authors and triages; the spec is what runs today for evidence and, once QA approves it, unattended in CI ([SETUP-CI.md](./SETUP-CI.md)).
+The design rests on two ideas. **Uniformity is enforced by tooling, not discipline**, because a convention that depends on five people remembering it during crunch does not last. And **the committed Playwright spec is the durable asset**: agentic sessions author and triage; the spec is what runs for evidence and, once QA approves it, unattended in CI ([SETUP-CI.md](./SETUP-CI.md)).
 
 ## The pipeline
 
@@ -20,59 +20,45 @@ The design rests on two ideas. **Uniformity is enforced by tooling, not discipli
 
 ## What it refuses to publish
 
-The publish step is a script, not a judgement call, and it rejects each of these outright. QA never has to police any of it.
+The publish step is a script, not a judgement call, and it rejects each of these.
 
-- **A verdict without evidence.** Every executed case needs a Playwright trace and a deploy SHA read from the running environment. Missing, empty, or unreadable artifacts fail the report.
-- **A verdict from a local or sandbox environment.** Mock backends are seeded and always succeed. Runs against them are useful for stabilizing specs and are stamped as such, but they cannot carry a verdict.
-- **A pass that was really a retry.** Pass-on-retry is recorded `flaky`, always, derived from the attempt results rather than from Playwright's own status field, so no config change can turn it green. A failure in any browser is a failure, never a flake.
-- **A verdict for a case QA never approved.** Checked against the case's recorded ClickUp status at the time of the run, not against the case map: every generated case is in the map from the moment it is created, so map membership proves nothing about approval.
-- **A run that lost its ground truth.** If the deployed build changes mid-run, every case is `blocked`, because half tested one build and half another. Past 10% blocked the run halts: the environment failed, not the feature.
-- **A run that broke its write policy.** Each feature declares whether its specs may write (`read-only`, `scoped-write` with a name prefix, or `unrestricted`). The write guard records every write control and write request it saw, and a read-only run that recorded one, or a run whose guard never reported in, does not publish. The gate re-reads those records and the Playwright report from disk rather than trusting the report it is handed.
+- **A verdict without evidence.** Every executed case needs a Playwright trace and a deploy SHA read from the running environment.
+- **A verdict from a local or sandbox environment.** Mock backends always succeed, so those runs can stabilize specs but cannot carry a verdict.
+- **A pass that was really a retry.** Pass-on-retry is recorded `flaky`, derived from the attempt results rather than Playwright's own status field. A failure in any browser is a failure, not a flake.
+- **A verdict for a case QA never approved.** Checked against the case's recorded status at run time, not the case map, which holds every generated case.
+- **A run that lost its ground truth.** If the deployed build changes mid-run, every case is `blocked`. Past 10% blocked the run halts: the environment failed, not the feature.
+- **A run that broke its write policy.** Each feature declares `read-only`, `scoped-write` (with a name prefix) or `unrestricted`. A read-only run whose write guard recorded a write, or never reported in, does not publish. The gate re-reads the guard's records and the Playwright report from disk rather than trusting the report it is handed.
 
 ## Production
 
 An environment says what it is: `kind: qa | staging | production`, declared rather than guessed from the hostname. Production is allowed, under rules that are refusals, not advice:
 
-- **A restricted account.** A production environment must declare `test_account`: the account the runs sign in as and how it is restricted (its own tenant, no admin rights, no billing), at least 20 characters after trimming. Without it the whole profile is invalid. The write guard is the second layer under that account, never the boundary, and `test_account` is an attestation nothing verifies.
-- **Evidence stays local.** Traces carry the session, which can include a long-lived refresh token, and every request body they touched, so a production trace is never attached to the tracker, never uploaded by CI, and never committed (`/run-tests` refuses unless the run directory is gitignored). The tracker record carries no application data: case IDs, verdicts, build, run, and each trace's path and sha256 so a reviewer can find and verify it on the executor's machine.
+- **A restricted account.** A production environment must declare `test_account`, naming the account the runs sign in as and how it is restricted. Without it the whole profile is invalid. It is an attestation nothing verifies.
+- **Evidence stays local.** A production trace is never attached to the tracker, uploaded by CI or committed (`/run-tests` refuses unless the run directory is gitignored). The tracker record carries no application data: case IDs, verdicts, build, run, and each trace's path and sha256, so a reviewer can find and verify it on the executor's machine.
 - **Full capture.** Every case keeps a trace.
-- **A declared write policy and a live guard.** A production feature must be `read-only` or `scoped-write`, and the host profile must say what a write looks like on that host (`mutation.write_signatures`). The guard works without the specs' cooperation: clicks are judged in the page before the app sees them, requests at the network layer.
+- **A declared write policy and a live guard.** A production feature must be `read-only` or `scoped-write`, and the profile must say what a write looks like on that host (`mutation.write_signatures`). Clicks are judged in the page before the app sees them, requests at the network layer. The guard is a second layer under the restricted account, not the boundary.
 
-What the gate cannot verify, it says: the environment name in a report is taken on trust, like the deploy SHA, and the guard's ceilings are listed in its source.
+The reasoning and each rule's enforcement point are in [the production page](https://sandeeptakasi.github.io/qa-pilot/docs/production/).
 
 ### How strong these gates actually are
 
 Worth being precise, because "impossible" would be overselling it. The checks above are deterministic scripts, so a rushed developer cannot skip them by accident, and that is the failure mode this system is built for. What they verify is that a report is internally consistent and that its evidence exists on disk. They do not cryptographically bind a report to a Playwright run that actually happened.
 
-So someone determined to fabricate a green result could hand-write the inputs. Nothing here stops that, and the honest framing is that QA-Pilot makes the evidenced path the path of least resistance rather than the only conceivable one. The backstop for deliberate fabrication is QA's sampling: watching 100% of P0 evidence and every failure. A fake trace does not survive being opened.
+So someone determined to fabricate a green result could hand-write the inputs, and nothing here stops that. QA-Pilot makes the evidenced path the path of least resistance, not the only conceivable one. Sampling does not close that gap: it has QA open a share of passing evidence (all P0, at least 30% of P1, 10% of P2) and every failure, which checks that what is recorded shows what the case claims. A pass that rests on a weak assertion looks green in its trace, which is why specs are linted for missing assertions, fixed sleeps and skipped tests, and QA reviews each case's expected outcomes before it runs.
 
-An agentic browser session is a good example of the same idea. It cannot produce a trace or a machine-readable result, so it has nothing to publish with, and "Claude clicked through it and it looked fine" never reaches the record by the normal route. That is a strong practical barrier, not a mathematical one.
+An agentic browser session has no trace or machine-readable result to publish with, so "Claude clicked through it and it looked fine" does not reach the record by the normal route. That is a practical barrier, not a mathematical one. What the gate cannot verify (such as the environment name in a report, which is taken on trust like the deploy SHA) is listed in [the production page](https://sandeeptakasi.github.io/qa-pilot/docs/production/).
 
 ## Evidence
 
-One artifact per case per run: **`trace.zip`**. A trace carries the video byte-for-byte, the console output, the screenshot film-strip, DOM snapshots and the network log, so it replaces uploading a video and a console log separately, which would store the same bytes twice and split one investigation across three files.
+One artifact per case per run: **`trace.zip`**, carrying the video, console output, DOM snapshots and network log in one file.
 
-Where it goes is the environment's `evidence_upload`, one of three values:
+Where it goes is the environment's `evidence_upload`: `reference` (the default off production: the tracker gets the usual fields plus the trace's path and sha256, and the trace stays on the machine that ran it), `tracker` (opt-in: attached to the case's ClickUp task) or `local` (production and `tracker: none`: no application data leaves the machine). The rules are in the [host profile schema](./schemas/qa-pilot.config.schema.md); why a trace is a credential is in [the production page](https://sandeeptakasi.github.io/qa-pilot/docs/production/). Reviewers verify a kept trace by its sha256 and open it with `npx playwright show-trace <path>`.
 
-| Value | What happens |
-|---|---|
-| `reference` | The default off production. The case task receives the usual fields plus Run ID, Trace Path and Trace SHA256, and the trace stays on the machine that ran it. |
-| `tracker` | Opt-in per environment: the trace is attached to the case's ClickUp task. |
-| `local` | Always on production, and the value under `tracker: none`: no application data leaves the machine. |
-
-Writing `evidence_upload: reference` is optional, since it is the default. Reviewers verify a kept trace by its sha256 and open it with `npx playwright show-trace <path>`, which runs on their own machine.
-
-A trace can carry the session and a long-lived refresh token (Firebase refresh tokens stay valid until the account is disabled, deleted or changed), and ClickUp attachment links are public unless Private Attachment Links is on. So opt an environment in to `tracker` only after turning that on and using a restricted test account, and if a trace leaks, disable or rotate that account.
-
-Without ClickUp, set `tracker: none` in the profile: approvals live in `testing/<feature>/statuses.json`, all evidence stays local, and bugs are markdown files in the run directory.
-
-With ClickUp, you set up its side once, by hand. The plugin writes into it but does not create it. [SETUP-CLICKUP.md](./SETUP-CLICKUP.md) is the exact checklist: the statuses, the custom fields and their options (including Run ID, Trace Path and Trace SHA256, which the default now needs), and the two settings that matter (**Private Attachment Links**, off by default and leaving attachment URLs public; and a **per-developer API token**, since the 100 requests/minute budget is per token, not per person). Fifteen minutes, once per workspace. `/qa-init` reminds you and fills in the host-specific dropdown values.
-
-Retention is manual for environments on `tracker`, because ClickUp has no delete-attachment endpoint, so uploaded traces are pruned from task attachment lists by hand. Budget a quarterly pass: oldest passing runs first, keep every failure.
+Without ClickUp, set `tracker: none` and everything stays in local files. With ClickUp, you set up its side once, by hand, from the checklist in [SETUP-CLICKUP.md](./SETUP-CLICKUP.md); the plugin writes into it but does not create it.
 
 ## Portability
 
-The plugin ships generic. Everything project-specific (environment URLs, auth mechanics, selector policy, assertion constraints, evidence requirements, propagation windows) lives in `qa-pilot.config.yaml`, committed in the consuming repo and owned by QA. Onboarding a second project is one `/qa-init` run and a profile review, with no plugin-code changes.
+The plugin ships generic. Everything project-specific (environment URLs, auth mechanics, selector policy, assertion constraints, evidence requirements, propagation windows) lives in `qa-pilot.config.yaml`, committed in the consuming repo and owned by QA. A second project needs no plugin-code changes; its profile, including its write signatures, is the work.
 
 ## Install
 
@@ -83,17 +69,11 @@ claude plugin install qa-pilot
 
 Or for local development: `claude --plugin-dir /path/to/QAED/qa-pilot`.
 
-Requires Node ≥ 20 (scripts are zero-dependency ESM) and, in the host repo, Playwright >= 1.51, because `storageState({ indexedDB: true })` landed there and IndexedDB-persisted auth such as Firebase silently fails to restore below it.
+Requires Node ≥ 20 (scripts are zero-dependency ESM) and, in the host repo, Playwright >= 1.51, because `storageState({ indexedDB: true })` landed there and IndexedDB-persisted auth such as Firebase fails to restore below it.
 
 ## Model fitting
 
-| Stage | Model |
-|---|---|
-| `generate-tests` | **The strongest available.** Case design is the only stage where model judgment decides quality, and the 25-case cap makes it cheap. The host profile's `models.generation_approved` gates this: cases stamped with a model not on the list get a warning from the validator, not an error, so a model release never blocks generation while the record still shows which cases came from an unapproved model. |
-| `run-tests` | Sonnet-class for ordinary spec authoring; reach higher for cross-app multi-context specs and stubborn flake triage. |
-| everything else | Any current model. Discovery, mechanical writes, and presentation. |
-
-Execution itself costs no tokens: it is `npx playwright test`.
+Use the strongest available model for `generate-tests`, where model judgment decides quality; the profile's `models.generation_approved` lists approved models, and a case stamped with another gets a validator warning, not an error. `run-tests` is fine on a Sonnet-class model, with a stronger one for cross-app specs and stubborn flake triage. Anything else takes any current model. Execution itself costs no tokens: it is `npx playwright test`.
 
 ## Layout
 
@@ -113,9 +93,9 @@ CHANGELOG.md       what changed, and what to do when upgrading
 THIRD_PARTY_NOTICES.md  licence of the one bundled dependency
 ```
 
-[DECISIONS.md](./DECISIONS.md) is worth reading before adopting this anywhere new. Short version: Playwright is a deliberate hard dependency because the trace *is* the evidence model, while ClickUp is surface-level, since no script ever calls it and swapping trackers is mostly prose.
+[DECISIONS.md](./DECISIONS.md) is worth reading before adopting this anywhere new. Short version: Playwright is a deliberate hard dependency because the trace *is* the evidence model, while ClickUp is surface-level, since no script calls it and swapping trackers is mostly prose.
 
-The only third-party code is `scripts/lib/yaml.mjs`, a bundled copy of [yaml](https://github.com/eemeli/yaml) 2.9.0, under the ISC licence; its text is in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md). Node ships no YAML parser, the host profile is hand-edited by QA and needs comments (so JSON is out), and bundling keeps consuming repos install-free.
+The only third-party code is `scripts/lib/yaml.mjs`, a bundled copy of [yaml](https://github.com/eemeli/yaml) 2.9.0 under the ISC licence ([THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)).
 
 ## Development
 

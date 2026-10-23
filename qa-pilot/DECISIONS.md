@@ -1,8 +1,7 @@
 # What QA-Pilot enforces, and why
 
-A record of the technology this plugin requires of a host project, how tightly each choice
-is bound in, and what it would cost to change. Written so the question does not have to be
-re-litigated from memory every time someone new looks at it.
+The technology this plugin requires of a host project, how tightly each choice is bound in,
+and what it would cost to change.
 
 Last verified 2026-10-01, against the commands in the final section.
 
@@ -13,7 +12,7 @@ Last verified 2026-10-01, against the commands in the final section.
 | Claude Code | Absolute | It is a plugin. There is no version of this that runs elsewhere. |
 | Playwright | Hard, deliberate | The deepest coupling in the system, and the one worth having. See below. |
 | Node 20 or newer | Trivial | Scripts are zero-dependency ESM. Node 18 is end-of-life; the plugin's own CI runs 20, 22 and 24. |
-| ESLint with `eslint-plugin-playwright`, `typescript-eslint` and `typescript` | Light, one lint step | Since 0.4.1 `/qa-pilot:run-tests` and the CI template lint specs with the committed `eslint.qa-pilot.config.mjs`, so a spec with no assertion, a fixed sleep or a skipped test fails before it can earn a verdict. The rules are the plugin's own, adopted instead of a home-grown check; the host adds them as dev dependencies. Swapping the linter means rewriting one template and two lint commands. |
+| ESLint with `eslint-plugin-playwright`, `typescript-eslint` and `typescript` | Light, one lint step | Since 0.4.1 `/qa-pilot:run-tests` and the CI template lint specs with the committed `eslint.qa-pilot.config.mjs`, so a spec with no assertion, a fixed sleep or a skipped test fails before it can earn a verdict. The rules come from `eslint-plugin-playwright`, which the host adds as a dev dependency. Swapping the linter means rewriting one template and two lint commands. |
 | Git | Trivial | Nothing is required to be committed. Committing the profile, the specs and the per-feature ledgers is what makes the pipeline work for a team rather than one machine, and CI needs them, but every skill warns and continues instead of refusing. |
 | ClickUp | Optional, surface only | `tracker: none` runs the whole pipeline on local files. With a tracker, ClickUp is the one supported, and it is much shallower than the name suggests. See below. |
 | YAML for config | Cosmetic | One file, one vendored parser. Chosen over JSON because the profile is hand-edited by QA and needs comments. |
@@ -27,14 +26,14 @@ No frontend framework assumption: nothing in the plugin knows or cares about Vue
 anything else. No test-id attribute name. No assertion style. No mock-mode mechanism. No
 status vocabulary. No spec directory layout. No environment naming.
 
-No CI system either, with one qualification worth being exact about. `ci-gate.mjs` is plain
-Node and knows nothing about any runner; it answers "what did QA approve" and "what does
-this run mean for the build", and the runner invokes the tests. What ships GitHub-shaped is
-`templates/qa-pilot-ci.yml`, a file hosts copy and edit. Porting it is a translation of six
-steps, not a change to the plugin.
+No CI system either. `ci-gate.mjs` is plain Node and knows nothing about any runner; it answers
+"what did QA approve" and "what does this run mean for the build", and the runner invokes the
+tests. Only `templates/qa-pilot-ci.yml`, a file hosts copy and edit, is GitHub-shaped, and
+porting it means translating its steps, not changing the plugin.
 
-All of those live in the committed host profile, which is the whole portability premise:
-onboarding a second project is one `/qa-init` run, not a fork.
+All of those live in the committed host profile, which is the portability premise: onboarding
+a second project needs no plugin code changes. Its profile, including the write signatures
+that say what counts as a write on that host, is the work.
 
 ## ClickUp is shallower than it looks
 
@@ -60,13 +59,11 @@ Real coupling is confined to three places: the `clickup-guard.mjs` hook and its 
 is genuinely ClickUp-shaped; the rest name a place and a vocabulary that any tracker has.
 
 **No tracker at all is already supported.** `tracker: none` drops the `clickup` block from the
-normalized profile, so every script falls back to the canonical status names; approvals live
-in `testing/<feature>/statuses.json`, evidence stays local, and bugs are markdown files in the
-run directory. It exists because an open-source plugin cannot assume its users have ClickUp,
-and it cost almost nothing for the reason above: the scripts never knew where statuses came
-from.
+normalized profile, so scripts fall back to the canonical status names, with approvals, evidence
+and bugs kept in local files (see [SETUP-CLICKUP.md](./SETUP-CLICKUP.md)). It cost little
+because the scripts never knew where statuses came from.
 
-**Cost to support Jira, Linear, or GitHub Issues: roughly a day, almost entirely prose.**
+**Cost to support Jira, Linear, or GitHub Issues: roughly a day by estimate, almost entirely prose.**
 Add a value to the profile's `tracker` key, rename `clickup-map.json` to `tracker-map.json`,
 generalise the guard matcher, and rewrite the skill sections that name MCP tools.
 `publish-payload.mjs` already emits the field set as plain data, so the scripts barely change.
@@ -79,16 +76,15 @@ This is the real lock-in:
   vocabulary (`expected`, `unexpected`, `timedOut`, `interrupted`) and its per-project
   `tests[]` nesting.
 - `save-storage-state.mjs` uses the Playwright API directly, and
-  `storageState({ indexedDB: true })` has no equivalent in other runners.
+  `storageState({ indexedDB: true })` is a Playwright feature.
 - **The evidence model is the trace.** One file carrying the video, console output, DOM
   snapshots, network log, and a scrubable film-strip, openable client-side at
   trace.playwright.dev with no upload and no account.
 
-**Cost to support another runner: one adapter, but you would be trading away the best part
-of the design.** `parse-report.mjs` is the seam, since `report.json` downstream is generic,
-so a Cypress adapter is about 180 lines. What does not survive the move is the trace:
-Cypress has videos and screenshots, but nothing equivalent to a single-file time-travel
-artifact, so evidence would go back to three files and a worse review experience.
+**Cost to support another runner: one adapter, but you would give up the trace.**
+`parse-report.mjs` is the seam, since `report.json` downstream is generic, so an adapter is
+roughly 180 lines (an estimate, not measured). What would not carry over is the trace as one
+file with video, console and network log; evidence would go back to separate files.
 
 Recommendation: treat Playwright as a fixed premise. If a host cannot use it, this is the
 wrong tool for that host.
@@ -98,19 +94,16 @@ wrong tool for that host.
 For a team already on ClickUp, enforcing it is fine, and the plugin now speaks the host's own
 status vocabulary rather than imposing one.
 
-For wider distribution, ClickUp is the weakest constraint, and that is acceptable, because
-the expensive kind of lock-in is the kind buried in business logic. This one is in prose and
-a hook matcher.
+For wider distribution, ClickUp is the weakest constraint, since it lives in skill prose and a
+hook matcher, not in business logic.
 
-**Do not build a tracker abstraction speculatively.** With one team on one tracker it buys
-nothing and costs clarity in every skill file. `tracker: none` is not that abstraction: it is
-the absence of a tracker, which every adopter without ClickUp needs on day one. If a second
-project ever adopts this on a different tracker, do the renames then, as part of that
-adoption.
+**Do not build a tracker abstraction speculatively.** With one team on one tracker it costs
+clarity in every skill file. `tracker: none` is not that abstraction, just the absence of a
+tracker. If a second project adopts a different tracker, do the renames then.
 
 ## Re-verifying these claims
 
-The measurements above will rot if the code changes. Re-run these before trusting them:
+The claims above can go stale. Re-run these before trusting them:
 
 ```bash
 # 1. No script may call the ClickUp API. Expected output: nothing.
@@ -137,4 +130,4 @@ grep -rl 'playwright' qa-pilot/scripts/*.mjs qa-pilot/scripts/lib/*.mjs \
 
 If command 1 prints anything, a script has started calling ClickUp and the tracker-agnostic
 core is gone. If command 2 lists a second file, tracker knowledge has leaked out of the
-guard. Either way this document is out of date and the day-to-swap estimate no longer holds.
+guard. Either way this document is out of date and the swap estimate no longer holds.

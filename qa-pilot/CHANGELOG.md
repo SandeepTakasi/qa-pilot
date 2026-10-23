@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.2 (2026-10-23)
+
+Documentation only; no behaviour changes and nothing to do when upgrading.
+
+- **Shorter skills and schemas.** What an agent reads to run QA-Pilot is about 30% smaller.
+  Validator detail the scripts already print, history and rationale are gone; every command,
+  STOP condition and rule a script does not enforce stays.
+- **ClickUp steps load only when used.** Each skill keeps its ClickUp-only steps in a
+  `references/` file it reads when the profile's tracker is `clickup`.
+- **One home per rule.** The evidence settings, the refresh-token risk, Private Attachment Links
+  and `test_account` are explained once and linked from elsewhere.
+- **Claims corrected.** Sampling passing traces is no longer described as the backstop against a
+  false pass (weak assertions are caught by the spec lint and QA's review of the cases);
+  onboarding a project is described as writing its profile, write signatures included; an
+  unmeasured reviewer throughput figure and "CI regression comes free" are gone.
+
 ## 0.4.1 (2026-10-09)
 
 A patch release that fixes five flaws found in 0.4.0 before any host relies on it. QA approvals

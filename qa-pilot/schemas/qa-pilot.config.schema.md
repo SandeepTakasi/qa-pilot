@@ -1,8 +1,8 @@
 # `qa-pilot.config.yaml`: host profile schema
 
-The host profile lives in the **consuming repo**, is written by `/qa-pilot:qa-init`, and is reviewed and owned by QA. Every other QA-Pilot skill refuses to run without a schema-valid profile, and warns (rather than refuses) when it is not committed, since a host trialling the pipeline may reasonably keep it local at first.
+The host profile lives in the **consuming repo**, is written by `/qa-pilot:qa-init`, and is owned by QA. Every other QA-Pilot skill refuses to run without a schema-valid profile, and warns (does not refuse) when it is not committed.
 
-Enforced by `scripts/lib/profile.mjs`. Unknown top-level keys are an **error** (catches typos silently changing behavior).
+Enforced by `scripts/lib/profile.mjs`. Unknown top-level keys are an **error**.
 
 ```yaml
 project: string                     # required, non-empty
@@ -17,34 +17,29 @@ apps:                               # required, >= 1 entry
 
 environments:                       # required, >= 1 entry
   <env-name>:                       # e.g. qa, staging, production
-    kind: qa | staging | production # REQUIRED. What this environment is. See "Environment kinds".
+    kind: qa | staging | production # required. See "Environment kinds".
     apps:                           # required; keys must be a subset of apps{}
       <app-name>: <http(s) URL>     # base URL of that app in this environment
-    evidence_upload: tracker | reference | local  # optional. Where traces go. Default: local when
-                                    # kind is production or tracker is none, reference otherwise.
-                                    # tracker or reference on a production environment is an error.
-    test_account: string            # REQUIRED when kind is production: at least 20 characters
-                                    # after trimming. Optional on other kinds; when present the
-                                    # same length rule applies, with its own error message.
-                                    # See "Production test account".
+    evidence_upload: tracker | reference | local  # optional. See "Where evidence goes".
+    test_account: string            # required when kind is production; optional otherwise.
+                                    # At least 20 characters after trimming. See "Production test account".
     sha_source:                     # required: how the DEPLOYED build is identified
       url: <http(s) URL>            # required, e.g. https://qa.example.com/api/version
       json_path: string             # exactly ONE of json_path | regex
       regex: string                 #   json_path: dot path, e.g. build.commit
                                     #   regex: must contain one capture group
-      format: commit | build-id     # optional, default commit. See below.
+      format: commit | build-id     # optional, default commit. See "Identifying the deployed build".
 
 stabilization:                      # optional. See "Where specs stabilize".
   env: <env-name>                   # a registered environment whose kind is not production
 
 auth:
   model: dev-handoff | role-accounts | mixed   # required
-  playwright_min: "<semver>"        # required, must be >= 1.51.0 (indexedDB storageState).
+  playwright_min: "<semver>"        # required, >= 1.51.0 (indexedDB storageState).
                                     # QUOTE IT: unquoted, YAML reads 1.60 as the number 1.6.
   storage_state:
     dir: string                     # optional, default ".playwright/profiles"
-    indexed_db: true                # REQUIRED to be true, since Firebase-style auth persists
-                                    # tokens in IndexedDB; false silently breaks profiles
+    indexed_db: true                # must be true (Firebase-style auth keeps tokens in IndexedDB)
 
 assertions:
   network_events: allowed | forbidden   # required
@@ -52,17 +47,16 @@ assertions:
 
 evidence:
   extra: [console_log]              # optional list; allowed values: console_log
-  capture: always | on-failure | off  # optional, default always. Must be always when any
-                                    # environment has kind production. See below.
+  capture: always | on-failure | off  # optional, default always. See "How much evidence to capture".
 
 selectors:
   testid_attribute: string          # required, e.g. data-testid
   policy_doc: string                # optional repo-relative path (warn if missing on disk)
 
 models:
-  generation_approved:              # required, >= 1 model id
-    - claude-fable-5                # the models QA trusts to author cases.yaml;
-    - claude-opus-5                 # validate-cases.mjs warns on any other model
+  generation_approved:              # required, >= 1 model id: the models QA trusts to author
+    - claude-fable-5                # cases.yaml; validate-cases.mjs warns on any other
+    - claude-opus-5
 
 sandbox:                            # required: stabilization-only mode, never verdict-eligible
   mode:
@@ -76,38 +70,32 @@ context:                            # optional. See "Context sources".
       command: string               # exactly ONE of command | path
       path: string
 
-mutation:                           # optional; REQUIRED when any environment has kind production.
+mutation:                           # optional; required when any environment is production.
                                     # See "What counts as a write".
-  deny_controls:                    # optional; ADDED to the generic defaults, never replacing them
+  deny_controls:                    # optional; ADDED to the generic defaults
     text: [<regex string>]          # matched case-insensitively against a control's label
     icons: [string]                 # icon class names, prefix match
-  write_signatures:                 # required, >= 1 entry, when mutation is required
+  write_signatures:                 # >= 1 entry when mutation is required
     - method: string                # GET | HEAD | POST | PUT | PATCH | DELETE | OPTIONS | *
-      url: <regex string>           # matched against the request URL
-      body?: <regex string>         # the key is `body`; `?` marks it optional. Matched
-                                    # against the request body
+      url: <regex string>           # matched against the full request URL
+      body: <regex string>          # optional; matched against the request body
       note: string                  # optional: why this is a write
-  allow_signatures:                 # optional, same shape: requests a write signature matches
-    - ...                           # that are really reads
+  allow_signatures:                 # optional, same shape: reads that a write signature matches
+    - ...
 
 cross_app:                          # required when apps has > 1 entry
   propagation_window_s: integer     # 1..600, ceiling for expect.poll on cross-app flows
   spec_home: <app-name>             # which app's spec_dir hosts cross-app specs
 
-clickup:                            # required when tracker is clickup (the default);
-                                    # optional and ignored when tracker is none
-  plan_tier: free | unlimited | business | enterprise   # optional, read by nothing; when
-                                    # present it must be one of these, which catches typos
+clickup:                            # required when tracker is clickup; ignored when none
+  plan_tier: free | unlimited | business | enterprise   # optional, read by nothing;
+                                    # when present it must be one of these
   space: string                     # required, ClickUp space name for QA
-  bug_list: string                  # optional: the list confirmed defects are filed into
-                                    # by /qa-pilot:qa-review. Unset is legal; bugs then
-                                    # land in the feature list beside the case tasks.
-  folder: string                    # optional but recommended: the folder inside that
-                                    # space holding feature lists. Name it whenever the
-                                    # space has more than one folder, or a feature list
-                                    # can be created beside unrelated manual QA work.
-  statuses:                         # optional; canonical names assumed if omitted.
-                                    # Complete if present: all seven or none.
+  bug_list: string                  # optional: list that /qa-pilot:qa-review files bugs into.
+                                    # Unset: bugs land in the feature list (the script warns).
+  folder: string                    # optional, recommended: the folder holding feature lists.
+                                    # Name it when the space has more than one folder.
+  statuses:                         # optional, canonical names if omitted; all seven or none
     case_review: string             # authored, awaiting QA design review
     approved_for_execution: string  # design approved, never yet run
     under_review: string            # executed, awaiting QA verdict review
@@ -119,228 +107,117 @@ clickup:                            # required when tracker is clickup (the defa
 
 ## Environment kinds
 
-Every environment says what it is. The tool no longer guesses from the hostname, because the guess
-was wrong in the commonest case: `https://app.example.com` read as non-production.
+Every environment declares what it is; nothing is guessed from the hostname.
 
-| `kind` | Means | Consequences |
-|---|---|---|
-| `qa` | A shared test deployment | Traces stay on the machine that ran them by default; the tracker gets a reference. |
-| `staging` | A pre-release deployment | Traces stay on the machine that ran them by default; the tracker gets a reference. |
-| `production` | Real users and real data | Every rule below applies. |
+| `kind` | Means |
+|---|---|
+| `qa` | A shared test deployment. |
+| `staging` | A pre-release deployment. |
+| `production` | Real users and real data. |
 
-When any environment has `kind: production`, the profile is valid only if all of these hold. Each
-is an **error**, not a warning:
+When any environment has `kind: production`, each of these is an **error**:
 
-- that environment's `evidence_upload` is `local` (the default for it). `tracker` and `reference`
-  are refused, and the error names the value given, because a trace carries the session
-  credential that authenticated the run and every request body it touched (see "What a trace
-  contains" in `SETUP-CLICKUP.md`).
-- `evidence.capture` is `always`. On production a pass is the claim most worth checking, and
-  `on-failure` keeps nothing for passes.
-- a `mutation` block is present with at least one `write_signatures` entry, so the write guard
-  knows what a write looks like on this host.
-- that environment's `test_account` is present: a string of at least 20 characters after
-  trimming. See "Production test account" below.
+- its `evidence_upload` is `tracker` or `reference` (the error names the value; a trace carries the session credential and every request body)
+- `evidence.capture` is not `always` (on production a pass is the claim most worth checking)
+- no `mutation` block, or no `mutation.write_signatures` entry
+- `test_account` is missing or too short
 
-Production also changes how runs publish: the tracker record of a production run carries no
-application data, and features must declare a mutation policy other than `unrestricted`. Those
-rules live in the case and report schemas, where the data they govern lives.
+Production also changes publishing (no application data reaches the tracker) and requires every feature to declare a mutation policy other than `unrestricted`; those rules live in the case and report schemas.
+
+A URL that looks like production (an apex domain, or a `prod`/`production`/`live` hostname) on a non-production kind is a **warning**: the declared kind wins. `allow_production` is rejected as an error; declare `kind: production`.
 
 ## Production test account
 
-A production run signs in as a real account, and the account's own permissions are the only thing
-that can truly bound what the run does. So the profile names that account and how it is
-restricted.
+A production run signs in as a real account, and that account's own permissions are the only real bound on what the run does. `test_account` names the account and how it is restricted, for example `qa-runner@example.com, its own tenant, no admin rights, no billing`.
 
-`environments.<env>.test_account` is a string of at least 20 characters after trimming (leading
-and trailing whitespace does not count). It is **required** when `kind: production`. On `qa` and
-`staging` it is optional, and when present the same length rule applies, so a value means the same
-thing everywhere. The error depends on the kind.
-
-On `production`, a missing, non-string or too-short value is an **error**:
-
-> `environments.<env>.test_account: required on a production environment, at least 20 characters. Name the account the runs use and how it is restricted (its own tenant, no admin rights, no billing). The write guard is the second layer, not the boundary.`
-
-On any other kind, a missing value is not an error. A present value that is not a string of at
-least 20 characters after trimming is an **error** with its own message, so a staging error never
-says "required on a production environment":
-
-> `environments.<env>.test_account: at least 20 characters when present.`
-
-A `null` value, which is what YAML gives for an empty `test_account:`, counts as present: the
-validator uses the same `!== undefined` presence test it uses for other keys. So on production a
-`null` gets the production message above (it is not a string), and on any other kind it gets the
-message just above.
-
-Say which account the runs use and what restricts it, for example: `qa-runner@example.com, its own
-tenant, no admin rights, no billing`. The value is an **attestation**. Nothing checks it against
-the saved login, so it records a claim QA makes and reviews; it does not prove one.
-
-**A URL that looks like production** (an apex domain, or a `prod`/`production`/`live` hostname) on
-an environment whose kind is not `production` is a **warning**, never an error. The kind you
-declared wins; the warning exists so a mistyped kind is noticed.
-
-**`allow_production` was retired in 0.3.0.** A profile that still sets it on any environment is
-an error: "retired in 0.3.0; declare kind: production". It used to turn the hostname guess off;
-there is no guess left to turn off.
+- Required when `kind: production`; otherwise optional. When present it must be a string of at least 20 characters after trimming, else an **error**. A `null` (empty `test_account:`) counts as present.
+- The value is an **attestation**: nothing checks it against the saved login. QA owns keeping it true.
 
 ## Where evidence goes
 
-`evidence_upload` decides whether a run's traces are attached to the tracker or stay on disk. A
-trace carries the session and can carry a long-lived refresh token (Firebase refresh tokens stay
-valid until the account is disabled, deleted or changed), and ClickUp attachment links are public
-unless Private Attachment Links is turned on. So the default keeps the trace off the tracker.
+`evidence_upload` decides whether a run's traces are attached to the tracker. A trace carries the session and can carry a long-lived refresh token, and ClickUp attachment links are public unless Private Attachment Links is on, so the default keeps traces off the tracker.
 
-| Effective value | What happens |
+| Value | What happens |
 |---|---|
-| `tracker` | Opt-in per environment. The trace is attached to the case's tracker task, as in 0.4.0. Turn on Private Attachment Links and use a restricted account first. |
-| `reference` | The default off production. The tracker gets the same per-case fields and run summary as `tracker` but never the trace file. Each case also carries its `run_id`, the trace's run-relative `trace_path` and `trace_sha256`, and the summary says the traces stay on the machine that ran them, to be verified by sha256 and opened with `npx playwright show-trace <path>`. |
-| `local` | Nothing is attached and no application data reaches the tracker. The trace stays under `testing/<feature>/runs/<run_id>/`, and the tracker gets its run-relative path and sha256 so a reviewer can find the exact file and verify it. |
+| `tracker` | Opt-in per environment. The trace is attached to the case task. Turn on Private Attachment Links and use a restricted account first. |
+| `reference` | Default off production. The tracker gets the same per-case fields and run summary as `tracker`, never the trace file, plus the case's `run_id`, `trace_path` and `trace_sha256`. The trace stays on the executor's machine, verified by sha256 and opened with `npx playwright show-trace <path>`. |
+| `local` | Default on production. Nothing is attached and no application data reaches the tracker, which gets only the run-relative path and sha256. |
 
-`/qa-pilot:run-tests` requires `testing/*/runs/` to be gitignored before any run whose evidence
-stays on the machine (`reference` or `local`), since otherwise traces leave through git. The
-tracker's Run ID, Trace Path and Trace SHA256 fields are needed by default, because `reference`
-fills them on every case.
+For `reference` and `local`, `/qa-pilot:run-tests` requires `testing/*/runs/` to be gitignored. The tracker needs Run ID, Trace Path and Trace SHA256 fields by default, since `reference` fills them on every case.
 
-The effective value is resolved by the loader and written into the normalized profile, so no
-skill or script re-derives it:
+The loader resolves the effective value into the normalized profile, in this order:
 
-1. if `tracker` is `none`, it is `local` on every environment. An environment that sets
-   any explicit `evidence_upload` other than `local` gets a **warning**,
-   `environments.<env>.evidence_upload: <v> is ignored under tracker: none; evidence stays local`, and is still `local`;
-2. otherwise, if the environment sets `evidence_upload`, that value (and `tracker` or `reference`
-   on a `production` environment is an error that names the value given);
-3. otherwise `local` for `kind: production` and `reference` for everything else.
-
-A host that wants attachments writes `evidence_upload: tracker` on the environments that should
-have them; one that wants the default can omit the key or write `evidence_upload: reference`.
+1. `tracker: none` makes it `local` everywhere; an explicit non-`local` value is a **warning** (`environments.<env>.evidence_upload: <v> is ignored under tracker: none; evidence stays local`).
+2. Otherwise the environment's own value (`tracker` or `reference` on production is an error).
+3. Otherwise `local` for `kind: production`, else `reference`.
 
 ## How much evidence to capture
 
-Capturing full evidence costs about 700 KB per case and adds noticeable wall clock, so this
-is a real trade rather than a free default. Storage is the reliably measurable part; timing
-varies a lot with network latency to the environment under test.
+| `evidence.capture` | Kept | Consequence |
+|---|---|---|
+| `always` (default) | every executed case, about 700 KB each | QA can sample passes, the backstop against a false pass |
+| `on-failure` | failures and flakes only | passes have no trace, so a false pass is undetectable by review |
+| `off` | nothing | no run can be published; for iterating on specs locally |
 
-| Mode | Kept | Cost | Consequence |
-|---|---|---|---|
-| `always` (default) | every executed case | ~700 KB per case, slower runs | QA can sample passes, which is the backstop against a false pass |
-| `on-failure` | failures and flakes only | near zero on a green run | passing cases have no trace, so QA cannot sample them and a false pass is undetectable by review |
-| `off` | nothing | none | no run can be published; for iterating on specs locally |
-
-The default is `always` because evidence for **passes** is the valuable kind. A failure
-already evidences itself through its error message, whereas a pass is a claim that
-something works, and the sampling rules in `/qa-pilot:qa-review` are what test that claim.
-
-`on-failure` is a legitimate choice for a suite of mostly low-priority cases, or once a
-feature is stable and you care mainly about catching regressions. Prefer `always` while a
-feature is new or where P0 cases are involved. A profile with any production environment must
-use `always`.
-
-The gate enforces whichever mode the run recorded, so it can tell a deliberately
-uncaptured pass from a lost artifact rather than guessing.
+Prefer `always` for new features and P0 cases. Any production environment requires `always`. The publish gate enforces whichever mode the run recorded.
 
 ## Where specs stabilize
 
-A new spec needs three consecutive green runs before its first verdict run counts, so a lucky
-first pass is never published. By default those runs happen in the sandbox (`sandbox.mode`).
-
-Some flows cannot run in a sandbox, because the mock backend does not model them. For those,
-`stabilization.env` names a deployed environment where the three green runs may happen instead.
-It must be a registered environment whose kind is not `production` (an **error** otherwise):
-stabilizing a spec means running it before anyone trusts it, which is exactly what production
-must not host. `/qa-pilot:run-tests` does not hand a stabilization run to
-`/qa-pilot:publish-results`, wherever it ran. The publish gate cannot tell a stabilization run on
-a deployed environment from a verdict run, so this rests on run-tests, not on the gate.
+A new spec needs three consecutive green runs before its first verdict run counts. By default those run in the sandbox (`sandbox.mode`). For flows the mock backend cannot model, `stabilization.env` names a deployed environment instead; it must be registered and not `production` (an **error** otherwise). `/qa-pilot:run-tests` never hands a stabilization run to `/qa-pilot:publish-results`; the publish gate cannot tell one from a verdict run, so this rests on run-tests.
 
 ## Context sources
 
-`/qa-pilot:generate-tests` reads the tracker task and the code before writing cases. A host
-whose behaviour is documented somewhere else (a design system, a product model, an API reference)
-names those places here, and they are read **first**, because documented intent is what an
-assertion should pin, and code only shows what was built.
+`/qa-pilot:generate-tests` reads `context.sources` **first**, before the tracker task and the code, because documented intent is what an assertion should pin.
 
 | Field | Rule |
 |---|---|
-| `name` | Required, non-empty string, unique across sources. |
-| `description` | Required, non-empty string. Say what it holds and which features it covers, so the reader knows when to use it. |
-| `command` | A non-empty string: a shell command run from the repo root; its stdout is the context. It is **shown to the user and confirmed before its first run in a session**, because a committed profile is not a reason to run arbitrary commands unseen. |
-| `path` | A non-empty string: a repo-relative file, directory or glob. A `path` whose last path segment matches `.env*` is an **error**. Files named `.env*` are never read through any `path`, whatever a directory or glob matches. |
+| `name` | Required, non-empty, unique. |
+| `description` | Required, non-empty. Say what it holds and which features it covers. |
+| `command` | Non-empty shell command run from the repo root; its stdout is the context. Shown to the user and confirmed before its first run in a session. |
+| `path` | Non-empty repo-relative file, directory or glob. A last segment matching `.env*` is an **error**; `.env*` files are never read through any `path`. |
 
-Exactly one of `command` or `path` per source, an **error** otherwise. When `context` is present,
-`sources` must be a non-empty list.
+Exactly one of `command` or `path` per source (an **error** otherwise). When `context` is present, `sources` must be a non-empty list.
 
 ## What counts as a write
 
-A feature's cases declare whether their specs may change data (`mutation.policy` in
-`cases.yaml`). The write guard enforces that declaration in the browser, and it needs two things
-from the host: which controls are writes, and which network requests are writes.
+A feature's cases declare whether specs may change data (`mutation.policy` in `cases.yaml`). The write guard enforces it in the browser and needs from the host which controls and which requests are writes.
 
-**Controls.** The guard ships generic defaults: verbs such as save, delete, publish, submit,
-upload, rename, and generic icon names such as delete, trash, pencil, share. `deny_controls.text`
-(regex strings, matched case-insensitively) and `deny_controls.icons` (class names, prefix match)
-are **added** to those defaults, never replacing them. Every regex must compile.
+**Controls.** The guard ships generic defaults (verbs such as save, delete, publish, submit, upload, rename; icons such as delete, trash, pencil, share). `deny_controls.text` and `deny_controls.icons` are added to them. Every regex must compile.
 
-**Requests.** URL and method alone cannot always tell a write from a read: a GraphQL endpoint
-takes queries and mutations on one URL, and RPC-style backends send every operation as a POST.
-So a signature can also match the request body.
+**Requests.** A GraphQL or RPC-style backend sends reads and writes to one URL, so a signature can also match the request body.
 
 | Field | Rule |
 |---|---|
-| `method` | Required. One of `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS` (uppercase), or `*` for any. |
-| `url` | Required. A regex string, matched against the full request URL. |
-| `body` | Optional (written `body?` above). A regex string, matched against the request body. A signature with a body pattern matches only requests whose body matches; a request with no body never matches it. |
-| `note` | Optional string. Why this request is a write. |
+| `method` | Required. Uppercase `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, or `*`. |
+| `url` | Required regex, matched against the full request URL. |
+| `body` | Optional regex, matched against the request body. A signature with `body` never matches a request with no body. |
+| `note` | Optional string: why this is a write. |
 
-`url` and `body` must compile without flags: they are compiled with `new RegExp(pattern)` and
-matched case-sensitively. `deny_controls.text` patterns are the exception, compiled with the `i`
-flag, since control labels vary in case.
+`url` and `body` compile with `new RegExp(pattern)` (case-sensitive); `deny_controls.text` compiles with the `i` flag.
 
-**The write guard is the second layer, not the boundary.** On production the boundary is the
-restricted account named by `test_account`: an account that cannot change data cannot be made to
-by a missed button. The guard sits under it. A signature list is only as complete as the host's
-inventory, and a write that no signature matches is a write the guard does not see and lets
-through (see the QA-Pilot repository's `docs/decisions/0001-write-signatures-default-deny.md` for
-why lists are written default-deny per channel). `test_account` is itself an attestation nothing
-verifies, so neither layer is proof alone; QA owns keeping the account restricted and the signature list complete.
+A request is a **write** when it matches any `write_signatures` entry and no `allow_signatures` entry (for reads that look like writes, such as a streaming read over POST).
 
-**Unknown keys** under `mutation`, `deny_controls`, a signature entry, `stabilization`, `context`
-or a `sources` entry are **errors**, as unknown top-level keys are: a misspelt `write_signature`
-would otherwise leave the guard with no signatures and no complaint.
+**The write guard is the second layer, not the boundary.** On production the boundary is the restricted `test_account`. A write that no signature matches is a write the guard lets through (see `docs/decisions/0001-write-signatures-default-deny.md` in the QA-Pilot repository), and `test_account` is an unverified attestation, so QA owns keeping the account restricted and the signature list complete.
 
-A request is a **write** when it matches any `write_signatures` entry and no `allow_signatures`
-entry. `allow_signatures` has the same shape and exists for reads that look like writes, such as
-a streaming read that uses POST.
-
-`mutation` is optional on a profile with no production environment, and **required, with at least
-one `write_signatures` entry**, when any environment has `kind: production`. Keep host-specific
-words and patterns here, in the host's profile; the plugin's defaults stay generic.
+Unknown keys under `mutation`, `deny_controls`, a signature entry, `stabilization`, `context` or a `sources` entry are **errors**: a misspelt `write_signature` would otherwise leave the guard with no signatures. Keep host-specific patterns here, never in the plugin.
 
 ## Working without a tracker
 
-`tracker: clickup` (the default): the `clickup` block is required and validated by the rules in
-this document, which are unchanged from 0.2.0.
+`tracker: clickup` (default): the `clickup` block is required and validated.
 
-`tracker: none` runs the whole pipeline on local files:
+`tracker: none` runs the pipeline on local files:
 
-- the `clickup` block is optional; if present it is ignored, a **warning** says so, and it is
-  removed from the normalized profile, so no script reads a status name from it;
-- status names are the canonical seven (`Case Review`, `Approved for Execution`, `Under Review`,
-  `Approved`, `Rejected`, `Retest`, `Quarantined`; matched case-insensitively);
-- QA records design and verdict decisions by editing `testing/<feature>/statuses.json`
-  (`{"<CASE-ID>": "<status>"}`). `/qa-pilot:run-tests` reads it in place of the ClickUp fetch
-  and copies it into the run directory as that run's approval record, the copy the publish
-  gate's `--statuses` then reads;
-- effective `evidence_upload` is `local` on every environment, since there is nowhere to upload to;
-- confirmed bugs are written as markdown files inside the run directory.
+- the `clickup` block is optional; if present it is ignored with a **warning** and dropped from the normalized profile
+- status names are the canonical seven (`Case Review`, `Approved for Execution`, `Under Review`, `Approved`, `Rejected`, `Retest`, `Quarantined`; case-insensitive)
+- QA records decisions in `testing/<feature>/statuses.json` (`{"<CASE-ID>": "<status>"}`). `/qa-pilot:run-tests` reads it in place of the ClickUp fetch and copies it into the run directory as that run's approval record, which the publish gate's `--statuses` reads
+- effective `evidence_upload` is `local` everywhere
+- confirmed bugs are markdown files in the run directory
 
 ## Identifying the deployed build
 
-Every verdict is stamped with what was running when it was proved, and a run is blocked if
-that changes mid-flight. There are two ways to express it.
+Every verdict is stamped with the running build, and a run is blocked if it changes mid-flight.
 
-**`commit` (default, preferred).** A git SHA, so a verdict names the exact source it was
-proved against. Requires the environment to serve its commit, typically a small
-`/version.json` written at image build time.
+**`commit` (default, preferred).** A git SHA. The environment must serve it, typically a `/version.json` written at image build time.
 
 ```yaml
 sha_source:
@@ -348,9 +225,7 @@ sha_source:
   json_path: commit
 ```
 
-**`build-id` (for a host that cannot serve a commit yet).** Any stable per-build
-fingerprint the app already serves. A bundler's content hash works, and needs no change to
-the application:
+**`build-id`.** Any stable per-build fingerprint the app already serves, such as a bundler content hash:
 
 ```yaml
 sha_source:
@@ -359,33 +234,11 @@ sha_source:
   format: build-id
 ```
 
-What you keep: mid-run deploy detection, which is the property that stops half a run
-testing one build and half another. What you give up: traceability. A build id names the
-bundle, not the commit, so tracing a report back to source means correlating through your
-release records by time or version. The profile validator warns about this, and the report
-records `sha_format` so nobody later mistakes a bundle hash for a commit.
-
-One blind spot worth knowing: with code splitting, a deploy that changes only a lazily
-loaded chunk may leave the entry hash untouched, so such a deploy would not be detected
-mid-run. Prefer `commit` once the environment can serve one.
-
-## Where bugs go
-
-When QA confirms a failure is a real defect rather than a broken test,
-`/qa-pilot:qa-review` files a bug and links it to the case task. `clickup.bug_list` names
-the list those go into.
-
-Leaving it unset is legal, so a first pilot is not blocked on ClickUp admin, but bugs then
-land in the feature list next to the case tasks and the script warns each time. Point it at
-whatever list your developers already work from: a bug has its own lifecycle, owned by
-them, and QA-Pilot deliberately does not try to own it.
-
-The link is a native ClickUp task relationship, not a custom field, so there is nothing
-extra to create in ClickUp for this. Under `tracker: none`, bugs are local markdown files instead.
+`build-id` keeps mid-run deploy detection but names the bundle, not the commit, so tracing back to source needs your release records. The validator warns, and the report records `sha_format`. With code splitting, a deploy that changes only a lazy chunk may leave the entry hash unchanged and go undetected.
 
 ## Status names are per-host
 
-The seven **keys** are the pipeline's lifecycle and never change. The **names** are whatever your ClickUp already calls them, because every team has its own QA vocabulary: one board's `Under Review` is another's `ready for review`.
+The seven **keys** are the pipeline's lifecycle; the **names** are whatever your ClickUp calls them:
 
 ```yaml
 clickup:
@@ -399,18 +252,19 @@ clickup:
     quarantined: skip
 ```
 
-Matching is case-insensitive and trimmed. Two lifecycle states may not share one status name, since the pipeline could not tell them apart. Declaring only some keys is an error rather than a partial default: a half-applied map matches some states and silently misses others.
+Matching is case-insensitive and trimmed. Two keys may not share a name. Declaring only some keys is an error.
 
-## Warnings (non-fatal, printed to stderr)
+## Warnings (non-fatal, stderr)
 
-- `selectors.policy_doc` set but the file does not exist on disk
-- only one environment registered (no staging/QA split)
-- `evidence.extra` empty on a profile with `assertions.network_events: forbidden`
-  (no network evidence *and* no console evidence leaves failures video-only)
-- a URL that looks like production on an environment whose kind is not `production`
-- a `clickup` block present while `tracker: none`
-- `environments.<env>.evidence_upload: <v>` with any value other than `local` while `tracker: none`
-  (warned as `environments.<env>.evidence_upload: <v> is ignored under tracker: none; evidence stays local`; the value is `local`)
+- `selectors.policy_doc` set but missing on disk
+- only one environment registered
+- `evidence.extra` empty with `assertions.network_events: forbidden` (failures are video-only)
+- a production-looking URL on a non-production kind
+- a `clickup` block while `tracker: none`
+- a non-`local` `evidence_upload` while `tracker: none`
+- `sha_source.format: build-id`
+- `evidence.capture: on-failure` (passes carry no trace to sample) or `off` (nothing can be published)
+- `clickup.statuses` not declared (the canonical names are assumed)
 
 ## CLI
 
@@ -418,4 +272,4 @@ Matching is case-insensitive and trimmed. Two lifecycle states may not share one
 node qa-pilot/scripts/lib/profile.mjs <path-to-qa-pilot.config.yaml>
 ```
 
-Exit 0 → normalized profile JSON on stdout. Exit 1 → one error per line on stderr.
+Exit 0: normalized profile JSON on stdout. Exit 1: one error per line on stderr.
