@@ -350,6 +350,8 @@ export function validateReport(report, profile, { map = null, base = null, stat 
   // because nothing else in a run tells the two apart once the run directory exists.
   if (report.run_kind === 'stabilization') {
     err('run_kind: stabilization. This run tuned specs and is never published; run against a verdict environment and publish that run.');
+  } else if (report.run_kind === 'ci') {
+    err('run_kind: ci. A CI run proves or disproves a regression and is never published; reproduce it with /qa-pilot:run-tests and publish that run.');
   } else if (report.run_kind !== 'verdict') {
     err(`run_kind: required, "verdict" or "stabilization" (found ${report.run_kind === undefined ? 'nothing' : JSON.stringify(report.run_kind)}). Record it in meta.json when the run starts.`);
   }

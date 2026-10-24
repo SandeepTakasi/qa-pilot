@@ -1,5 +1,5 @@
 # QA-Pilot regression run. Copy to .github/workflows/ in your repo and edit the marked
-# lines. Full explanation, including the two prerequisites, in SETUP-CI.md.
+# lines. Full explanation, including the four prerequisites, in SETUP-CI.md.
 #
 # This runs the specs QA approved against a DEPLOYED environment. It is a post-deploy and
 # nightly check, not a pull request check: a PR run would test whatever happens to be
@@ -42,9 +42,9 @@ jobs:
       # `if: github.event_name == ...`, or both fire on every trigger.
       PRIORITY: ''                            # EDIT: P0 on a deploy-triggered job; empty runs everything approved
       # The most approved specs that may be skipped (edited since approval, missing, no path
-      # recorded) before the job fails. '0' means any skip fails it, because a green job that
-      # ran only part of the suite is the failure this exists to prevent. EDIT: raise it to
-      # tolerate drift while QA catches up; empty turns the limit off. Needs plugin 0.4.1.
+      # recorded, removed from cases.yaml) before the job fails. '0' means any skip fails it,
+      # because a green job that ran only part of the suite is the failure this exists to
+      # prevent. EDIT: raise it to tolerate drift while QA catches up; empty turns it off.
       MAX_SKIPPED: '0'
       PLUGIN: .qa-pilot-plugin/qa-pilot/scripts
 
@@ -69,13 +69,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: <owner>/<qa-pilot-repo>   # EDIT
-          ref: v0.4.1                            # EDIT: pin a tag or SHA; MAX_SKIPPED needs 0.4.1 or newer, PRIORITY 0.4.0
+          ref: v0.4.3                            # EDIT: pin a tag or SHA; this file needs 0.4.3 or newer
           path: .qa-pilot-plugin
           # token: ${{ secrets.QA_PILOT_REPO_TOKEN }}   # only if that repo is private
 
+      # EDIT: match your repo. `node-version-file: .nvmrc` (or package.json) keeps CI on the
+      # version your engines field asks for. QA-Pilot's scripts need Node 20 or newer.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci
@@ -132,7 +134,7 @@ jobs:
       # Each run gets its own directory, so two runs never overwrite each other's evidence.
       - name: Prepare the run directory
         run: |
-          RUN_ID="${{ github.run_id }}-$FEATURE"
+          RUN_ID="${{ github.run_id }}-${{ github.run_attempt }}-$FEATURE"
           RUN_DIR="testing/$FEATURE/runs/$RUN_ID"
           mkdir -p "$RUN_DIR/fixtures"
           echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
@@ -151,34 +153,35 @@ jobs:
           SHA_BEFORE=$(node $PLUGIN/read-env-sha.mjs $PROFILE $QA_ENV $APP --sha-only)
           echo "SHA_BEFORE=$SHA_BEFORE" >> $GITHUB_ENV
 
-      # Runs exactly what QA approved, and only while the spec still matches what they
-      # approved. No ClickUp call: approved.json is committed.
-      # When PRIORITY is set, only approved cases at that priority run. Priority lives in
-      # cases.yaml, not in approved.json, so the filter needs that file. Quoted, so a
-      # value such as `P0, P1` stays one argument. An older plugin ignores --priority.
-      # MAX_SKIPPED works the same way: passed only when non-empty, and an older plugin
-      # ignores --max-skipped, so the pin above must be 0.4.1 or newer.
-      # select's stderr (the skipped specs and any REFUSED line) goes to a file so the step
-      # summary gets it even when select fails. GitHub runs this under `bash -eo pipefail`,
-      # so a bare failing `SPECS=$(...)` would end the step before any later line ran:
-      # `|| rc=$?` keeps the step alive until the summary is written, then it exits with
-      # select's own status.
+      # Runs exactly what QA approved, and only while the approval still holds: the hash
+      # covers the spec, the files it imports and the case's own definition in cases.yaml, so
+      # select always reads that file. No ClickUp call: approved.json is committed.
+      # When PRIORITY is set, only approved cases at that priority run. Quoted, so a value
+      # such as `P0, P1` stays one argument. MAX_SKIPPED is passed only when non-empty.
+      # The selection is kept as JSON (select.json) so the verdict can check that every
+      # selected case actually ran. select's stderr (the skipped specs and any REFUSED line)
+      # goes to a file so the step summary gets it even when select fails. GitHub runs this
+      # under `bash -eo pipefail`, so a bare failing command would end the step before any
+      # later line ran: `|| rc=$?` keeps the step alive until the summary is written, then it
+      # exits with select's own status.
       - name: Select the approved specs
         run: |
           PRIORITY_ARGS=()
           if [ -n "$PRIORITY" ]; then
-            PRIORITY_ARGS=(--cases testing/$FEATURE/cases.yaml --priority "$PRIORITY")
+            PRIORITY_ARGS=(--priority "$PRIORITY")
           fi
           SKIP_ARGS=()
           if [ -n "$MAX_SKIPPED" ]; then
             SKIP_ARGS=(--max-skipped "$MAX_SKIPPED")
           fi
-          SPECS=$(node $PLUGIN/ci-gate.mjs select \
+          node $PLUGIN/ci-gate.mjs select \
             --approved testing/$FEATURE/approved.json \
             --specs testing/$FEATURE/specs.json \
-            "${PRIORITY_ARGS[@]}" "${SKIP_ARGS[@]}" 2>sel.err) || rc=$?
+            --cases testing/$FEATURE/cases.yaml \
+            "${PRIORITY_ARGS[@]}" "${SKIP_ARGS[@]}" --json >select.json 2>sel.err || rc=$?
           tee -a "$GITHUB_STEP_SUMMARY" < sel.err >&2
           [ "${rc:-0}" = 0 ] || exit "$rc"
+          SPECS=$(jq -er 'map(.path) | join(" ")' select.json)
           # Belt and braces. An empty SPECS would make the next step
           # `npx playwright test` with no arguments, which runs every spec in the repo,
           # including ones QA never approved, and calls the result a regression pass.
@@ -187,6 +190,9 @@ jobs:
             exit 1
           fi
           echo "SPECS=$SPECS" >> $GITHUB_ENV
+          # The hashes this run is bound to, taken before anything runs.
+          node $PLUGIN/lib/spec-hash.mjs --specs testing/$FEATURE/specs.json \
+            --cases testing/$FEATURE/cases.yaml > "$RUN_DIR/spec-shas.json"
 
       # Lint the selected specs before they run: a test with no assertion, a fixed sleep or a
       # skipped test would pass, and a pass proves nothing. The config is committed at your
@@ -239,7 +245,8 @@ jobs:
             const e = process.env;
             const m = JSON.parse(e.QA_PILOT_MUTATION);
             const meta = {
-              run_id: e.RUN_ID, feature: e.FEATURE, app: e.APP, env_name: e.QA_ENV,
+              // A CI run proves or disproves a regression; the publish gate refuses it.
+              run_id: e.RUN_ID, run_kind: "ci", feature: e.FEATURE, app: e.APP, env_name: e.QA_ENV,
               env_kind: e.KIND, env_url: e.QA_URL, api_mode: "server",
               sha_before: e.SHA_BEFORE, sha_after: e.SHA_AFTER,
               sha_source: `${e.PROFILE}:${e.QA_ENV}`, sha_format: "commit",
@@ -250,8 +257,7 @@ jobs:
             };
             (await import("node:fs")).writeFileSync(`${e.RUN_DIR}/meta.json`, JSON.stringify(meta, null, 2));'
           # report.json lands in the run directory, beside results.json and meta.json.
-          node $PLUGIN/parse-report.mjs $RUN_DIR/results.json $RUN_DIR/meta.json \
-            --specs testing/$FEATURE/specs.json
+          node $PLUGIN/parse-report.mjs $RUN_DIR/results.json $RUN_DIR/meta.json
 
       # Keep the evidence on every run, whatever the outcome and whatever the profile's
       # evidence_upload says, but only on a private repository: this job never runs
@@ -260,7 +266,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always() && env.PRIVATE_REPO == 'true'
         with:
-          name: qa-pilot-${{ github.run_id }}
+          name: qa-pilot-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.FEATURE }}
           path: ${{ env.RUN_DIR }}
           retention-days: 14
 
@@ -268,13 +274,17 @@ jobs:
         if: always() && env.PRIVATE_REPO != 'true'
         run: 'echo "QA-Pilot artifacts were skipped: this repository is public, or its visibility could not be read, and a trace can carry a refresh token." >> "$GITHUB_STEP_SUMMARY"'
 
+      # Green only when every selected case ran and passed: a blocked case, a failed
+      # fixture, an error outside any test, or a selected case missing from the report
+      # (a path Playwright read as a pattern that matched nothing) fails the job.
       - name: Verdict
-        run: node $PLUGIN/ci-gate.mjs verdict --report $RUN_DIR/report.json
+        run: node $PLUGIN/ci-gate.mjs verdict --report $RUN_DIR/report.json --expect select.json
 
-# This job does not publish to ClickUp, by design. Publishing writes to the tracker as a
+# This job does not publish to ClickUp, by design, and its runs cannot be published: they
+# carry run_kind "ci", which the publish gate refuses. Publishing writes to the tracker as a
 # person and runs through the approval gate over MCP, neither of which a build runner has.
-# When a regression needs to be in ClickUp, download report.json from the artifacts and
-# run /qa-pilot:publish-results against it. The artifact (private repositories only) holds
-# the traces, which carry the test account's session: anyone with read access to the repo
-# can download it, so keep the test account restricted and the retention short (see
-# SETUP-CI.md, "Evidence in CI").
+# When a regression needs to be in the tracker, reproduce it locally with
+# /qa-pilot:run-tests and publish that run. The artifact (private repositories only) holds
+# the traces, for diagnosis; they carry the test account's session, and anyone with read
+# access to the repo can download them, so keep the test account restricted and the
+# retention short (see SETUP-CI.md, "Evidence in CI").

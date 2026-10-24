@@ -3,8 +3,8 @@
 // eslint@9, eslint-plugin-playwright, typescript-eslint and typescript.
 //
 // It catches what a reviewer skims past: a test with no assertion, a fixed sleep, a skipped
-// or focused test. Keep assertions in the test body: a helper that holds the only expect()
-// hides it from `expect-expect`.
+// or focused test, and a selector bound to CSS, XPath or position. Keep assertions in the test
+// body: a helper that holds the only expect() hides it from `expect-expect`.
 import playwright from 'eslint-plugin-playwright';
 import tseslint from 'typescript-eslint';
 
@@ -18,7 +18,8 @@ export default [{
   // CI template fails the step on that message. run-tests passes DIRECTORIES: a glob that
   // matches nothing makes ESLint exit 2. So list every app's spec_dir, and only directories
   // that exist.
-  files: ['e2e/**/*.spec.ts'],
+  // Fixture specs too: they are the ones that write.
+  files: ['e2e/**/*.spec.ts', 'e2e/**/FIXTURE-*.ts'],
   // Keep the parser after the spread of languageOptions: reversed, TypeScript specs fail to parse.
   languageOptions: { ...recommended.languageOptions, parser: tseslint.parser },
   rules: {
@@ -27,6 +28,12 @@ export default [{
     'playwright/no-wait-for-timeout': 'error',
     'playwright/no-skipped-test': 'error',
     'playwright/no-focused-test': 'error',
+    // Selectors: test ids, roles and labels only. EDIT: add a component library's overlay root
+    // (one exact CSS selector each, such as '.v-overlay-container') to `allowed`; never turn
+    // the rule off.
+    'playwright/no-raw-locators': ['error', { allowed: [] }],
+    'playwright/no-nth-methods': 'error',
+    'playwright/prefer-native-locators': 'error',
     'playwright/consistent-spacing-between-blocks': 'off',
   },
 }];

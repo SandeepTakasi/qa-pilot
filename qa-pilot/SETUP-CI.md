@@ -19,15 +19,17 @@ profile and stops if it is `production`. Artifacts leave the machine and a produ
 carries a live session, so production runs are made by a person with evidence kept on their
 machine (see `/qa-pilot:run-tests`).
 
-**It does not publish to ClickUp.** Publishing goes through the approval gate over MCP as a
-person; a build runner is neither, and a second write path with its own copy of the rules
-would be two things to keep honest. To get a CI regression into ClickUp, download the run
-directory from the build artifacts and run `/qa-pilot:publish-results` on it. On a public
-repository there is no artifact, so run the specs locally.
+**It does not publish to ClickUp, and its runs cannot be published.** Publishing goes through
+the approval gate over MCP as a person; a build runner is neither, and a second write path
+with its own copy of the rules would be two things to keep honest. A CI run records
+`run_kind: ci`, which the publish gate refuses. To get a regression into the tracker,
+reproduce it with `/qa-pilot:run-tests` and publish that run. The artifacts are for
+diagnosing the failure.
 
 **It does not need ClickUp.** `testing/<feature>/approved.json` is committed. It lists every
-case QA accepted and the hash of the spec they accepted, so CI answers "what did QA approve,
-and is this still that spec" from the repo alone.
+case QA accepted and the hash of what they accepted: the spec, the local files it imports, and
+the case's steps, expected outcomes, preconditions and fixture in `cases.yaml`. CI answers
+"what did QA approve, and is this still that test" from the repo alone.
 
 ## Not a pull request check
 
@@ -75,7 +77,7 @@ back `blocked`. Allowlist the runner or use a self-hosted one.
 
 ## Prerequisite 3: specs and ledgers are in the checkout
 
-CI reads `approved.json`, `specs.json` and the spec files from the checkout. In local-only
+CI reads `approved.json`, `specs.json`, `cases.yaml` and the spec files from the checkout. In local-only
 mode, where the specs and `testing/` are gitignored, the job fails at selection with "no
 approved spec is runnable", so check `.gitignore` first. To use CI, commit the spec directory
 and `testing/`, and ignore `testing/*/runs/`.
@@ -91,21 +93,28 @@ loop once: generate, run, publish, review.
 | Message | What happened | Who acts |
 |---|---|---|
 | `REGRESSION` | a case QA approved as passing now fails | the team that owns the feature |
-| `ENVIRONMENT FAILED` | over 10% blocked, or the build changed mid-run | whoever owns the environment |
+| `ENVIRONMENT FAILED` | a case was blocked (often a failed setup project or an expired session), a fixture spec failed, Playwright reported an error outside any test (a failed global setup, a timeout), or the build changed mid-run | whoever owns the environment |
+| `INCOMPLETE` | a selected approved case never ran, or a test ran without a case-ID title. Playwright reads file arguments as patterns, so a path with `(`, `)`, `[` or `]`, or a config `testIgnore`, can match nothing | whoever owns the spec paths or the Playwright config |
 | `REFUSED: no approved spec is runnable` | nothing is approved, or every spec drifted | QA, via `/qa-pilot:qa-review` |
 | `REFUSED: no approved spec at priority <list> is runnable` | `PRIORITY` is set and no approved, undrifted spec has that priority | QA, or whoever set `PRIORITY` |
-| `REFUSED: <k> approved spec(s) were skipped and --max-skipped allows <n>` | more approved specs were skipped (edited, missing or without a path) than `MAX_SKIPPED` allows; the step summary lists each one | QA, or whoever owns the spec |
-| `eslint` errors on a spec | a test with no assertion, a fixed sleep, or a skipped or focused test | whoever wrote the spec |
+| `REFUSED: <k> approved spec(s) were skipped and --max-skipped allows <n>` | more approved specs were skipped (changed since approval, missing, without a path, or removed from `cases.yaml`) than `MAX_SKIPPED` allows; the step summary lists each one | QA, or whoever owns the spec |
+| `eslint` errors on a spec | a test with no assertion, a fixed sleep, a skipped or focused test, or a selector bound to CSS, XPath or position | whoever wrote the spec |
 | `File ignored` in the lint step | the config's `files` globs do not cover a selected spec, so it was not linted | whoever owns the config: add the app's `spec_dir` |
 
 A `flaky` case fails the build, as pass-on-retry is not a pass anywhere else in the pipeline.
+Green means every selected approved case ran and passed; nothing less is reported as green.
 
-## Specs that changed since approval are skipped, not run
+## Tests that changed since approval are skipped, not run
 
-`select` re-hashes each spec and compares it to `approved.json`. A spec that no longer matches
-is excluded, with its case ID and both hashes printed, because nobody has reviewed the change.
-Publish a run and have QA review it; the approval then carries forward. If every case is
-skipped at once, someone probably reformatted the spec directory.
+`select` re-hashes each approved case (the spec, the local files it imports, and the case's
+steps, expected outcomes, preconditions and fixture) and compares it to `approved.json`. A case
+that no longer matches is excluded, with its case ID and both hashes printed, because nobody has reviewed the change.
+Publish a run and have QA review it; the approval then carries forward. Editing a shared helper
+skips every spec that imports it. Line endings are normalised, so a Windows checkout hashes
+like CI's. If every case is skipped at once, someone probably reformatted the spec directory.
+
+A case deleted from `cases.yaml` while its key stays in `approved.json` is skipped with
+`no longer in cases.yaml`: delete the key to retire it.
 
 ### Failing the build on a skip: `--max-skipped`
 
@@ -117,11 +126,11 @@ to stderr, prints nothing on stdout and exits 1.
 
 - Any other value, including an empty one or the flag as the last argument, is an error:
   `select: --max-skipped must be a whole number, 0 or more` (exit 1).
-- Without the flag the count is not limited, as in 0.4.0.
+- Without the flag the count is not limited.
 - Cases left out by `PRIORITY` are not skips. The zero-runnable refusal comes first and keeps
   its own message.
-- **The flag needs plugin 0.4.1.** An older `ci-gate.mjs` ignores flags it does not know, so
-  the job would skip silently and go green on part of the suite.
+- **Pin the plugin to the release the template came from.** An older `ci-gate.mjs` ignores
+  flags it does not know, so the job would skip silently and go green on part of the suite.
 
 The template sets `MAX_SKIPPED: '0'`, so any skip fails the job. Raise it to tolerate drift
 while QA catches up, or set it empty to drop the limit. It passes the flag only when
@@ -130,13 +139,18 @@ summary even when select fails. GitHub runs steps with `bash -eo pipefail`, whic
 the moment a failing command substitution returns, so the capture is written to survive that:
 
 ```bash
-SPECS=$(node $PLUGIN/ci-gate.mjs select \
+node $PLUGIN/ci-gate.mjs select \
   --approved testing/$FEATURE/approved.json \
   --specs testing/$FEATURE/specs.json \
-  "${PRIORITY_ARGS[@]}" "${SKIP_ARGS[@]}" 2>sel.err) || rc=$?
+  --cases testing/$FEATURE/cases.yaml \
+  "${PRIORITY_ARGS[@]}" "${SKIP_ARGS[@]}" --json >select.json 2>sel.err || rc=$?
 tee -a "$GITHUB_STEP_SUMMARY" < sel.err >&2
 [ "${rc:-0}" = 0 ] || exit "$rc"
+SPECS=$(jq -er 'map(.path) | join(" ")' select.json)
 ```
+
+`select.json` is kept for the verdict step, which fails the job if any selected case is
+missing from the report (`verdict --expect select.json`).
 
 With the limit at 0:
 
@@ -155,43 +169,25 @@ env:
   PRIORITY: ''      # EDIT: P0 on a deploy-triggered job; empty runs everything approved
 ```
 
-When `PRIORITY` is non-empty the select step adds
-`--cases testing/$FEATURE/cases.yaml --priority "$PRIORITY"` (quoted, so `P0, P1` stays one
-argument), and adds nothing when it is empty:
-
-```bash
-PRIORITY_ARGS=()
-if [ -n "$PRIORITY" ]; then
-  PRIORITY_ARGS=(--cases testing/$FEATURE/cases.yaml --priority "$PRIORITY")
-fi
-SPECS=$(node $PLUGIN/ci-gate.mjs select \
-  --approved testing/$FEATURE/approved.json \
-  --specs testing/$FEATURE/specs.json \
-  "${PRIORITY_ARGS[@]}")
-```
-
-Priority is recorded only in `cases.yaml`, which is why the filter needs that file:
+When `PRIORITY` is non-empty the select step adds `--priority "$PRIORITY"` (quoted, so
+`P0, P1` stays one argument), and adds nothing when it is empty. Priority is read from
+`cases.yaml`, which `select` always reads:
 
 ```
-node ci-gate.mjs select --approved <approved.json> --specs <specs.json> \
-  [--cases <cases.yaml>] [--priority <P0[,P1[,P2]]>] [--max-skipped <n>] [--json]
+node ci-gate.mjs select --approved <approved.json> --specs <specs.json> --cases <cases.yaml> \
+  [--priority <P0[,P1[,P2]]>] [--max-skipped <n>] [--json]
 ```
 
-- `--priority` without `--cases` is an error:
-  `select: --priority needs --cases <cases.yaml>, because priority is recorded only there`.
-  `--cases` without `--priority` is accepted and the file is not read. With `--priority`, a
-  missing `--cases` file is an error: `no cases file at <path>`.
 - Values are case-sensitive and comma-separated, each trimmed: `P0, P1` equals `P0,P1`, `p0`
   is not `P0`. An unknown value is an error naming the first one:
   `select: unknown priority "<v>"; use P0, P1 or P2`. An empty element, empty value or missing
   value is the unknown value `""`, so the job does not fall back to running everything.
-- Every error exits 1, and the first failing check is reported, in this order: `--approved` or
-  `--specs` missing, `--priority` without `--cases`, an unknown priority, a missing cases file
-  (only with `--priority`), a missing approval ledger.
-- The filter runs before the hash check, and drops an approved case outside it silently,
-  because leaving it out is the job's intent. A case the filter cannot place is skipped with a
-  reason instead: `not in cases.yaml, so its priority is unknown`, or
-  `no valid priority in cases.yaml, so its priority is unknown`.
+- Every error exits 1, and the first failing check is reported, in this order: a missing
+  `--approved`, `--specs` or `--cases`, an unknown priority, a malformed `--max-skipped`, a
+  missing approval ledger, a missing cases file.
+- A case no longer in `cases.yaml` is skipped whatever the filter. The filter then drops an
+  approved case outside it silently, because leaving it out is the job's intent, and skips one
+  it cannot place: `no valid priority in cases.yaml, so its priority is unknown`.
 - The hash check then runs on what remains, so a drifted spec is still skipped and printed.
 - If nothing is runnable at that priority, `select` exits 1 with
   `REFUSED: no approved spec at priority <list> is runnable, so this job would report green having proved nothing.`
@@ -232,14 +228,19 @@ otherwise keeps ESLint's exit code. The `|| rc=$?` form lets the step survive
 matches nothing exits 2.
 
 The lint flags a test with no assertion, a fixed `waitForTimeout`, or a skipped or focused
-test, which pass while proving nothing. The rules come from `eslint-plugin-playwright`,
+test, which pass while proving nothing, and a selector bound to CSS, XPath or position
+(`no-raw-locators`, `no-nth-methods`, `prefer-native-locators`), which breaks on the next
+layout change. The rules come from `eslint-plugin-playwright`,
 maintained outside QA-Pilot. To set it up:
 
 1. Copy `templates/eslint.qa-pilot.config.mjs` to your repo root and commit it (ESLint
    resolves `files` against the config's directory). `/qa-pilot:run-tests` copies it if
    absent and writes your `spec_dir` values in.
-2. Edit its `files` list, one `<spec_dir>/**/*.spec.ts` glob per app, covering every app's
-   `spec_dir` and only directories that exist.
+2. Edit its `files` list: per app, `<spec_dir>/**/*.spec.ts` and `<spec_dir>/**/FIXTURE-*.ts`
+   (fixture specs write; `/qa-pilot:run-tests` lints them, while this job lints only the
+   selected case specs), covering every app's `spec_dir` and only
+   directories that exist. If a component library teleports overlays, add each overlay root's
+   CSS selector to `no-raw-locators`' `allowed` list.
 3. Add the dev dependencies `eslint@9`, `eslint-plugin-playwright`, `typescript-eslint` and
    `typescript` so the job's `npm ci` installs them.
 
@@ -250,7 +251,7 @@ weakened or deleted tests (CODEOWNERS on the spec directory, say) is worth addin
 ## Each run has its own directory
 
 As locally, everything a run produces goes under `testing/<feature>/runs/<run_id>/`:
-`meta.json`, the Playwright report as `results.json` (the job sets
+`meta.json`, `spec-shas.json` (taken before the run), the Playwright report as `results.json` (the job sets
 `PLAYWRIGHT_JSON_OUTPUT_NAME` to an absolute path, because Playwright resolves a bare name
 against the config file's directory), traces under `test-results/`, fixture identities under
 `fixtures/` (`QA_PILOT_FIXTURE_DIR`, with `QA_PILOT_FEATURE` for fixture projects; see
@@ -296,10 +297,15 @@ discards most of what `on-failure` saves.
 The workflow checks QA-Pilot out at a ref. Pin a tag or commit SHA, not a branch, or a change
 to QA-Pilot can turn your build red overnight with nothing in your history to explain it.
 
-The template pins `ref: v0.4.1`. **`--priority` needs 0.4.0 or newer, and `--max-skipped`
-needs 0.4.1 or newer.** An older `ci-gate.mjs` ignores flags it does not know: below 0.4.0 the
-job runs every approved spec while looking like a P0 job, and below 0.4.1 it tolerates every
-skip. Keep the pin at 0.4.1 or later while `MAX_SKIPPED` is set, as the template does.
+The template pins `ref: v0.4.3` and needs 0.4.3 or newer: `select` takes `--cases` always
+and `verdict` takes `--expect`, and an older `ci-gate.mjs` ignores flags it does not know, so
+the job would go green on less than it claims. Upgrade the template and the pin together.
+
+Moving from 0.4.2 resets every approval once, because the hash now covers each spec's imports
+and its case's steps, expected outcomes, preconditions and fixture: CI skips every case until
+QA re-approves it in `/qa-pilot:qa-review`, and fails with `REFUSED: no approved spec is runnable` until at least
+one is. Disable the workflow until the ledger is re-recorded, then set `MAX_SKIPPED` empty while
+the remaining cases are pending.
 
 Moving the pin to v0.4.0 or later also applies the `test_account` rule to the whole profile:
 a production environment without it makes the profile invalid, so every CI job fails,

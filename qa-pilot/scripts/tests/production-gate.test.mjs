@@ -516,6 +516,8 @@ test('a stabilization run, or one that never said what it was, is refused', () =
   const r = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO())] });
   const stab = { ...r, report: { ...r.report, run_kind: 'stabilization' } };
   assert.ok(has(gate(stab, QA_PROFILE, casesFile()).errors, /^run_kind: stabilization/));
+  const ci = { ...r, report: { ...r.report, run_kind: 'ci' } };
+  assert.ok(has(gate(ci, QA_PROFILE, casesFile()).errors, /^run_kind: ci\. A CI run/));
   const none = { ...r, report: { ...r.report, run_kind: null } };
   assert.ok(has(gate(none, QA_PROFILE, casesFile()).errors, /^run_kind: required/));
 });

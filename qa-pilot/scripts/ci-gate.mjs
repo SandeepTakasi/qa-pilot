@@ -3,8 +3,8 @@
 //
 // CI cannot reach ClickUp: the approval lifecycle is driven over MCP by a model, and a
 // build runner has neither. It does not need to. `approved.json` is committed, it names
-// every case QA accepted and the hash of the spec they accepted, so CI can answer "what
-// did QA approve, and is it still the same spec" from the repo alone.
+// every case QA accepted and the hash of what they accepted (lib/spec-hash.mjs), so CI can
+// answer "what did QA approve, and is it still the same test" from the repo alone.
 //
 // CI never publishes. It proves a regression and fails the build; putting verdicts in
 // ClickUp stays a human-invoked step, because publishing means writing to a tracker as a
@@ -39,8 +39,9 @@ const PRIORITIES = ['P0', 'P1', 'P2'];
  * A spec whose hash no longer matches the one QA approved is excluded, not run. It may
  * well be a better spec, but nobody has reviewed it, and a green CI run against an
  * unreviewed spec is a claim that a human stands behind something no human has read. The
- * hash covers the spec, its local imports and the case's steps and expected outcomes
- * (lib/spec-hash.mjs), so an edited helper or a changed expectation drops out the same way.
+ * hash covers the spec, its local imports and the case's steps, expected outcomes,
+ * preconditions and fixture (lib/spec-hash.mjs), so an edited helper or a changed expectation
+ * drops out the same way.
  *
  * @param {Record<string,string>} approved case id -> approved hash
  * @param {Record<string,string>} specPaths case id -> spec file path
@@ -88,7 +89,7 @@ export function selectSpecs(approved, specPaths, cases, { read, priorities } = {
     if (current !== approvedHash) {
       skipped.push({
         id, path,
-        reason: `the spec, a file it imports, or the case's steps or expected outcomes changed since QA approved it (approved ${approvedHash}, found ${current}). Publish a run and have QA review it before CI trusts it.`,
+        reason: `the spec, a file it imports, or the case's steps, expected outcomes, preconditions or fixture changed since QA approved it (approved ${approvedHash}, found ${current}). Publish a run and have QA review it before CI trusts it.`,
       });
       continue;
     }
@@ -183,7 +184,7 @@ if (isMain(import.meta.url)) {
       const approvedPath = argValue('--approved');
       const specsPath = argValue('--specs');
       const casesPath = argValue('--cases');
-      // The approval hash includes the case's steps and expected outcomes, so CI cannot
+      // The approval hash includes the case's own definition from cases.yaml, so CI cannot
       // check an approval without the cases file.
       if (!approvedPath || !specsPath || !casesPath) throw new Error('select needs --approved <approved.json> --specs <specs.json> --cases <cases.yaml>');
 
