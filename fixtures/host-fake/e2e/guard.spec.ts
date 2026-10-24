@@ -5,6 +5,8 @@ import type { Page } from '@playwright/test';
 import { request as apiRequest, chromium } from '@playwright/test';
 import { test, expect, newGuardedContext } from './.guard/write-guard.fixture';
 import type { BrowserContext } from '@playwright/test';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 const ORIGIN = 'https://app.test';
 
@@ -152,6 +154,78 @@ test.describe.serial('a context kept past its test', () => {
     await serve(page, '/projects', '<p>Projects</p>');
     await expect(kept.newPage()).rejects.toThrow();
   });
+});
+
+test('GUARD-READONLY-013 @read-only a keepalive fetch is routed and blocked, even as the page unloads', async ({ page, guardState }) => {
+  // Playwright does not route a keepalive request, so before 0.4.3 an autosave sent on
+  // pagehide reached the server with nothing in the record. A server on 127.0.0.1 counts
+  // what arrives; nothing leaves the machine.
+  const arrived: string[] = [];
+  const server = createServer((req, res) => {
+    if (req.url?.startsWith('/api/')) arrived.push(`${req.method} ${req.url}`);
+    res.setHeader('content-type', 'text/html');
+    res.end(req.url === '/draft' ? `<!doctype html><button id="save">Autosave</button><span id="state">idle</span><script>
+      addEventListener('pagehide', () => { fetch('/api/drafts/1', { method: 'POST', body: '{}', keepalive: true }).catch(() => {}); });
+      document.getElementById('save').addEventListener('click', async () => {
+        const a = fetch('/api/drafts/2', { method: 'POST', body: '{}', keepalive: true }).then(() => 'reached', () => 'failed');
+        const b = fetch(new Request('/api/drafts/3', { method: 'POST', body: '{}', keepalive: true })).then(() => 'reached', () => 'failed');
+        document.getElementById('state').textContent = (await Promise.all([a, b])).join(' ');
+      });
+    </script>` : '<!doctype html><p>blank</p>');
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    await page.goto(`${base}/draft`);
+    await page.getByRole('button', { name: 'Autosave' }).click();
+    await expect(page.locator('#state')).toHaveText('failed failed');
+    await page.goto(`${base}/blank`); // fires pagehide on /draft
+    await page.waitForTimeout(1000);
+    expect(arrived).toEqual([]);
+    expect(guardState.blocked).toBeGreaterThanOrEqual(2);
+  } finally {
+    server.close();
+  }
+});
+
+test('GUARD-READONLY-014 @read-only a SharedWorker is refused and recorded', async ({ page, guardState }) => {
+  // Its requests are not routed, so the guard could not judge them.
+  await serve(page, '/projects', `
+    <button id="start">Start sync</button><span id="state">idle</span>
+    <script>
+      document.getElementById('start').addEventListener('click', () => {
+        const src = URL.createObjectURL(new Blob(['onconnect = () => {}'], { type: 'text/javascript' }));
+        try { new SharedWorker(src); document.getElementById('state').textContent = 'created'; }
+        catch (e) { document.getElementById('state').textContent = 'refused'; }
+      });
+    </script>`);
+  await page.getByRole('button', { name: 'Start sync' }).click();
+  await expect(page.locator('#state')).toHaveText('refused');
+  await expect.poll(() => guardState.blocked).toBe(1);
+});
+
+test('GUARD-READONLY-015 @read-only a field or checkbox inside a dialog with a Save button is not a write', async ({ page, guardState }) => {
+  // Dialogs carry tabindex="-1". Taking the dialog as the clicked control made its Save
+  // button's text the label of every click inside it.
+  await serve(page, '/projects', `
+    <div role="dialog" tabindex="-1">
+      <label><input type="checkbox" id="archived"> Show archived</label>
+      <input id="search" aria-label="Search">
+      <button>Save</button>
+    </div>`);
+  await page.getByLabel('Show archived').check();
+  await expect(page.getByLabel('Show archived')).toBeChecked();
+  await page.getByLabel('Search').pressSequentially('a b');
+  await expect(page.getByLabel('Search')).toHaveValue('a b');
+  expect(guardState.blocked).toBe(0);
+});
+
+test('GUARD-READONLY-016 @read-only a spec handler cannot turn an allowed read into a write', async ({ page, guardState }) => {
+  await serve(page, '/projects', '<p>Projects</p>');
+  await page.route(`${ORIGIN}/api/list`, (route) => route.continue({ method: 'POST', url: `${ORIGIN}/api/projects/1/archive`, postData: '{}' }));
+  const outcome = await page.evaluate(() => fetch('/api/list').then(() => 'reached', () => 'failed'));
+  expect(outcome).toBe('failed');
+  expect(guardState.blocked).toBe(1);
 });
 
 // --- scoped-write ---------------------------------------------------------------------

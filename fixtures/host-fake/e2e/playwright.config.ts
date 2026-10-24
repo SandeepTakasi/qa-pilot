@@ -1,5 +1,5 @@
 // The write guard's real-browser proof. Runs only guard.spec.ts, against pages the specs
-// serve themselves through page.route, so nothing reaches a real site.
+// serve themselves through page.route or a server on 127.0.0.1, so nothing reaches a real site.
 //
 //   QA_PILOT_MUTATION='{"policy":"read-only"}' npx playwright test -c e2e/playwright.config.ts --grep @read-only
 //   QA_PILOT_MUTATION='{"policy":"scoped-write","prefix":"QA_TEST_"}' npx playwright test -c e2e/playwright.config.ts --grep @scoped-write
@@ -14,7 +14,10 @@ const runDir = `./.out/${policy}`;
 
 // The host's view of a write, as a profile's mutation block would give it.
 process.env.QA_PILOT_MUTATION_CONFIG ??= JSON.stringify({
-  write_signatures: [{ method: 'POST', url: '^https://app\\.test/api/', note: 'every API POST writes on this fake host' }],
+  write_signatures: [
+    { method: 'POST', url: '^https://app\\.test/api/', note: 'every API POST writes on this fake host' },
+    { method: 'POST', url: '^http://127\\.0\\.0\\.1:\\d+/api/', note: 'the local server a spec starts to count arrivals' },
+  ],
 });
 
 export default defineConfig({

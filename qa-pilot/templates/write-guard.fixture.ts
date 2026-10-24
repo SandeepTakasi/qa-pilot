@@ -18,6 +18,8 @@
 // before click, keyboard activation other than Enter/Space, WebSocket frames, routeFromHAR,
 // popups opened outside the guarded context, and frames other than each page's main frame
 // for setScope. Requests are only as well classified as the host's write_signatures.
+// Requests Playwright does not route are made to route or refused: a keepalive fetch loses
+// its keepalive flag, and SharedWorker is refused and recorded as a blocked write.
 //
 // Under any policy but unrestricted, the request paths a spec reaches for are refused: the
 // request fixture, page.request and context.request, the request export of @playwright/test
@@ -114,10 +116,24 @@ class GuardState {
     if (this.decided.has(req)) return 'pass';
     this.decided.add(req);
     this.routed++;
-    const v = decideRequest({ method: req.method(), url: req.url(), body: req.postData() }, { policy: this.policy }, this.cfg);
+    return this.decide(route, { method: req.method(), url: req.url(), body: req.postData() });
+  }
+
+  /** Decide what a spec handler's continue or fallback overrides would send instead. */
+  async judgeOverride(route: Route, options: { method?: string; url?: string; postData?: unknown }): Promise<'abort' | 'pass'> {
+    if (options?.method === undefined && options?.url === undefined && options?.postData === undefined) return 'pass';
+    const req = route.request();
+    const pd = options.postData;
+    const body = pd === undefined ? req.postData()
+      : typeof pd === 'string' ? pd
+        : Buffer.isBuffer(pd) ? pd.toString('utf8') : JSON.stringify(pd);
+    return this.decide(route, { method: options.method ?? req.method(), url: options.url ?? req.url(), body });
+  }
+
+  private async decide(route: Route, r: { method: string; url: string; body: string | null }): Promise<'abort' | 'pass'> {
+    const v = decideRequest(r, { policy: this.policy }, this.cfg);
     if (v.action === 'allow') return 'pass';
-    const ev: GuardEvent = { kind: 'request', action: v.action, reason: v.reason, method: req.method(), url: req.url(), at: new Date().toISOString() };
-    this.events.push(ev);
+    this.events.push({ kind: 'request', action: v.action, reason: v.reason, method: r.method, url: r.url, at: new Date().toISOString() });
     if (v.action === 'block') { this.blocked++; await route.abort('blockedbyclient'); return 'abort'; }
     this.observed++;
     return 'pass';
@@ -148,7 +164,21 @@ function pageScript(state: GuardState): string {
   const bind = window.__qaPilotReport;
   const report = (e) => { try { bind(e); } catch (_) {} };
   const ROW = 'tr, [role=row], li, [role=listitem], .v-list-item';
-  const CONTROL = 'button, a, [role=button], [role=menuitem], [role=link], [role=tab], input[type=submit], input[type=button], input[type=image], summary, [onclick], [tabindex]';
+  const CONTROL = 'button, a, [role=button], [role=menuitem], [role=link], [role=tab], input[type=submit], input[type=button], input[type=image], summary, [onclick]';
+  // A focusable element counts as a control only when it holds no other control or field.
+  // Dialogs and panels carry tabindex="-1", and taking one as the control made a checkbox
+  // click inside it carry the whole dialog's text, Save button included.
+  const controlOf = (target) => {
+    const c = target.closest(CONTROL);
+    if (c) return c;
+    const t = target.closest('[tabindex]');
+    return t && !t.querySelector(CONTROL + ', input, textarea, select') ? t : target;
+  };
+  // Typing and clicking into a field is never a write; a form submit is judged separately.
+  const NOT_TEXT = new Set(['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'file', 'color', 'range']);
+  const isTextEntry = (el) => el instanceof Element && (el.isContentEditable
+    || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT'
+    || (el.tagName === 'INPUT' && !NOT_TEXT.has((el.getAttribute('type') || 'text').toLowerCase())));
   // The control's own row, or the dialog holding it, never a container of several rows.
   const ownRowText = (el) => {
     const parts = [];
@@ -174,7 +204,8 @@ function pageScript(state: GuardState): string {
   };
   const judge = (target, e) => {
     if (!(target instanceof Element)) return;
-    const el = target.closest(CONTROL) || target;
+    const el = controlOf(target);
+    if (isTextEntry(el)) return;
     const label = labelOf(el);
     const v = decideControl(
       { label, icons: iconsOf(el), pageUrl: location.href, ownRowText: ownRowText(el) },
@@ -191,6 +222,24 @@ function pageScript(state: GuardState): string {
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') judge(document.activeElement || e.target, e);
   }, true);
+  if (POLICY.policy !== 'unrestricted') {
+    // A keepalive fetch is not routed through Playwright, so it would reach the server unjudged.
+    // Dropping the flag sends it through the route like any other request.
+    const fetch0 = window.fetch;
+    window.fetch = function (input, init) {
+      if (input instanceof Request && input.keepalive) input = new Request(input, { keepalive: false });
+      if (init && init.keepalive) init = { ...init, keepalive: false };
+      return fetch0.call(this, input, init);
+    };
+    // A SharedWorker's requests are not routed either. Refused loudly, and recorded, so a run
+    // on an app that needs one cannot publish as clean.
+    if (typeof window.SharedWorker === 'function') {
+      window.SharedWorker = function SharedWorker() {
+        report({ kind: 'control', action: 'block', reason: 'SharedWorker requests cannot be judged by the write guard', label: 'SharedWorker', at: new Date().toISOString() });
+        throw new Error('SharedWorker is disabled by the QA-Pilot write guard: its requests cannot be judged');
+      };
+    }
+  }
   report({ kind: 'heartbeat' });
 })();`;
 }
@@ -229,8 +278,23 @@ async function installGuard(ctx: BrowserContext, state: GuardState): Promise<voi
   // request unseen, so every handler a spec registers is made to ask the guard first. They
   // are tracked, so unroute and unrouteAll remove exactly the spec's own handlers (by the
   // original handler, too) and never the guard's.
+  // The handler gets a route whose continue and fallback judge any new method, URL or body
+  // before the request goes on, so a handler cannot turn an allowed read into a write.
   const wrap = (handler: any) => async (route: Route, request: Request) => {
-    if ((await state.judge(route)) === 'pass') return handler(route, request);
+    if ((await state.judge(route)) !== 'pass') return;
+    const guarded = new Proxy(route, {
+      get(obj, prop) {
+        if (prop === 'continue' || prop === 'fallback') {
+          return async (options: any = {}) => {
+            if (await state.judgeOverride(obj, options) === 'abort') return;
+            return (obj as any)[prop](options);
+          };
+        }
+        const v = Reflect.get(obj, prop, obj);
+        return typeof v === 'function' ? v.bind(obj) : v;
+      },
+    });
+    return handler(guarded, request);
   };
   const patchRoutes = (target: BrowserContext | Page) => {
     const route = target.route.bind(target);
