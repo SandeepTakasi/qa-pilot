@@ -8,7 +8,8 @@
 //
 // Usage: node case-status.mjs --cases <cases.yaml> --statuses <statuses.json>
 //                             [--profile <qa-pilot.config.yaml>] [--verdicts <report.json>]
-//                             [--include-quarantined]
+//                             [--include-quarantined] [--apply-transitions <transitions.json>]
+//   --apply-transitions scores the statuses as they will be after a publish applies them.
 //        node case-status.mjs --transitions --cases <cases.yaml> --statuses <statuses.json>
 //                             --verdicts <report.json> --approved <approved.json> --profile <p>
 //        node case-status.mjs --record-approvals --verdicts <report.json> --approved <approved.json>
@@ -27,6 +28,7 @@
 import { readFileSync } from 'node:fs';
 import { parse } from './lib/yaml.mjs';
 import { isMain } from './lib/is-main.mjs';
+import { readJsonObject } from './lib/json-file.mjs';
 import { loadProfile } from './lib/profile.mjs';
 import { lintRequirements } from './validate-cases.mjs';
 import {
@@ -353,18 +355,10 @@ if (isMain(import.meta.url) && process.argv.includes('--record-approvals')) {
     // Required: printing a ledger without the earlier entries invites a silent overwrite.
     const ledgerPath = argValue('--approved');
     if (!ledgerPath) throw new Error('--record-approvals needs --approved <approved.json>');
-    let ledger = {};
     // Only a missing file starts a new ledger; a corrupt or non-object one would silently
     // drop every earlier approval, so it is refused.
-    let raw = null;
-    try { raw = readFileSync(ledgerPath, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    if (raw === null) console.error(`warning: no approval ledger at ${ledgerPath}; starting a new one`);
-    else {
-      try { ledger = JSON.parse(raw); } catch { throw new Error(`record-approvals: ${ledgerPath} is not valid JSON; fix or remove it before recording approvals`); }
-      if (ledger === null || typeof ledger !== 'object' || Array.isArray(ledger)) {
-        throw new Error(`record-approvals: ${ledgerPath} must hold a JSON object of case id to spec hash`);
-      }
-    }
+    const { value: ledger, missing } = readJsonObject(ledgerPath, 'record-approvals');
+    if (missing) console.error(`warning: no approval ledger at ${ledgerPath}; starting a new one`);
     const ids = idsArg.split(',').map((s) => s.trim()).filter(Boolean);
     console.log(JSON.stringify({ approved_ledger: recordApprovals(report, ledger, ids) }, null, 2));
     process.exit(0);
@@ -413,8 +407,11 @@ if (isMain(import.meta.url) && process.argv.includes('--record-approvals')) {
       const ledgerPath = argValue('--approved');
       let approvedHashes = {};
       if (ledgerPath) {
-        try { approvedHashes = JSON.parse(readFileSync(ledgerPath, 'utf8')); }
-        catch { console.error(`warning: no approval ledger at ${ledgerPath}; every passing case will go back for review`); }
+        // The same loader as --record-approvals: the ledger printed below is written back, so
+        // reading a broken file as empty would erase every approval in the feature.
+        const ledger = readJsonObject(ledgerPath, '--transitions');
+        approvedHashes = ledger.value;
+        if (ledger.missing) console.error(`warning: no approval ledger at ${ledgerPath}; every passing case will go back for review`);
       } else {
         console.error('warning: no --approved ledger given, so no approval can carry forward');
       }
@@ -432,6 +429,15 @@ if (isMain(import.meta.url) && process.argv.includes('--record-approvals')) {
       process.exit(0);
     }
 
+    // --apply-transitions: score the statuses as they will be once this publish lands, not as
+    // they were before it. Scoring first made a run read Ready on approvals the same publish
+    // was taking away.
+    const appliedPath = argValue('--apply-transitions');
+    if (appliedPath) {
+      const t = JSON.parse(readFileSync(appliedPath, 'utf8'));
+      if (!Array.isArray(t?.transitions)) throw new Error(`--apply-transitions: no transitions[] in ${appliedPath}; pass the --transitions output`);
+      for (const { id, to } of t.transitions) statuses[id] = displayName(statusNames, to);
+    }
     const out = partitionCases(doc.cases, statuses, {
       statusNames, verdicts, doc,
       includeQuarantined: process.argv.includes('--include-quarantined'),

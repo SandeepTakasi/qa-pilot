@@ -109,7 +109,7 @@ test('the CLI refuses a ledger whose JSON is not a plain object', () => {
     writeFileSync(p, body);
     const r = cli('--record-approvals', '--verdicts', reportPath, '--approved', p, '--ids', 'A');
     assert.equal(r.status, 1, body);
-    assert.match(r.stderr, /record-approvals: .*not-object\.json must hold a JSON object of case id to spec hash/, body);
+    assert.match(r.stderr, /record-approvals: .*not-object\.json must hold a JSON object/, body);
     assert.equal(r.stdout, '', body);
   }
 });

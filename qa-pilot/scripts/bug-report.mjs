@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { parse } from './lib/yaml.mjs';
 import { isMain } from './lib/is-main.mjs';
+import { readJsonObject } from './lib/json-file.mjs';
 import { loadProfile, effectiveEvidenceUpload } from './lib/profile.mjs';
 
 // A pass has no defect to report. `flaky` is included because an intermittent product bug
@@ -337,8 +338,11 @@ if (isMain(import.meta.url)) {
     const bugsPath = argValue('--bugs');
     let ledger = {};
     if (bugsPath) {
-      try { ledger = JSON.parse(readFileSync(bugsPath, 'utf8')); }
-      catch { console.error(`warning: no bug ledger at ${bugsPath} yet; treating every failure as newly found`); }
+      // A broken ledger is refused, not read as empty: the skill writes the result back, and
+      // an empty read would refile every open bug and drop the history that dedupes them.
+      const read = readJsonObject(bugsPath, '--bugs');
+      ledger = read.value;
+      if (read.missing) console.error(`warning: no bug ledger at ${bugsPath} yet; treating every failure as newly found`);
     } else {
       console.error('warning: no --bugs ledger given, so a failure already filed will be filed again');
     }
