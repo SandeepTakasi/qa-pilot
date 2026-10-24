@@ -4,17 +4,19 @@
 // Schema: qa-pilot/schemas/report.schema.md ("What the tracker receives")
 //
 // Usage: node publish-payload.mjs <report.json> --profile <qa-pilot.config.yaml> \
-//          --transitions <case-status --transitions output> --confidence <case-status output>
+//          --transitions <case-status --transitions output> --confidence <case-status output> \
+//          [--record-dir testing/<feature>/verdicts]
 //
 // The mode follows the environment's effective evidence_upload, read from the profile:
 //   tracker    the 0.2.0 field set, and the trace to attach
 //   reference  the same fields and summary, never the trace: run, trace path and sha256 instead
 //   local      no application data: ids, verdicts, build, run, trace path and sha256 only
 //   none     tracker: none, a plan of local file writes; nothing is sent anywhere
-// It makes no network call and writes nothing.
+// It makes no network call. It writes one file, and only with --record-dir: the run's
+// committed record, <run_id>.json (see runRecord).
 
-import { readFileSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import { isMain } from './lib/is-main.mjs';
 import { loadProfile, effectiveEvidenceUpload } from './lib/profile.mjs';
 import { DEFAULT_STATUSES, displayName } from './lib/statuses.mjs';
@@ -158,14 +160,44 @@ export function buildPayload(report, profile, { transitions, confidence } = {}) 
 
   return {
     mode,
-    cases: cases.map((c) => ({
-      case_id: c.id,
-      target_status: target.get(c.id) ?? null,
-      fields: fields(c),
-      // One artifact per case per run, named so a task's attachments read as run history.
-      attach: c.trace ? { path: c.trace, name: `${c.id}-${report.run_id}.zip` } : null,
-    })),
+    cases: cases.map((c) => {
+      // The file is uploaded, so it must be the run's own trace, not one a path points out to.
+      checkTrace(c);
+      return {
+        case_id: c.id,
+        target_status: target.get(c.id) ?? null,
+        fields: fields(c),
+        // One artifact per case per run, named so a task's attachments read as run history.
+        attach: c.trace ? { path: c.trace, name: `${c.id}-${report.run_id}.zip` } : null,
+      };
+    }),
     summary,
+  };
+}
+
+/**
+ * The run's committed record: testing/<feature>/verdicts/<run_id>.json. It is what lets QA
+ * record approvals and file bugs from their own machine after a git pull, since report.json
+ * stays in the gitignored run directory where the run happened.
+ *
+ * It carries what the tracker may receive in this mode and no more: failure text only where
+ * the tracker gets it (tracker, reference), never where evidence stays local, because a
+ * pushed commit leaves the machine just as a tracker write does.
+ *
+ * @param {object} report validated report.json
+ * @param {string} mode the payload's mode
+ */
+export function runRecord(report, mode) {
+  const withText = mode === 'tracker' || mode === 'reference';
+  const pick = (o, keys) => Object.fromEntries(keys.filter((k) => Object.hasOwn(o, k)).map((k) => [k, o[k]]));
+  return {
+    ...pick(report, ['run_id', 'run_kind', 'feature', 'app', 'env_name', 'env_kind', 'env_url', 'api_mode',
+      'commit_sha', 'sha_format', 'executor', 'model_version', 'browser', 'started_at', 'finished_at', 'summary']),
+    evidence_mode: mode,
+    cases: (report.cases ?? []).map((c) => ({
+      ...pick(c, ['id', 'verdict', 'spec_sha', 'retries', 'trace', 'trace_sha256']),
+      ...(withText ? { failure_summary: c.failure_summary ?? null } : {}),
+    })),
   };
 }
 
@@ -180,7 +212,7 @@ if (isMain(import.meta.url)) {
   const transitionsPath = argValue('--transitions');
   const confidencePath = argValue('--confidence');
   if (!reportPath || !profilePath || !transitionsPath || !confidencePath) {
-    console.error('usage: node publish-payload.mjs <report.json> --profile <qa-pilot.config.yaml> --transitions <transitions.json> --confidence <case-status.json>');
+    console.error('usage: node publish-payload.mjs <report.json> --profile <qa-pilot.config.yaml> --transitions <transitions.json> --confidence <case-status.json> [--record-dir <dir>]');
     process.exit(2);
   }
   try {
@@ -188,7 +220,15 @@ if (isMain(import.meta.url)) {
     const { profile } = loadProfile(profilePath);
     const transitions = JSON.parse(readFileSync(transitionsPath, 'utf8'));
     const confidence = JSON.parse(readFileSync(confidencePath, 'utf8'));
-    console.log(JSON.stringify(buildPayload(report, profile, { transitions, confidence }), null, 2));
+    const payload = buildPayload(report, profile, { transitions, confidence });
+    const recordDir = argValue('--record-dir');
+    if (recordDir) {
+      mkdirSync(recordDir, { recursive: true });
+      const file = join(recordDir, `${report.run_id}.json`);
+      writeFileSync(file, JSON.stringify(runRecord(report, payload.mode), null, 2) + '\n');
+      payload.record_file = file;
+    }
+    console.log(JSON.stringify(payload, null, 2));
   } catch (e) {
     console.error(e.message);
     process.exit(1);
