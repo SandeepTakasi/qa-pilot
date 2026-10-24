@@ -86,10 +86,10 @@ Print it (do not write a file). For each gap, name the skill it blocks:
 | No deploy-SHA endpoint | `/run-tests` and `/publish-results`: every run, permanently |
 | No test-id attributes in the codebase | spec durability; specs bind to fragile selectors |
 | Playwright < 1.51 | `/setup-profiles`: IndexedDB-persisted auth (Firebase) will not restore |
-| No sandbox/mock mode | spec stabilization competes for the shared deployed environment |
+| No sandbox/mock mode | the whole profile: `sandbox.mode` (the env var and value that switch the app to mocks) is required and has no default. Never invent one; the profile stays invalid until the host names it |
 | No role accounts yet | permission-type cases in `/generate-tests` |
 | Deployed builds strip console logs | failure evidence where console output is the required evidence |
-| A production environment with `testing/*/runs/` not gitignored | `/run-tests` on production, which refuses until ignored |
+| `testing/*/runs/` not gitignored | `/run-tests` on every environment whose evidence stays on the machine (`reference`, the default, and `local`), which refuses until ignored |
 | No restricted account for a production environment | the whole profile: `test_account` is required there |
 | No write signatures confirmed against real requests | the write guard on production: at least one is required, and an incomplete list is a write it cannot see |
 
@@ -103,11 +103,12 @@ Gitignoring QA artifacts is legitimate, but each entry turns off a capability. S
 
 | Path | What stops working when ignored |
 |---|---|
-| `testing/<feature>/runs/` | nothing; ignore it. **Required** when any environment is production |
+| `testing/<feature>/runs/` | nothing; ignore it. **Required** unless every environment sets `evidence_upload: tracker` |
 | `qa-pilot.config.yaml` | one shared definition of the truth |
 | `<spec_dir>/` (the specs) | CI, and anyone else reproducing a verdict |
 | `testing/<feature>/cases.yaml` | anyone else running the feature |
-| `testing/<feature>/specs.json` | `spec_sha` recording, so approval never carries forward |
+| `testing/<feature>/specs.json` | CI finding the approved specs |
+| `testing/<feature>/verdicts/` | recording approvals and filing bugs from any machine but the one that ran |
 | `testing/<feature>/approved.json` | approval carry-forward; CI can select nothing |
 | `testing/<feature>/bugs.json` | bug deduplication: every run refiles every open bug |
 
@@ -122,6 +123,7 @@ State what Local-only costs rather than arguing. Offer the entries either way:
 # Committed mode (recommended)
 testing/*/runs/
 .playwright/
+.qa-pilot/
 test-results/
 playwright-report/
 
@@ -137,6 +139,6 @@ Whatever mode was chosen, check the run directories are ignored and say the resu
 git check-ignore -q testing/x/runs/x && echo "runs are ignored" || echo "runs are NOT ignored"
 ```
 
-If not ignored and any environment is production, this is not a suggestion: `/qa-pilot:run-tests` refuses every production run until they are.
+If not ignored, this is not a suggestion: `/qa-pilot:run-tests` refuses every run whose evidence stays on the machine, which is every production run and, by default, every other one.
 
 Then state the next step: `/qa-pilot:setup-profiles` to save auth profiles, then `/qa-pilot:generate-tests <feature>` for the pilot feature.

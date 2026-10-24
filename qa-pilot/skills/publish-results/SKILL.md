@@ -18,20 +18,21 @@ Nonzero exit: STOP, print errors, point at `/qa-pilot:qa-init`. Note the profile
 
 ## 1. Locate the run
 
-`testing/<feature>/runs/<run_id>/` (`$RUN_DIR`): the newest, or the one named by `--run`. `/qa-pilot:run-tests` left in it `meta.json`, `results.json` (the Playwright JSON report), `statuses.json` and `test-results/` (each attempt's trace and `writes.json`). If the directory or any of those three files is missing, stop. Never reconstruct a run from memory or an agentic session.
+`testing/<feature>/runs/<run_id>/` (`$RUN_DIR`): the newest, or the one named by `--run`. `/qa-pilot:run-tests` left in it `meta.json`, `spec-shas.json`, `results.json` (the Playwright JSON report), `statuses.json` and `test-results/` (each attempt's trace and `writes.json`). If the directory or any of `meta.json`, `results.json` and `statuses.json` is missing, stop. Never reconstruct a run from memory or an agentic session.
 
-A stabilization run (the sandbox, or the profile's `stabilization.env`) is never published; say so and stop.
+A stabilization run (`run_kind: stabilization` in `meta.json`) is never published; the gate refuses it too.
+
+Then `git pull`. The approval ledger and the run records are shared through git; publishing on a stale checkout sends cases QA has just approved back to review.
 
 ## 2. Build the report
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/parse-report.mjs" "$RUN_DIR/results.json" "$RUN_DIR/meta.json" \
-  --specs testing/<feature>/specs.json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/parse-report.mjs" "$RUN_DIR/results.json" "$RUN_DIR/meta.json"
 ```
 
 It writes `$RUN_DIR/report.json`, with every path relative to that directory. Never pass `-o`: the gate re-reads the run's files relative to the report.
 
-`specs.json` is the `{"<CASE-ID>": "<spec path>"}` map `/qa-pilot:run-tests` wrote; it gives each verdict a `spec_sha`. Without it approval cannot carry forward and every passing case goes back for review.
+Each verdict's `spec_sha` comes from `$RUN_DIR/spec-shas.json`, taken when the run started. If it warns that the file is missing, say so: no verdict can carry an approval, and every passing case goes back for review.
 
 If it warns about specs with neither a case-ID prefix nor a `FIXTURE` title, surface that: those results are absent from the report and will not be published. Do not match them to cases yourself.
 
@@ -64,22 +65,12 @@ Leave out `--map` under `tracker: none`; always pass the other three. `--statuse
 | `rule 3:` / `rule 4:` | a read-only run wrote, or a scoped-write run tried to write outside its scope | fix the spec, or the policy, and re-run |
 | `rule 5:` | fixtures and cases disagree | fix the setup spec or the `fixture:` keys, re-run |
 | `rule 6:` | a local trace has no hash, moved outside the run directory, or changed after the run | re-run; never touch traces between run and publish |
+| `run_kind:` | a stabilization or CI run, or one that never said what it was | publish a verdict run; set `run_kind` in `meta.json` |
+| `run_id:` | the id has characters a directory or file name cannot carry everywhere | re-run with an id like `20261024T101500Z-checkout-a1b2c3d` |
 
-## 4. Compute the confidence score
+## 4. Work out the status transitions
 
-Never do this arithmetic yourself. Write each case's current status to a file (from ClickUp, or copy `testing/<feature>/statuses.json` under `tracker: none`) and keep the output:
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" \
-  --cases testing/<feature>/cases.yaml --statuses <current statuses.json> \
-  --verdicts "$RUN_DIR/report.json" --profile <profile-path> > "$RUN_DIR/confidence.json"
-```
-
-Always pass `--verdicts`: a case counts only when QA accepted its verdict **and** it passed; without it the score reads `Unknown`. The script exits 1 when no case is currently executable; the file is still complete. Keep the whole file: its `confidence` goes into the payload, and its `requirements` (when the cases file declares lint-clean requirements) feeds `requirement_coverage` in step 6. **Any P0 without an accepted verdict reads "Not Ready", whatever the percentage.** Quarantined and flaky cases stay in the denominator.
-
-Report the timing honestly: this publish moves cases to `under_review`, and only `approved` counts, so the posted score is the state going into review, often zero on a first run. It rises as QA works `/qa-pilot:qa-review`. Say so rather than posting a number that looks like a failing grade.
-
-## 5. Work out the status transitions
+Write each case's current status to a file (from ClickUp, or copy `testing/<feature>/statuses.json` under `tracker: none`):
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" --transitions \
@@ -88,7 +79,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" --transitions \
   --profile <profile-path> > "$RUN_DIR/transitions.json"
 ```
 
-It returns each case's target lifecycle key with a reason, plus the updated ledger. Write `approved_ledger` back to `testing/<feature>/approved.json` and commit it. Never decide a target status yourself.
+It returns each case's target lifecycle key with a reason, plus the updated ledger. Write `approved_ledger` back to `testing/<feature>/approved.json` and commit it. Never decide a target status yourself. A nonzero exit naming merge-conflict markers means `approved.json` is mid-merge: STOP and resolve it; never replace it with an empty ledger.
 
 This step keeps and clears ledger entries; it never creates a first one. `/qa-pilot:qa-review` does that with `--record-approvals` when QA approves, so a case approved without it goes back to review on its next pass.
 
@@ -100,16 +91,36 @@ git ls-files --error-unmatch testing/<feature>/approved.json
 
 If untracked, **state the consequence once and carry on**: approval will not carry forward for anyone else, every regression run sends the feature back to review, and CI has nothing to select. That is the expected shape of local-only mode.
 
+## 5. Compute the confidence score
+
+Never do this arithmetic yourself. Score the statuses as they will be once this publish lands, not as they are now, and keep the output:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" \
+  --cases testing/<feature>/cases.yaml --statuses <current statuses.json> \
+  --verdicts "$RUN_DIR/report.json" --apply-transitions "$RUN_DIR/transitions.json" \
+  --profile <profile-path> > "$RUN_DIR/confidence.json"
+```
+
+Without `--apply-transitions` a case this publish sends back to review still counts as an approved pass.
+
+Always pass `--verdicts`: a case counts only when QA accepted its verdict **and** it passed; without it the score reads `Unknown`. The script exits 1 when no case is currently executable; the file is still complete. Keep the whole file: its `confidence` goes into the payload, and its `requirements` (when the cases file declares lint-clean requirements) feeds `requirement_coverage` in step 6. **Any P0 without an accepted verdict reads "Not Ready", whatever the percentage.** Quarantined and flaky cases stay in the denominator.
+
+Report the timing honestly: this publish moves cases to `under_review`, and only `approved` counts, so the posted score is the state going into review, often zero on a first run. It rises as QA works `/qa-pilot:qa-review`. Say so rather than posting a number that looks like a failing grade.
+
 ## 6. Compute what the tracker may receive
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/publish-payload.mjs" "$RUN_DIR/report.json" \
   --profile <profile-path> \
   --transitions "$RUN_DIR/transitions.json" \
-  --confidence "$RUN_DIR/confidence.json" > "$RUN_DIR/payload.json"
+  --confidence "$RUN_DIR/confidence.json" \
+  --record-dir testing/<feature>/verdicts > "$RUN_DIR/payload.json"
 ```
 
-Pass `--confidence` the **whole** step 4 file, not `.confidence`: a trimmed file silently drops requirement coverage. When it carries `requirements`, the summary gains `requirement_coverage` (`criteria_total`, `proved`, `failing`, `unproved`, `uncovered`, `not_proved` as requirement ids), ids and counts only, sent in every mode. When absent (none declared, or lint errors a step 4 warning names), report that; do not compute it.
+It also writes the run's record, `testing/<feature>/verdicts/<run_id>.json`: each verdict, the spec hash it ran under, and failure text only where the tracker receives it. QA records approvals and files bugs from it on their own machine, so **commit and push it with `approved.json`** once step 7 is done.
+
+Pass `--confidence` the **whole** step 5 file, not `.confidence`: a trimmed file silently drops requirement coverage. When it carries `requirements`, the summary gains `requirement_coverage` (`criteria_total`, `proved`, `failing`, `unproved`, `uncovered`, `not_proved` as requirement ids), ids and counts only, sent in every mode. When absent (none declared, or lint errors a step 5 warning names), report that; do not compute it.
 
 `mode` is set from the environment's effective `evidence_upload`, never by you, and decides step 7:
 
@@ -139,6 +150,8 @@ It expires after 30 minutes. If a long publish starts getting denied, `touch` it
 Then follow `references/clickup-fields.md`, "Writing the tasks": per-case updates and attachments, the run-summary comment, rate discipline, idempotency.
 
 ## 8. Report back
+
+Commit and push `testing/<feature>/approved.json` and `testing/<feature>/verdicts/<run_id>.json` (and `statuses.json` under `tracker: none`) now, so QA works from them and a teammate's next publish does not start from an old ledger.
 
 Tell the user what landed: case count by verdict, the confidence score and whether the feature reads Ready, anything quarantined, and the ClickUp list link (or the statuses file under `tracker: none`). For a `reference` or `local` run, say the traces are on this machine under `$RUN_DIR` and QA reviews them here. Then point QA at `/qa-pilot:qa-review <feature>`.
 

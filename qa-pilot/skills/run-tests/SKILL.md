@@ -36,6 +36,8 @@ Say up front that production traces stay on this machine and QA reviews them her
 
 **When the effective `evidence_upload` is `reference` (the default off production) or `local` (always on production)**, evidence stays on this machine on any environment. Run the same `git check-ignore` check; nonzero → STOP and tell the user to ignore `testing/*/runs/` first, or the traces leave through git. Under `reference` the tracker still gets case fields and failure text, never the trace; say that QA opens traces here by `trace_sha256` and `npx playwright show-trace <path>`.
 
+**On every run**, saved logins, stray traces and the tracker write flag must not reach git either: `git check-ignore -q <auth.storage_state.dir>/x`, `git check-ignore -q test-results/x` (where Playwright writes when no output path is given) and `git check-ignore -q .qa-pilot/x`. Nonzero → STOP and tell the user which to ignore.
+
 ## 2. Approval gate
 
 With `tracker: clickup` (the default), read `references/clickup.md` here. Under `tracker: none`, read `testing/<feature>/statuses.json` (QA edits it by hand); if it is missing, STOP: nothing is approved.
@@ -63,7 +65,7 @@ File `statuses.json` with the run in step 8; the publish gate uses it to enforce
 - **`stabilization.env`**, when the profile names one: a deployed non-production environment where a new spec may earn its greens. Also a stabilization run.
 - **Anything else**: a verdict run.
 
-Say which it is, up front. **A stabilization run is never handed to `/qa-pilot:publish-results`**, wherever it ran. The gate cannot spot a `stabilization.env` run, so this rests on you.
+Say which it is, up front, and record it as `run_kind` in `meta.json` (step 8): `stabilization` or `verdict`. The publish gate refuses a stabilization run and a run with no `run_kind`, but only `run_kind` tells it a `stabilization.env` run apart, so set it truthfully.
 
 ## 4. Read the deploy SHA, before the run
 
@@ -73,7 +75,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/read-env-sha.mjs" <profile> <env> <app>
 
 Failure → STOP (a run with an unreadable SHA can never be published).
 
-The run ID is `<ISO timestamp>-<feature>-<short sha>`. All output goes under `testing/<feature>/runs/<run_id>/`, called `$RUN_DIR` below. Create it and `$RUN_DIR/fixtures/`.
+The run ID is `<UTC time as YYYYMMDDTHHMMSSZ>-<feature>-<short sha>`, for example `20261024T101500Z-checkout-a1b2c3d`: letters, digits, `.`, `_` and `-` only, because it names a directory and a committed file on every OS. All output goes under `testing/<feature>/runs/<run_id>/`, called `$RUN_DIR` below. Create it and `$RUN_DIR/fixtures/`.
+
+**Check the saved sessions.** For each profile the selected specs use, run the headless check from `/qa-pilot:setup-profiles` step 5. One that lands on a login page → STOP and have the user refresh it with `/qa-pilot:setup-profiles`. An expired session otherwise fails every case and reads as a broken feature.
 
 ## 5. Generate or update the specs
 
@@ -94,7 +98,7 @@ cp "${CLAUDE_PLUGIN_ROOT}/templates/write-guard.mjs" "${CLAUDE_PLUGIN_ROOT}/temp
 
 Specs then `import { test, expect } from '../write-guard.fixture'` (or a `fixtures.ts` that extends it; see `references/spec-conventions.md`). A spec that bypasses it leaves no write record and the publish gate refuses the run. Under `scoped-write`, every entity a spec creates carries `mutation.prefix` in its name, or its own controls are blocked.
 
-**Lint the specs before the verdict run.** The host keeps `eslint.qa-pilot.config.mjs` at its repo root. If absent, copy it and write every app's `spec_dir` into its `files` globs as `<spec_dir>/**/*.spec.ts`:
+**Lint the specs before the verdict run.** The host keeps `eslint.qa-pilot.config.mjs` at its repo root. If absent, copy it and write every app's `spec_dir` into its `files` globs, as `<spec_dir>/**/*.spec.ts` and `<spec_dir>/**/FIXTURE-*.ts` (fixture specs are the ones that write):
 
 ```bash
 cp "${CLAUDE_PLUGIN_ROOT}/templates/eslint.qa-pilot.config.mjs" ./
@@ -150,7 +154,16 @@ A spec that has never run needs **three consecutive green runs** on the sandbox,
 
 ## 7. Run
 
-Set the guard's inputs and this run's output paths, then run from the app's repo root:
+First record which spec each case runs, and hash them. Merge every selected case into `testing/<feature>/specs.json` (`{"<CASE-ID>": "<spec path from the repo root>"}`; a run of three cases must not drop the other twenty), then, from the repo root:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/lib/spec-hash.mjs" \
+  --specs testing/<feature>/specs.json --cases testing/<feature>/cases.yaml > "$RUN_DIR/spec-shas.json"
+```
+
+Each hash covers the spec, the local files it imports and the case's steps, expected outcomes, preconditions and fixture. It is taken now, before anything runs, so a spec edited afterwards cannot lend its hash to this run's verdicts. Never edit a spec, a helper or `cases.yaml` between this step and the run; if you must, run this step again.
+
+Set the guard's inputs and this run's output paths, then run from the repo root:
 
 ```bash
 export QA_PILOT_MUTATION='<{"policy": ..., "prefix": ...} from cases.yaml mutation; {"policy":"unrestricted"} when absent>'
@@ -173,7 +186,8 @@ Write `$RUN_DIR/meta.json`:
 
 ```json
 {
-  "run_id": "<ISO timestamp>-<feature>-<short sha>",
+  "run_id": "<YYYYMMDDTHHMMSSZ>-<feature>-<short sha>",
+  "run_kind": "verdict | stabilization",         // step 3
   "feature": "...", "app": "...", "env_name": "...", "env_url": "...",
   "env_kind": "qa | staging | production",       // the environment's kind from the profile
   "api_mode": "server | mocks",
@@ -189,15 +203,9 @@ Write `$RUN_DIR/meta.json`:
 }
 ```
 
-Also update `testing/<feature>/specs.json`, mapping each case ID to the spec file that ran, and **commit it**. Merge into it; a run of three cases must not drop the other twenty.
+**Commit `testing/<feature>/specs.json`** (step 7). Check `git ls-files --error-unmatch testing/<feature>/specs.json`. If untracked, **say so once and continue** (a local-only host ignores `testing/` on purpose), and state the cost: CI cannot find the specs QA approved, and nobody else can reproduce a verdict.
 
-```json
-{ "CHECKOUT-ORDER-001": "e2e/checkout/CHECKOUT-ORDER-001.spec.ts" }
-```
-
-Check `git ls-files --error-unmatch testing/<feature>/specs.json`. If untracked, **say so once and continue** (a local-only host ignores `testing/` on purpose), and state the cost: without it `parse-report.mjs` records no `spec_sha`, so approval never carries forward and every passing case returns to review next run.
-
-Copy `testing/<feature>/runs/statuses.json` into `$RUN_DIR/`, so the run carries the approvals it ran under. The run directory then holds what `/qa-pilot:publish-results` and the gate read: `meta.json`, `results.json`, `statuses.json`, `test-results/` (each attempt's trace and `writes.json`), and `fixtures/`.
+Copy `testing/<feature>/runs/statuses.json` into `$RUN_DIR/`, so the run carries the approvals it ran under. The run directory then holds what `/qa-pilot:publish-results` and the gate read: `meta.json`, `spec-shas.json`, `results.json`, `statuses.json`, `test-results/` (each attempt's trace and `writes.json`), and `fixtures/`.
 
 ## 9. Apply the flake protocol
 
@@ -205,6 +213,7 @@ Copy `testing/<feature>/runs/statuses.json` into `$RUN_DIR/`, so the run carries
 - Flaky cases are quarantined: they stay in the confidence denominator and get assigned for hardening.
 - Cases crossing a declared propagation window are exempt from duration-based flake suspicion.
 - **If more than 10% of cases are `blocked`, the run is halted.** Do not publish. Fix the environment and re-run.
+- **Cases landing on a login page mean the session expired mid-run.** Do not publish; refresh the profile and re-run.
 
 ## 10. Report and hand off
 

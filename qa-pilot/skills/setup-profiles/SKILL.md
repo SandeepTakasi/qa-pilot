@@ -14,7 +14,7 @@ Any current model is fine; this is orchestration around a human login.
 node "${CLAUDE_PLUGIN_ROOT}/scripts/lib/profile.mjs" <profile-path>
 ```
 
-Nonzero exit → STOP and point at `/qa-pilot:qa-init`. You need `auth.playwright_min`, `auth.storage_state.dir`, and the environment URLs from it.
+Nonzero exit → STOP and point at `/qa-pilot:qa-init`. You need `auth.playwright_min`, `auth.storage_state.dir` (`.playwright/profiles` when unset), and the environment URLs from it.
 
 ## 1. Check the Playwright version
 
@@ -53,7 +53,7 @@ Tell them: a browser opens, they sign in (including OAuth and 2FA), press Enter 
 
 **Never type credentials yourself, and never ask for them.** If a user offers a password, decline and point them back at their own terminal.
 
-The script saves cookies, localStorage and IndexedDB. When the user reports back, read the output file: if an app you know uses Firebase Auth produced no IndexedDB entries, the login did not complete; have them re-run rather than accepting it.
+The script saves cookies, localStorage and IndexedDB, and prints one line: `Saved <file>: <n> cookies, <n> origins, <n> with IndexedDB`. Ask the user for that line. **Never open the saved file**: it holds live session tokens, and reading it puts them in this transcript. If an app you know uses Firebase Auth shows 0 with IndexedDB, the login did not complete; have them re-run rather than accepting it.
 
 ## 4. Keep the profiles out of git
 
@@ -71,4 +71,4 @@ Specs consume profiles with `test.use({ storageState: '<path>' })` or per-projec
 
 ## 6. Refresh
 
-Sessions expire. When a run fails with cases landing on a login page, the profile is stale, not the feature broken: re-run this skill for that profile. Record the run as `blocked`, not `fail`, since an expired session is an environment problem.
+Sessions expire. `/qa-pilot:run-tests` runs the step 5 check before every run and stops when it fails. If a run still lands cases on a login page, the profile went stale mid-run: do not publish that run, since its failures are the session's, not the feature's. Re-run this skill for that profile, then re-run the tests.

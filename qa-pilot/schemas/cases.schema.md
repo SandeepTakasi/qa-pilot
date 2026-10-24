@@ -191,14 +191,14 @@ A fixture is one entity that several cases work inside, created once instead of 
 
 | File | Test title | Runs |
 |---|---|---|
-| `<spec_dir>/<feature>/FIXTURE-<name>.setup.ts` | `FIXTURE <name>` | once per run, before every case that names the fixture |
+| `<spec_dir>/<feature>/FIXTURE-<name>.setup.ts` | `FIXTURE <name>` | once per run, before the feature's cases; every declared fixture runs, whichever cases are selected |
 | `<spec_dir>/<feature>/FIXTURE-<name>.teardown.ts` | `FIXTURE <name> teardown` | once per run, after them; **only** when `teardown: delete` |
 
-Both are Playwright projects: the setup project is a `dependencies` entry of the project running the dependent cases, and the teardown project is the setup project's `teardown`. Each needs an explicit `testMatch` (`**/*.setup.ts`, `**/*.teardown.ts`; the default does not find them) and `retries: 0`. Setup and teardown specs import the write-guard fixture like case specs: they write too, and the gate requires their write record (report rule 2).
+Both are Playwright projects: the setup project is a `dependencies` entry of the project running the dependent cases, and the teardown project is the setup project's `teardown`. Each needs an explicit `testMatch` scoped to the feature, `**/${process.env.QA_PILOT_FEATURE}/FIXTURE-*.setup.ts` and `...teardown.ts` (the default does not find them, and an unscoped pattern runs, and writes through, every feature's fixtures), and `retries: 0`. The full project block is in `/qa-pilot:run-tests` step 5. Setup and teardown specs import the write-guard fixture like case specs: they write too, and the gate requires their write record (report rule 2).
 
 The setup writes the entity's identity (an id, URL or name) as JSON to `$QA_PILOT_FIXTURE_DIR/<name>.json` and dependents read it there. `/qa-pilot:run-tests` sets `QA_PILOT_FIXTURE_DIR` to `testing/<feature>/runs/<run_id>/fixtures/`; a setup or dependent that finds it unset throws.
 
-`teardown: keep` leaves the entity in place after the run (for QA to inspect). `teardown: delete` removes it; a failed teardown is a publish **warning**, not a verdict problem. A setup that does not pass means every case naming that fixture must be `blocked` (Playwright skips dependents; the gate refuses a report where it did not).
+`teardown: keep` leaves the entity in place after the run (for QA to inspect). `teardown: delete` removes it; a failed teardown is a publish **warning**, not a verdict problem. In CI it fails the job as an environment failure, because data left behind changes the next run. A setup that does not pass means every case naming that fixture must be `blocked` (Playwright skips dependents; the gate refuses a report where it did not).
 
 ## CLI
 

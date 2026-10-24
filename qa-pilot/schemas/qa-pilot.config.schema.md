@@ -145,6 +145,8 @@ A production run signs in as a real account, and that account's own permissions 
 
 For `reference` and `local`, `/qa-pilot:run-tests` requires `testing/*/runs/` to be gitignored. The tracker needs Run ID, Trace Path and Trace SHA256 fields by default, since `reference` fills them on every case.
 
+**When QA reviews on their own machine**, which is the usual setup for a team, `reference` leaves the traces where QA cannot open them. Verdicts and approvals travel through git either way (each publish commits `testing/<feature>/verdicts/<run_id>.json`), but traces do not. Set `evidence_upload: tracker` on the QA environment, after turning on Private Attachment Links and with a restricted account, or agree a shared location outside the tracker. Production stays `local` whatever you choose.
+
 The loader resolves the effective value into the normalized profile, in this order:
 
 1. `tracker: none` makes it `local` everywhere; an explicit non-`local` value is a **warning** (`environments.<env>.evidence_upload: <v> is ignored under tracker: none; evidence stays local`).
@@ -155,7 +157,7 @@ The loader resolves the effective value into the normalized profile, in this ord
 
 | `evidence.capture` | Kept | Consequence |
 |---|---|---|
-| `always` (default) | every executed case, about 700 KB each | QA can sample passes, the backstop against a false pass |
+| `always` (default) | every executed case, about 700 KB each | QA can sample passes |
 | `on-failure` | failures and flakes only | passes have no trace, so a false pass is undetectable by review |
 | `off` | nothing | no run can be published; for iterating on specs locally |
 

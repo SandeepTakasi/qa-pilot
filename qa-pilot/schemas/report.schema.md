@@ -3,7 +3,8 @@
 Produced by `parse-report.mjs` from a Playwright JSON report plus the run's `meta.json`, and gated by `validate-report.mjs` before anything reaches the tracker. No field is written by a model: each is copied from the Playwright report or run metadata, or computed from them.
 
 ```yaml
-run_id: <ISO timestamp>-<feature>-<short sha>
+run_id: <YYYYMMDDTHHMMSSZ>-<feature>-<short sha>  # letters, digits, . _ - only
+run_kind: verdict | stabilization | ci  # from meta.json; only verdict can publish
 feature: string
 app: string                  # which frontend, on multi-app hosts
 env_name: string             # must be a registered environment
@@ -26,7 +27,8 @@ browser: string
 started_at / finished_at: ISO 8601
 
 cases:
-  - id: CHECKOUT-ORDER-001
+  - id: CHECKOUT-ORDER-001     # one entry per case id: every test whose title carries it, in
+                             # every project, is combined (fail beats flaky beats pass)
     verdict: pass | fail | flaky | blocked
     duration_ms: integer     # summed across attempts
     assertions: null         # Playwright's JSON reporter exposes no count
@@ -39,8 +41,9 @@ cases:
     console_log: <path>      # optional carry-through
     failure_summary: string  # REQUIRED for fail: the Playwright error, ANSI-stripped, max 500 chars
     retries: integer
-    spec_sha: string | null  # hash of the spec file, from parse-report's --specs map. null means
-                             # "changed": a passing case with no hash goes back for review
+    spec_sha: string | null  # hash of the spec, its local imports and the case's steps,
+                             # expected outcomes, preconditions and fixture, from spec-shas.json
+                             # written when the run started. null means "changed": a passing case goes back for review
 
 fixtures:                    # one entry per fixture spec that ran; [] when none did
   - name: string             # from the title, which must match ^FIXTURE ([a-z0-9-]+)( teardown)?$;
@@ -53,7 +56,11 @@ fixtures:                    # one entry per fixture spec that ran; [] when none
 
 summary: { pass, fail, flaky, blocked }   # cases only; fixtures are not counted
 unmapped_specs: [string]     # titles with neither a case-ID prefix nor a FIXTURE title; dropped
+errors: [string]             # Playwright errors outside any test (global setup, global timeout);
+                             # any one refuses the publish (rule 1b) and fails CI
 ```
+
+`publish-payload.mjs --record-dir` also commits a reduced copy as `testing/<feature>/verdicts/<run_id>.json`: the run's identity, `evidence_mode`, `summary`, and per case `id`, `verdict`, `spec_sha`, `retries`, `trace`, `trace_sha256`, plus `failure_summary` only in the `tracker` and `reference` modes. `case-status.mjs --record-approvals` and `bug-report.mjs --report` accept it in place of `report.json`, so QA can work from another machine. Where evidence stays local the record has no failure text, so bugs for those runs are filed from the run's own `report.json` on the executor's machine.
 
 `<writes>` aggregates every `writes.json` the case's or fixture's attempts attached, across all retries and projects (a write on a failed first attempt is still a write):
 
@@ -190,7 +197,7 @@ Fixtures follow the same trace requirement as cases under the recorded `evidence
 
 `scripts/publish-payload.mjs` computes everything a publish sends; the skill posts only what it prints. The output depends on the effective `evidence_upload` of the report's `env_name`, read from the normalized profile (`--profile`). An unregistered `env_name` is an error, never a fallback.
 
-**`tracker`**. Per case: verdict, build SHA (`commit_sha`), env (`env_name`), API mode, app, executor, run date (`finished_at`), flake count (`retries`), model version, target status, and the trace file to attach. Field names are in `skills/publish-results/references/clickup-fields.md`. The run summary, one comment on the feature task, starts with the run id and carries env name, build SHA, counts by verdict, blocked percentage, confidence score and readiness, `requirement_coverage` (below), the executor, and a line saying traces open at <https://trace.playwright.dev> by drag-and-drop.
+**`tracker`**. Per case: verdict, build SHA (`commit_sha`), env (`env_name`), API mode, app, executor, run date (`finished_at`), flake count (`retries`), model version, target status, and the trace file to attach. Field names are in `skills/publish-results/references/clickup-fields.md`. The run summary, one comment on the feature task, starts with the run id and carries env name, build SHA, counts by verdict, blocked percentage, confidence score and readiness, `requirement_coverage` (below), the executor, and a line saying to open traces with `npx playwright show-trace`.
 
 **`reference`**. The same fields and summary as `tracker`, no attachment. Each case also carries `run_id`, `trace_path` (`cases[].trace`, run-dir relative, same escape check as `local`) and `trace_sha256`. The summary says the traces stay on the machine that ran them, to be verified by sha256 and opened with `npx playwright show-trace <path>`. A bug filed from such a run carries the tracker body including failure text, no attachment, and names the trace path and sha256.
 

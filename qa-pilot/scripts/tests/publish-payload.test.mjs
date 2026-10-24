@@ -126,7 +126,7 @@ test('a tracker run summary starts with the run id and carries the executor and 
   assert.equal(Object.keys(s)[0], 'run_id');
   assert.equal(s.executor, r.executor);
   assert.equal(s.build_sha, r.commit_sha);
-  assert.match(s.reviewer_note, /trace\.playwright\.dev/);
+  assert.match(s.reviewer_note, /npx playwright show-trace/);
 });
 
 // --- tracker: none: a plan of local writes ----------------------------------------------

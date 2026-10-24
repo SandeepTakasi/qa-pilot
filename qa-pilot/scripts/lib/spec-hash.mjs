@@ -2,8 +2,8 @@
 // disagree about what "the same test" means.
 //
 // It covers the spec, every local file the spec imports (recursively), and the case's own
-// steps and expected outcomes from cases.yaml. Editing a shared helper or the case's expected
-// result is a change QA has not reviewed, exactly like editing the spec. Line endings are
+// steps, expected outcomes, preconditions and fixture from cases.yaml. Editing a shared helper
+// or the case's expected result is a change QA has not reviewed, exactly like editing the spec. Line endings are
 // normalised, so a Windows checkout and CI hash the same bytes. The write guard templates are
 // left out: they are QA-Pilot's, checked by the publish gate on every run, and an upgrade must
 // not reset every approval.

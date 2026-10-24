@@ -111,7 +111,7 @@ export function buildPayload(report, profile, { transitions, confidence } = {}) 
     executor: report.executor,
     reviewer_note: mode === 'reference'
       ? `Traces stay on the machine that ran them, under testing/${report.feature}/runs/${report.run_id}/. Verify one against its sha256 (the Trace SHA256 field) with shasum -a 256 <path>, then open it there with npx playwright show-trace <path>.`
-      : 'Traces open at https://trace.playwright.dev by drag-and-drop, entirely in the browser.',
+      : 'Download a trace from its case task and open it with npx playwright show-trace <file>; it carries the test account\'s session.',
   };
 
   if (mode === 'none') {
@@ -190,9 +190,11 @@ export function buildPayload(report, profile, { transitions, confidence } = {}) 
 export function runRecord(report, mode) {
   const withText = mode === 'tracker' || mode === 'reference';
   const pick = (o, keys) => Object.fromEntries(keys.filter((k) => Object.hasOwn(o, k)).map((k) => [k, o[k]]));
+  // Where evidence stays local the tracker gets no URL or executor, so neither does git.
+  const who = withText ? ['env_url', 'executor', 'model_version', 'browser'] : [];
   return {
-    ...pick(report, ['run_id', 'run_kind', 'feature', 'app', 'env_name', 'env_kind', 'env_url', 'api_mode',
-      'commit_sha', 'sha_format', 'executor', 'model_version', 'browser', 'started_at', 'finished_at', 'summary']),
+    ...pick(report, ['run_id', 'run_kind', 'feature', 'app', 'env_name', 'env_kind', 'api_mode',
+      'commit_sha', 'sha_format', ...who, 'started_at', 'finished_at', 'summary']),
     evidence_mode: mode,
     cases: (report.cases ?? []).map((c) => ({
       ...pick(c, ['id', 'verdict', 'spec_sha', 'retries', 'trace', 'trace_sha256']),

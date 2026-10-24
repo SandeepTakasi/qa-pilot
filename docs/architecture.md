@@ -39,6 +39,13 @@ evidence value is added to all five.
 
 `case-status.mjs --transitions` (at publish) keeps an entry when an approved, unchanged spec passes
 again and deletes every other; it never adds one. `case-status.mjs --record-approvals` (at review)
-adds the hash of each pass QA approved and removes an approved failure. It requires `--approved`,
-starts a new ledger only when that file is missing, and refuses a corrupt or non-object one,
-because printing a partial ledger invites overwriting every earlier approval.
+adds the hash of each pass QA approved and removes an approved failure. Both read the ledger
+through one loader (`lib/json-file.mjs`): a missing file starts a new ledger, and a file that
+does not parse, such as one mid-merge, is refused, because a ledger printed from an empty read
+is written back and erases every earlier approval. `bug-report.mjs` reads `bugs.json` the same
+way.
+
+The hash (`lib/spec-hash.mjs`) covers the spec, the local files it imports and the case's steps,
+expected outcomes, preconditions and fixture, and is taken when the run starts
+(`spec-shas.json`). The run and CI compute it with that one function, and the publish reads the
+run's `spec-shas.json`, so they cannot disagree about whether a test changed.

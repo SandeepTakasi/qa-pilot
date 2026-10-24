@@ -1,5 +1,88 @@
 # Changelog
 
+## 0.4.3 (2026-10-24)
+
+Pilot readiness. A full-cycle review of 0.4.2 found ways for CI to go green on cases that never
+ran, for the published score to count approvals the same publish took away, for a merge
+conflict to erase every approval, and for writes to slip past the guard. This release closes
+them, lets QA work from their own machine, and adds a report of the numbers a pilot is judged
+on.
+
+### Upgrading from 0.4.2
+
+1. **Every approval resets once.** The approval hash now covers the spec, the local files it
+   imports and the case's steps, expected outcomes, preconditions and fixture, with line
+   endings normalised. Every entry in `approved.json` stops matching, so CI skips every case
+   until QA re-approves it with `/qa-pilot:qa-review` after the next published run, and fails
+   with `REFUSED: no approved spec is runnable` until at least one is re-approved. Disable the
+   workflow until then, and set `MAX_SKIPPED` empty while the rest are pending.
+2. **Replace the CI workflow with the new template and pin `v0.4.3`.** `select` now requires
+   `--cases`, and the template passes the selection to `verdict --expect`. An old workflow
+   against the new plugin fails at selection.
+3. **CI is stricter.** Any blocked case, failed fixture spec, Playwright error outside a test,
+   or selected case missing from the report fails the job (`ENVIRONMENT FAILED` or
+   `INCOMPLETE`). Before 0.4.3 up to a tenth of the cases could be blocked on a green job.
+4. **Spec paths must not contain `(`, `)`, `[` or `]`.** Playwright reads them as patterns and
+   runs nothing for them; CI now fails instead of passing.
+5. **Lint fixture specs and selectors.** Copy the new `templates/eslint.qa-pilot.config.mjs`
+   (or add its `FIXTURE-*.ts` glob and the `no-raw-locators`, `no-nth-methods` and
+   `prefer-native-locators` rules to yours). Put a component library's overlay root in
+   `no-raw-locators`' `allowed` list. Fix what it reports without weakening an assertion; every
+   fix changes a hash, which item 1 already requires re-approving.
+6. **Commit the new per-feature directories**: `testing/<feature>/verdicts/` (one record per
+   published run) and `testing/<feature>/reviews/` (one per review session). Add `.qa-pilot/`
+   and the storage-state directory to `.gitignore` if they are not; `/qa-pilot:run-tests` now
+   checks both, and `test-results/`, on every run.
+7. **Decide where QA opens traces.** Approvals now travel through git, but under the default
+   `reference` the traces stay on the executor's machine. A team whose QA reviews elsewhere sets
+   `evidence_upload: tracker` on the QA environment, with Private Attachment Links on.
+
+### Fixed
+
+- **CI was green on unproved results.** It passed with up to 10% of cases blocked, with a failed
+  fixture spec, after a global timeout, and when a selected spec matched nothing because
+  Playwright reads file arguments as patterns.
+- **The published score counted approvals the publish was removing.** Confidence was scored on
+  the statuses before the publish; `case-status --apply-transitions` scores them after, and
+  publish-results now computes transitions first.
+- **A merge conflict in `approved.json` erased the ledger**, and one in `bugs.json` refiled
+  every open bug. Both are refused now, naming the conflict markers.
+- **An approval survived edits it should not have**: to a helper the spec imports, to the case's
+  expected outcome, and to the spec between the run and the publish. Hashes are taken when the
+  run starts (`spec-shas.json`) and cover all three.
+- **CI kept running a case deleted from `cases.yaml`**; it is now skipped and named for removal
+  from the ledger.
+- **A run in more than one browser could not publish.** Playwright 1.62 writes one entry per
+  project, which read as duplicate cases; entries are grouped by case id first.
+- **The write guard missed a `keepalive` fetch** (an autosave on unload reached the server under
+  read-only) **and a SharedWorker's requests**, **over-blocked inside dialogs** (a dialog's
+  `tabindex` made its Save button the label of every click inside it), and **did not judge a
+  spec handler's `route.continue` overrides**. All four are closed, each with a real-browser
+  case that fails on 0.4.2.
+- **The gate could publish a stabilization run**, and a run id with `:` could not name a
+  directory on Windows. Runs now record `run_kind` (`verdict`, `stabilization` or `ci`); only
+  `verdict` publishes, and run ids are letters, digits, `.`, `_` and `-`.
+- **Tracker-mode trace paths were not confined to the run directory.**
+
+### Added
+
+- **QA works from their own machine.** Each publish commits
+  `testing/<feature>/verdicts/<run_id>.json`; `--record-approvals` and `bug-report` accept it,
+  so approvals, and bugs where the tracker receives failure text, no longer need the executor's
+  `report.json`. Where evidence stays local the record carries no failure text, URL or
+  executor, and bugs are still filed on the executor's machine.
+- **`pilot-report.mjs testing/<feature>`** prints flaky and blocked rates, review minutes per
+  decision, bugs filed, and the approved specs that have dropped out of CI, from committed files.
+- **A session check before every run**, so an expired login stops the run instead of failing
+  every case.
+
+### Changed
+
+- `/qa-pilot:setup-profiles` never opens the saved login file; it judges the capture from the
+  script's printed counts.
+- Bug reports and run summaries say to open traces with `npx playwright show-trace`.
+- The CI template's Node default is 22, with a note to follow the host's version file.
+
 ## 0.4.2 (2026-10-23)
 
 Documentation only; no behaviour changes and nothing to do when upgrading.

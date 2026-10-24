@@ -135,7 +135,7 @@ export function bugBody(c, kase, report, { specPath = null, traceName = null, mo
 
   if (mode === 'file') {
     sections.push(
-      `## Evidence\n\nThe Playwright trace is \`${c.trace ?? 'not recorded'}\` in this run's directory. Open it at https://trace.playwright.dev.\n\n` +
+      `## Evidence\n\nThe Playwright trace is \`${c.trace ?? 'not recorded'}\` in this run's directory. Open it with \`npx playwright show-trace <file>\`.\n\n` +
       `Treat the trace as a credential: it contains the session token that authenticated the run.`,
     );
     sections.push(`Filed by QA-Pilot from case ${c.id}.`);
@@ -156,8 +156,8 @@ export function bugBody(c, kase, report, { specPath = null, traceName = null, mo
   sections.push(
     `## Evidence\n\n` +
     (traceName
-      ? `The Playwright trace is attached to the case task as \`${traceName}\`. Download it, then open it at https://trace.playwright.dev. It carries the video, console output, network log and a DOM snapshot of every step.\n\n`
-      : `The Playwright trace is attached to the case task for this run. Download it, then open it at https://trace.playwright.dev.\n\n`) +
+      ? `The Playwright trace is attached to the case task as \`${traceName}\`. Download it, then open it with \`npx playwright show-trace <file>\`. It carries the video, console output, network log and a DOM snapshot of every step.\n\n`
+      : `The Playwright trace is attached to the case task for this run. Download it, then open it with \`npx playwright show-trace <file>\`.\n\n`) +
     `Treat the trace as a credential: it contains the session token that authenticated the run.`,
   );
 

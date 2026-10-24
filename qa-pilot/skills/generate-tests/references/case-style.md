@@ -10,7 +10,7 @@ Feature and subfeature are uppercase, alphanumeric, stable. The number is zero-p
 
 | | Meaning | Consequence |
 |---|---|---|
-| **P0** | The feature is broken without it. Core path, security, data integrity. | Any P0 not Approved makes the feature display "Not Ready" regardless of score. QA watches 100% of P0 evidence. |
+| **P0** | The feature is broken without it. Core path, security, data integrity. | Any P0 that is not an approved pass makes the feature display "Not Ready" regardless of score. QA watches 100% of P0 evidence. |
 | **P1** | Important, but the feature is usable if it regresses. | QA samples >=30% of P1 passes. |
 | **P2** | Polish, rare paths, cosmetic states. | Approved in bulk at matrix level; QA samples >=10%. |
 

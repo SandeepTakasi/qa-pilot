@@ -27,6 +27,7 @@ The publish step is a script, not a judgement call, and it rejects each of these
 - **A pass that was really a retry.** Pass-on-retry is recorded `flaky`, derived from the attempt results rather than Playwright's own status field. A failure in any browser is a failure, not a flake.
 - **A verdict for a case QA never approved.** Checked against the case's recorded status at run time, not the case map, which holds every generated case.
 - **A run that lost its ground truth.** If the deployed build changes mid-run, every case is `blocked`. Past 10% blocked the run halts: the environment failed, not the feature.
+- **A run that was not a verdict run.** Stabilization and CI runs say so in their metadata, and a run Playwright reported an error outside any test for (a failed global setup, a timeout) is incomplete.
 - **A run that broke its write policy.** Each feature declares `read-only`, `scoped-write` (with a name prefix) or `unrestricted`. A read-only run whose write guard recorded a write, or never reported in, does not publish. The gate re-reads the guard's records and the Playwright report from disk rather than trusting the report it is handed.
 
 ## Production

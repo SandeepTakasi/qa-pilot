@@ -253,7 +253,7 @@ export function validateProfile(raw, { profilePath = null } = {}) {
     err(`evidence.capture: must be one of ${CAPTURE_MODES.join(' | ')} (default: always)`);
   }
   if (capture === 'on-failure') {
-    warnings.push('evidence.capture: on-failure keeps no evidence for passing cases, so QA cannot sample passes and a false pass becomes undetectable. The sampling rules are the backstop against fabricated or shallow green runs; consider always for P0 work.');
+    warnings.push('evidence.capture: on-failure keeps no evidence for passing cases, so QA cannot sample passes or check a pass against what the run showed; consider always for P0 work.');
   }
   if (capture === 'off') {
     warnings.push('evidence.capture: off captures nothing, so no run can be published. Use it only while iterating on specs locally.');

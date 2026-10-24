@@ -34,7 +34,7 @@ const statusesBefore = json('statuses.json', {
 });
 const ledger = { 'CHECKOUT-ORDER-001': 'h1', 'CHECKOUT-ORDER-002': 'h2', 'CHECKOUT-QTY-003': 'h3' };
 const report = {
-  run_id: '20261024T1000Z-checkout-a1b2c3d', run_kind: 'verdict', feature: 'checkout', app: 'storefront',
+  run_id: '20261024T100000Z-checkout-a1b2c3d', run_kind: 'verdict', feature: 'checkout', app: 'storefront',
   env_name: 'qa', env_kind: 'qa', env_url: 'https://qa.host-fake.example.com', api_mode: 'server',
   commit_sha: 'a1b2c3d', sha_format: 'commit', executor: 'tester', model_version: 'claude-fable-5', browser: 'chromium',
   cases: [
@@ -125,6 +125,7 @@ test('the record carries failure text only where the tracker receives it', () =>
     assert.equal(Object.hasOwn(c, 'failure_summary'), withText, mode);
     assert.equal(c.spec_sha, 'h3', mode);
     assert.equal(r.evidence_mode, mode);
+    for (const k of ['env_url', 'executor', 'model_version', 'browser']) assert.equal(Object.hasOwn(r, k), withText, `${mode} ${k}`);
     // Never the per-attempt detail that only the run directory needs.
     assert.ok(!Object.hasOwn(c, 'writes') && !Object.hasOwn(c, 'console_log') && !Object.hasOwn(c, 'video'), mode);
   }
