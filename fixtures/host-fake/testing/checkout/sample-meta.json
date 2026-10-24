@@ -1,5 +1,6 @@
 {
-  "run_id": "2026-08-30T09:22Z-checkout-a1b2c3d",
+  "run_id": "20260830T0922Z-checkout-a1b2c3d",
+  "run_kind": "verdict",
   "feature": "checkout",
   "app": "storefront",
   "env_name": "qa",

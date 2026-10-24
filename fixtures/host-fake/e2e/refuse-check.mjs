@@ -59,7 +59,7 @@ if (lint.status !== 0) fail(`the cases file does not lint:\n${lint.stderr}`);
 
 function prepare(runDir) {
   writeFileSync(join(runDir, 'meta.json'), JSON.stringify({
-    run_id: `${new Date().toISOString()}-guard-proof`, feature: 'guard', app: 'storefront',
+    run_id: `${new Date().toISOString().replace(/[-:.]/g, '')}-guard-proof`, run_kind: 'verdict', feature: 'guard', app: 'storefront',
     env_name: 'qa', env_kind: 'qa', env_url: 'https://qa.host-fake.example.com', api_mode: 'server',
     sha_before: 'a1b2c3d', sha_after: 'a1b2c3d', sha_source: 'https://qa.host-fake.example.com/api/version',
     sha_format: 'commit', evidence_capture: 'always', mutation_policy: 'read-only', mutation_prefix: null,

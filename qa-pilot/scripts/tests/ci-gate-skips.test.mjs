@@ -6,11 +6,12 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { selectSpecs } from '../ci-gate.mjs';
-import { hashSpec } from '../parse-report.mjs';
+import { specHash } from '../lib/spec-hash.mjs';
 
 const GATE = join(dirname(fileURLToPath(import.meta.url)), '..', 'ci-gate.mjs');
 const SPEC = 'test("X-A-001 does a thing", async ({ page }) => {});';
-const H = hashSpec(SPEC);
+// The cases carry no steps or expected outcomes, so one hash fits every case.
+const H = specHash('a.ts', {}, { read: () => SPEC });
 
 // --- the pure function -------------------------------------------------------
 
@@ -18,8 +19,8 @@ test('a case dropped by the priority filter is not a skip', () => {
   const r = selectSpecs(
     { A: H, B: H },
     { A: 'a.ts', B: 'b.ts' },
-    (p) => (p === 'a.ts' || p === 'b.ts' ? SPEC : null),
-    { priorities: ['P0'], priorityOf: { A: 'P0', B: 'P1' } },
+    [{ id: 'A', priority: 'P0' }, { id: 'B', priority: 'P1' }],
+    { read: (p) => (p === 'a.ts' || p === 'b.ts' ? SPEC : null), priorities: ['P0'] },
   );
   assert.deepEqual(r.run.map((x) => x.id), ['A']);
   assert.equal(r.skipped.length, 0);
@@ -35,7 +36,9 @@ writeFileSync(at('e2e/b.ts'), SPEC);
 writeFileSync(at('approved.json'), JSON.stringify({ A: H, B: H, C: H }));
 // C's spec file does not exist: one skip. B is present and unchanged.
 writeFileSync(at('specs.json'), JSON.stringify({ A: at('e2e/a.ts'), B: at('e2e/b.ts'), C: at('e2e/gone.ts') }));
-const BASE = ['--approved', at('approved.json'), '--specs', at('specs.json')];
+writeFileSync(at('all.yaml'), 'cases:\n' + ['A', 'B', 'C', 'D'].map((id) => `  - id: ${id}\n    priority: P0\n`).join(''));
+const CASES = ['--cases', at('all.yaml')];
+const BASE = ['--approved', at('approved.json'), '--specs', at('specs.json'), ...CASES];
 const RUN = `${at('e2e/a.ts')} ${at('e2e/b.ts')}\n`;
 const SKIP_LINE = 'skipped C: the spec file is missing from the repo, though QA approved it. Commit it, or re-approve the case.\n';
 const refused = (k, n) => `REFUSED: ${k} approved spec(s) were skipped and --max-skipped allows ${n}, so this job would report green on part of the suite.\n`;
@@ -45,7 +48,7 @@ const select = (...args) => {
   return { code: r.status, out: r.stdout, err: r.stderr };
 };
 
-test('without the flag a skip is tolerated, as in 0.4.0', () => {
+test('without the flag a skip is tolerated', () => {
   const r = select(...BASE);
   assert.equal(r.code, 0);
   assert.equal(r.out, RUN);
@@ -81,7 +84,7 @@ test('a limit at or above the skip count passes and prints the run list', () => 
 test('the refusal counts every skip against the limit', () => {
   writeFileSync(at('approved2.json'), JSON.stringify({ A: H, C: H, D: H }));
   writeFileSync(at('specs2.json'), JSON.stringify({ A: at('e2e/a.ts'), C: at('e2e/gone.ts') }));
-  const base = ['--approved', at('approved2.json'), '--specs', at('specs2.json')];
+  const base = ['--approved', at('approved2.json'), '--specs', at('specs2.json'), ...CASES];
   // C is missing, D has no spec path: two skips.
   let r = select(...base, '--max-skipped', '1');
   assert.equal(r.code, 1);
@@ -94,7 +97,7 @@ test('the refusal counts every skip against the limit', () => {
 
 test('--max-skipped 0 passes when nothing was skipped', () => {
   writeFileSync(at('approved-clean.json'), JSON.stringify({ A: H, B: H }));
-  const r = select('--approved', at('approved-clean.json'), '--specs', at('specs.json'), '--max-skipped', '0');
+  const r = select('--approved', at('approved-clean.json'), '--specs', at('specs.json'), ...CASES, '--max-skipped', '0');
   assert.equal(r.code, 0);
   assert.equal(r.out, RUN);
   assert.equal(r.err, '');
@@ -130,7 +133,7 @@ test('--max-skipped as the last argument is the empty value, never "unlimited"',
 
 test('zero runnable specs keeps its own refusal, ahead of the skip limit', () => {
   writeFileSync(at('approved-gone.json'), JSON.stringify({ C: H }));
-  const r = select('--approved', at('approved-gone.json'), '--specs', at('specs.json'), '--max-skipped', '0');
+  const r = select('--approved', at('approved-gone.json'), '--specs', at('specs.json'), ...CASES, '--max-skipped', '0');
   assert.equal(r.code, 1);
   assert.equal(r.out, '');
   assert.equal(

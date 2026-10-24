@@ -3,8 +3,9 @@
 // Zero model involvement: every field is copied or computed, never described.
 // Schema: qa-pilot/schemas/report.schema.md
 //
-// Usage: node parse-report.mjs <playwright-report.json> <meta.json> [--specs <specs.json>] [-o report.json]
-// report.json defaults to the run directory, dirname(meta.json).
+// Usage: node parse-report.mjs <playwright-report.json> <meta.json> [-o report.json]
+// report.json defaults to the run directory, dirname(meta.json). Spec hashes come from the
+// run directory's spec-shas.json, written when the run started.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { isMain } from './lib/is-main.mjs';
@@ -147,16 +148,11 @@ function aggregateWrites(results, files, rel) {
   };
 }
 
-/** sha256 of a spec file, so approval can be bound to the exact test that ran. */
-export function hashSpec(source) {
-  return createHash('sha256').update(source, 'utf8').digest('hex').slice(0, 16);
-}
-
 /**
  * @param {object} pw parsed Playwright JSON report
  * @param {object} meta run metadata written by /run-tests
  * @param {object} opts everything read from disk, injected so this stays free of I/O:
- *   specHashes { caseId: hash }, traceHashes { tracePath: sha256 }, writesFiles
+ *   specHashes { caseId: hash } (spec-shas.json), traceHashes { tracePath: sha256 }, writesFiles
  *   { writesPath: parsed writes.json }, runDir (artifact paths are made relative to it)
  * @returns {object} report.json
  */
@@ -166,15 +162,24 @@ export function buildReport(pw, meta, { specHashes = {}, traceHashes = {}, write
   // a published path never carries the executor's home directory.
   const rel = (p) => (runDir && p && isAbsolute(p) ? relative(runDir, p).split(sep).join('/') : p);
 
-  const cases = [];
-  const fixtures = [];
+  // Group every test entry by case id (or fixture) first. Playwright writes one spec entry
+  // per project, so a two-browser run lists each case twice, and a spec may hold two tests
+  // for one case; either way it is one case with several verdicts to combine.
+  const groups = new Map();
   const unmapped = [];
   for (const spec of walkSpecs(pw.suites)) {
     const m = CASE_ID_RE.exec(spec.title);
     const f = m ? null : FIXTURE_RE.exec(spec.title);
     if (!m && !f) { unmapped.push(spec.title); continue; }
+    const key = m ? `case:${m[1]}` : `fixture:${f[1]}:${f[2] ? 'teardown' : 'setup'}`;
+    if (!groups.has(key)) groups.set(key, { m, f, entries: [] });
     // One entry per project/browser; each entry's results[] are that project's attempts.
-    const entries = (spec.tests ?? []).map((t) => t.results ?? []);
+    groups.get(key).entries.push(...(spec.tests ?? []).map((t) => t.results ?? []));
+  }
+
+  const cases = [];
+  const fixtures = [];
+  for (const { m, f, entries } of groups.values()) {
     const verdict = combineVerdicts(entries.map((r) => verdictFor(r, { shaMismatch })));
     const results = entries.flat(); // artifacts, duration and errors span all attempts
     const trace = attachmentPath(results, 'trace');
@@ -199,9 +204,9 @@ export function buildReport(pw, meta, { specHashes = {}, traceHashes = {}, write
       failure_summary: verdict === 'fail' || verdict === 'flaky' ? failureSummary(results) : null,
       // Retries per project, summed, so having several projects never inflates it.
       retries: entries.reduce((sum, r) => sum + Math.max(0, r.length - 1), 0),
-      // Hash of the spec that produced this verdict. QA approves a case, but a spec is
-      // what runs; without this binding a spec could be rewritten after approval and its
-      // results would still publish as approved.
+      // Hash of the spec, its imports and the case definition, taken when the run started
+      // (spec-shas.json). Without this binding a spec could be rewritten after approval, or
+      // between run and publish, and its results would still publish as approved.
       spec_sha: specHashes[m[1]] ?? null,
     });
   }
@@ -214,6 +219,8 @@ export function buildReport(pw, meta, { specHashes = {}, traceHashes = {}, write
 
   return {
     run_id: meta.run_id,
+    // verdict | stabilization, declared by run-tests; the gate refuses anything but verdict.
+    run_kind: meta.run_kind ?? null,
     feature: meta.feature,
     app: meta.app,
     env_name: meta.env_name,
@@ -245,6 +252,11 @@ export function buildReport(pw, meta, { specHashes = {}, traceHashes = {}, write
     fixtures,
     summary, // cases only; fixtures are not verdicts on the feature
     unmapped_specs: unmapped, // titles with neither a case ID prefix nor a FIXTURE title
+    // Errors outside any test: a failed global setup, a global timeout, a config error.
+    errors: (pw.errors ?? []).map((e) => {
+      const msg = stripAnsi(e?.message ?? e?.value ?? String(e)).split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
+      return msg.length > FAILURE_SUMMARY_MAX ? `${msg.slice(0, FAILURE_SUMMARY_MAX)}…` : msg;
+    }),
   };
 }
 
@@ -256,25 +268,19 @@ function argValue(flag) {
 if (isMain(import.meta.url)) {
   const [pwPath, metaPath] = process.argv.slice(2);
   if (!pwPath || !metaPath) {
-    console.error('usage: node parse-report.mjs <playwright-report.json> <meta.json> [--specs <specs.json>] [-o report.json]');
+    console.error('usage: node parse-report.mjs <playwright-report.json> <meta.json> [-o report.json]');
     process.exit(2);
   }
   try {
     const pw = JSON.parse(readFileSync(pwPath, 'utf8'));
     const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
-    // Optional: a { "<CASE-ID>": "<path to spec>" } map, so each verdict records the hash
-    // of the spec that produced it.
-    let specHashes = {};
-    const specsPath = argValue('--specs');
-    if (specsPath) {
-      const map = JSON.parse(readFileSync(specsPath, 'utf8'));
-      for (const [id, file] of Object.entries(map)) {
-        try { specHashes[id] = hashSpec(readFileSync(file, 'utf8')); }
-        catch { console.error(`warning: cannot hash spec for ${id}: ${file}`); }
-      }
-    }
     // The run directory holds meta.json; the report and every path in it live relative to it.
     const runDir = dirname(resolve(metaPath));
+    // Hashes taken when the run started (/qa-pilot:run-tests), never recomputed here: a spec
+    // edited between the run and this publish must not lend its hash to that run's verdicts.
+    let specHashes = {};
+    try { specHashes = JSON.parse(readFileSync(join(runDir, 'spec-shas.json'), 'utf8')); }
+    catch { console.error(`warning: no spec-shas.json in ${runDir}, so no verdict carries a spec_sha and no approval can carry forward or be recorded`); }
     const { traces, writes } = artifactPaths(pw);
     // Full sha256 of each trace, so a trace that stays local can still be verified later.
     const traceHashes = {};

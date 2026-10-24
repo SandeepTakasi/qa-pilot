@@ -161,3 +161,37 @@ test('nested describe suites are walked', () => {
   p.suites[0].suites = [inner];
   assert.equal(buildReport(p, meta()).cases.length, 4);
 });
+
+// Playwright 1.62's JSON reporter writes one spec entry per project, each holding a single
+// test, rather than one spec whose tests[] spans the projects.
+const perProject = (title, project, statuses) => ({
+  title, tests: [{ projectName: project, results: statuses.map((status, retry) => ({ status, retry, errors: [] })) }],
+});
+
+test('a two-project run in the real 1.62 shape is one case per id, not a duplicate', () => {
+  const r = buildReport({ suites: [{ title: 'a.spec.ts', specs: [
+    perProject('CHK-UI-001 passes', 'a', ['passed']), perProject('CHK-UI-001 passes', 'b', ['passed']),
+    perProject('CHK-UI-012 fails only in b', 'a', ['passed']), perProject('CHK-UI-012 fails only in b', 'b', ['failed']),
+  ] }] }, meta());
+  assert.deepEqual(r.cases.map((c) => [c.id, c.verdict]), [['CHK-UI-001', 'pass'], ['CHK-UI-012', 'fail']]);
+  assert.equal(byId(r)['CHK-UI-001'].retries, 0);
+});
+
+test('two tests for one case id, in different files, combine into one verdict', () => {
+  const r = buildReport({ suites: [
+    { title: 'a.spec.ts', specs: [perProject('CHK-UI-001 first half', 'a', ['passed'])] },
+    { title: 'b.spec.ts', specs: [perProject('CHK-UI-001 second half', 'a', ['failed', 'passed'])] },
+  ] }, meta());
+  assert.deepEqual(r.cases.map((c) => [c.id, c.verdict]), [['CHK-UI-001', 'flaky']]);
+});
+
+test('Playwright errors outside any test are carried into the report', () => {
+  const r = buildReport({ suites: [], errors: [{ message: '\u001b[31mTimed out waiting 3s for the test suite to run\u001b[39m' }] }, meta());
+  assert.deepEqual(r.errors, ['Timed out waiting 3s for the test suite to run']);
+  assert.deepEqual(buildReport({ suites: [] }, meta()).errors, []);
+});
+
+test('the run kind is copied from the run metadata', () => {
+  assert.equal(buildReport({ suites: [] }, meta()).run_kind, 'verdict');
+  assert.equal(buildReport({ suites: [] }, { ...meta(), run_kind: undefined }).run_kind, null);
+});

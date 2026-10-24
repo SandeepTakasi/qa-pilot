@@ -76,7 +76,7 @@ function makeRun({ env = 'qa', policy = 'read-only', prefix = null, entities, co
   const pw = { suites: [{ specs }] };
   writeFileSync(join(run, 'results.json'), JSON.stringify(pw));
   const meta = {
-    run_id: 'r1', feature: 'checkout', app: 'storefront', env_name: env, env_url: ENV_URL[env],
+    run_id: 'r1', run_kind: 'verdict', feature: 'checkout', app: 'storefront', env_name: env, env_url: ENV_URL[env],
     env_kind: env === 'production' ? 'production' : env, api_mode: 'server',
     sha_before: 'a1', sha_after: 'a1', sha_source: `${ENV_URL[env]}/api/version`, sha_format: 'commit',
     evidence_capture: 'always', executor: 'tester', model_version: 'claude-fable-5',
@@ -429,8 +429,13 @@ test('rule 5: a fixture the cases file never declared is refused', () => {
   assert.ok(has(gate(r, QA_PROFILE, casesFile({ policy: 'scoped-write', prefix: 'QA_T_' })).errors, /^rule 5: .*"stray" is not declared/));
 });
 
-test('rule 5: duplicate entries and a teardown for a keep fixture are refused', () => {
-  const dup = fxRun([one('FIXTURE shared', SW()), one('FIXTURE shared', SW()), one('CHECKOUT-ORDER-001 a', SW())]);
+test('rule 5: a fixture that ran twice is one entry; a duplicated report entry and a teardown for a keep fixture are refused', () => {
+  // Two projects (or two specs) running one fixture setup are one fixture with combined
+  // verdicts, as for a case. Only a report that lists it twice is a duplicate.
+  const twice = fxRun([one('FIXTURE shared', SW()), one('FIXTURE shared', SW()), one('CHECKOUT-ORDER-001 a', SW())]);
+  assert.equal(twice.report.fixtures.filter((f) => f.name === 'shared' && f.phase === 'setup').length, 1);
+  assert.deepEqual(rules(gate(twice, QA_PROFILE, fxCases()).errors, 5), []);
+  const dup = { ...twice, report: { ...twice.report, fixtures: [...twice.report.fixtures, twice.report.fixtures[0]] } };
   assert.ok(has(gate(dup, QA_PROFILE, fxCases()).errors, /^rule 5: .*"shared" setup appears twice/));
   const keep = fxRun([one('FIXTURE shared', SW()), one('CHECKOUT-ORDER-001 a', SW()), one('FIXTURE shared teardown', SW())]);
   assert.ok(has(gate(keep, QA_PROFILE, fxCases([{ name: 'shared', teardown: 'keep' }])).errors, /^rule 5: .*teardown.*keep/));
@@ -503,4 +508,29 @@ test('rule 6 applies wherever evidence is local, not only on production', () => 
   r.report.cases[0].trace_sha256 = null;
   assert.ok(has(gate(r, profile, casesFile()).errors, /^rule 6: /));
   assert.deepEqual(rules(gate(r, QA_PROFILE, casesFile()).errors, 6), [], 'tracker upload: no pin needed');
+});
+
+// --- run identity and completeness (0.4.3) ------------------------------------------
+
+test('a stabilization run, or one that never said what it was, is refused', () => {
+  const r = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO())] });
+  const stab = { ...r, report: { ...r.report, run_kind: 'stabilization' } };
+  assert.ok(has(gate(stab, QA_PROFILE, casesFile()).errors, /^run_kind: stabilization/));
+  const none = { ...r, report: { ...r.report, run_kind: null } };
+  assert.ok(has(gate(none, QA_PROFILE, casesFile()).errors, /^run_kind: required/));
+});
+
+test('a run id that cannot name a directory on every OS is refused', () => {
+  const r = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO())] });
+  for (const id of ['2026-10-24T10:15:00Z-checkout', 'a/b', '../x', '-x']) {
+    assert.ok(has(gate({ ...r, report: { ...r.report, run_id: id } }, QA_PROFILE, casesFile()).errors, /^run_id: .* must use only/), id);
+  }
+});
+
+test('a Playwright error outside any test, such as a global timeout, refuses the publish', () => {
+  // Cases that never started are absent from results.json, not blocked, so without this the
+  // run would publish as if it were complete.
+  const r = makeRun({ entities: [one('CHECKOUT-ORDER-001 a', RO())] });
+  writeFileSync(join(r.run, 'results.json'), JSON.stringify({ ...r.pw, errors: [{ message: 'Timed out waiting 3s for the test suite to run' }] }));
+  assert.ok(has(gate(r, QA_PROFILE, casesFile()).errors, /^rule 1b: Playwright reported an error outside any test.*Timed out waiting/));
 });

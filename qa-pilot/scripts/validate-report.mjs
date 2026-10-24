@@ -33,6 +33,7 @@ const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const EXECUTED = ['pass', 'fail', 'flaky'];
 // A path the tracker may receive, or the gate must sweep, has to stay inside the run dir.
+const RUN_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const escapesRunDir = (p) => typeof p !== 'string' || isAbsolute(p) || p.split(/[\\/]/).includes('..');
 const sha256File = (p) => createHash('sha256').update(readFileSync(p)).digest('hex');
 // Fields rule 1b compares against the rebuild, besides verdict, writes and retries, which
@@ -177,6 +178,9 @@ function validateMutation(report, profile, casesDoc, { base, needsEvidence, arti
       }
     }
     for (const k of expected.keys()) err(`rule 1b: ${k.replace(/#\d+$/, '')} ran (results.json) but is missing from the report`);
+    // A failed global setup or a global timeout leaves cases unstarted and absent, not
+    // blocked, so the run would publish as if it were complete.
+    for (const e of rebuilt.errors) err(`rule 1b: Playwright reported an error outside any test, so the run is incomplete: ${e}`);
   }
 
   // Sweep the run directory: every guard record must be one the report lists, or a copy of
@@ -337,6 +341,17 @@ export function validateReport(report, profile, { map = null, base = null, stat 
   // --- provenance ---
   for (const f of ['run_id', 'feature', 'app', 'env_name', 'executor', 'model_version']) {
     if (!isStr(report[f])) err(`${f}: required`);
+  }
+  // The run id names a directory and a committed file, on every OS: no ':' or '/'.
+  if (isStr(report.run_id) && !RUN_ID_RE.test(report.run_id)) {
+    err(`run_id: "${report.run_id}" must use only letters, digits, '.', '_' and '-' (for example 20261024T101500Z-checkout-ab12cd3), because it names a directory and a committed file`);
+  }
+  // A stabilization run tunes specs; its verdicts are never a record. Declared by run-tests,
+  // because nothing else in a run tells the two apart once the run directory exists.
+  if (report.run_kind === 'stabilization') {
+    err('run_kind: stabilization. This run tuned specs and is never published; run against a verdict environment and publish that run.');
+  } else if (report.run_kind !== 'verdict') {
+    err(`run_kind: required, "verdict" or "stabilization" (found ${report.run_kind === undefined ? 'nothing' : JSON.stringify(report.run_kind)}). Record it in meta.json when the run starts.`);
   }
 
   const envs = profile.environments ?? {};

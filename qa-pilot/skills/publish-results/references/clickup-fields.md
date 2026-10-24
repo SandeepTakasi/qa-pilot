@@ -139,7 +139,7 @@ Open a trace with `npx playwright show-trace <path>`, which keeps it on the revi
 One per run, on the **feature** task, beginning with the run ID. Facts from the report only: a comment that interprets the run is a model opinion wearing the record's authority.
 
 ```
-2026-08-30T09:22Z-checkout-a1b2c3d · qa @ a1b2c3d (server)
+20260830T0922Z-checkout-a1b2c3d · qa @ a1b2c3d (server)
 
 12 pass · 2 fail · 1 flaky · 0 blocked
 Confidence: 31% · Not Ready (14 cases now awaiting QA review)
@@ -158,7 +158,7 @@ The score is low by design: publishing moves cases to `Under Review`, and only `
 When evidence stays local the comment holds only the payload summary: no executor, no failed-case list, no trace link. A reviewer finds the run directory from the feature and run ID, and the file from the case task's trace path and `trace_sha256`.
 
 ```
-2026-08-30T09:22Z-checkout-a1b2c3d · production @ a1b2c3d
+20260830T0922Z-checkout-a1b2c3d · production @ a1b2c3d
 
 12 pass · 2 fail · 1 flaky · 0 blocked (0% blocked)
 Confidence: 31% · Not Ready
