@@ -111,7 +111,7 @@
         {
           "title": "Production",
           "slug": "docs/production/",
-          "source": "site/content/production.md"
+          "source": "qa-pilot/PRODUCTION.md"
         },
         {
           "title": "What it enforces",

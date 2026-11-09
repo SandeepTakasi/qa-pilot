@@ -1,3 +1,5 @@
+# Production
+
 QA-Pilot can run a committed suite against a production deployment, under rules that are refusals, not advice: the profile validator, the run step, the write guard and the publish gate each stop the thing they are responsible for. This page follows the rules in the order a production run meets them, and ends with what they cannot prove.
 
 ## Declare what the environment is
@@ -21,7 +23,7 @@ When any environment has `kind: production`, the profile is valid only if all fo
 - a `mutation` block is present with at least one `write_signatures` entry;
 - that environment's `test_account` is a string of at least 20 characters after trimming.
 
-The relevant part of a generic profile follows; the full contract is in the [host profile reference](../../qa-pilot/schemas/qa-pilot.config.schema.md).
+The relevant part of a generic profile follows; the full contract is in the [host profile reference](./schemas/qa-pilot.config.schema.md).
 
 ```yaml
 environments:
@@ -71,7 +73,7 @@ A Playwright trace records the session credential that authenticated the run, ev
 - **CI refuses to run it.** See [CI refuses production](#ci-refuses-production).
 - **The tracker does not receive it.** See [What the tracker receives](#what-the-tracker-receives).
 
-Because the trace stays on the executor's machine, it is pinned by hash. The gate requires a `trace_sha256` for every locally kept trace, re-hashes the file, and refuses a mismatch (rule 6). A reviewer finds the evidence at the path the tracker records and checks it against the hash. [Setting up ClickUp](../../qa-pilot/SETUP-CLICKUP.md) lists what a trace contains.
+Because the trace stays on the executor's machine, it is pinned by hash. The gate requires a `trace_sha256` for every locally kept trace, re-hashes the file, and refuses a mismatch (rule 6). A reviewer finds the evidence at the path the tracker records and checks it against the hash. [Setting up ClickUp](./SETUP-CLICKUP.md) lists what a trace contains.
 
 Off production the default is the same: `reference` sends the verdict fields, the failure text, and each trace's path and sha256, never the file. Attaching the trace (`tracker`) is an opt-in per environment, to make only after turning on ClickUp's Private Attachment Links (without it, attachment links are public and non-expiring) and only with a restricted test account.
 
@@ -97,7 +99,7 @@ mutation:
 
 A `cases.yaml` with no `mutation` block is `unrestricted`, which keeps 0.2.0 case files valid on `qa` and `staging`. On production it is refused twice: `/qa-pilot:run-tests` will not start it, and the publish gate refuses a report that ran one anyway (the run step refuses first because the gate only sees a run after its writes have happened).
 
-Under `scoped-write`, a write control is allowed when the page URL matches a scope URL the spec set with `setScope({ url })`, or when the control's own row or dialog contains the feature's `prefix`, so entities the feature creates must carry the prefix in their name. A request cannot be proved in scope, so write requests are recorded, not judged. The rules are in the [cases file reference](../../qa-pilot/schemas/cases.schema.md).
+Under `scoped-write`, a write control is allowed when the page URL matches a scope URL the spec set with `setScope({ url })`, or when the control's own row or dialog contains the feature's `prefix`, so entities the feature creates must carry the prefix in their name. A request cannot be proved in scope, so write requests are recorded, not judged. The rules are in the [cases file reference](./schemas/cases.schema.md).
 
 ## The write guard
 
@@ -110,15 +112,15 @@ Specs call an ordinary `locator.click()`; the guard decides in two places:
 
 Under any policy but `unrestricted`, the request paths a spec would reach for outside the guarded page (the `request` fixture, `page.request`, `fetch()`, `browser.newContext()`, `launch` and so on) are refused. For cross-app specs, `newGuardedContext()` replaces `browser.newContext()`.
 
-Each test attempt leaves a `writes.json` beside its trace: the guard's record, and what the gate reads. Its `installed` field is true once the page-side guard has reported in, and a worker that dies before teardown writes no record, which the gate reads as not installed. The fields are in the [report and gate reference](../../qa-pilot/schemas/report.schema.md); the Playwright behaviours the guard relies on are in [Write guard internals](../../docs/architecture.md).
+Each test attempt leaves a `writes.json` beside its trace: the guard's record, and what the gate reads. Its `installed` field is true once the page-side guard has reported in, and a worker that dies before teardown writes no record, which the gate reads as not installed. The fields are in the [report and gate reference](./schemas/report.schema.md); the Playwright behaviours the guard relies on are in [Write guard internals](../docs/architecture.md).
 
 ## write_signatures
 
 The guard needs two things from the host: which controls are writes, and which requests are writes. Controls come with generic defaults (verbs such as save, delete, publish, submit, upload and rename, plus generic icon names), and `deny_controls` adds to them without replacing them. Requests default to safe: any method but `GET`, `HEAD` or `OPTIONS` is a write. A request is a write when it uses such a method or matches any `mutation.write_signatures` entry, and it matches no `allow_signatures` entry. The allow list names the reads that use another method (a search over `POST`, a GraphQL query, a token refresh); a write signature is needed for a write sent as a `GET`.
 
-Each entry has a required `method` (an uppercase HTTP method, or `*`), a required `url` regex matched against the full request URL, an optional `body` regex (for GraphQL and RPC-style backends that put every operation on one URL) and an optional `note`. The field rules are in the [host profile reference](../../qa-pilot/schemas/qa-pilot.config.schema.md).
+Each entry has a required `method` (an uppercase HTTP method, or `*`), a required `url` regex matched against the full request URL, an optional `body` regex (for GraphQL and RPC-style backends that put every operation on one URL) and an optional `note`. The field rules are in the [host profile reference](./schemas/qa-pilot.config.schema.md).
 
-Requests are default-deny ([decision 0001](../../docs/decisions/0001-write-signatures-default-deny.md)). A new operation over `POST` is blocked and appears in `writes.json` instead of passing silently, and a read-only run that touches a new read is refused and names it. Production still needs at least one write signature: name the main write channel, so the record says which channel a blocked write used. Anchor allow entries to their host, because an allow entry overrides every write signature.
+Requests are default-deny ([decision 0001](../docs/decisions/0001-write-signatures-default-deny.md)). A new operation over `POST` is blocked and appears in `writes.json` instead of passing silently, and a read-only run that touches a new read is refused and names it. Production still needs at least one write signature: name the main write channel, so the record says which channel a blocked write used. Anchor allow entries to their host, because an allow entry overrides every write signature.
 
 Unknown keys under `mutation`, `deny_controls` or a signature are errors, and every regex must compile, so a misspelt `write_signature` cannot leave the guard with no signatures and no complaint.
 
@@ -145,13 +147,13 @@ Under `tracker: none`, nothing is sent anywhere; approvals, the run summary and 
 
 ## CI refuses production
 
-The CI template reads the environment's `kind` from the profile and stops if it is `production`, because a CI job uploads build artifacts and a production trace carries a live session and every request body it touched. Production runs are made by a person, with evidence kept on their machine. See [Running in CI](../../qa-pilot/SETUP-CI.md).
+The CI template reads the environment's `kind` from the profile and stops if it is `production`, because a CI job uploads build artifacts and a production trace carries a live session and every request body it touched. Production runs are made by a person, with evidence kept on their machine. See [Running in CI](./SETUP-CI.md).
 
 ## Reviewing production evidence
 
 QA reviews production traces on the executor's machine, or at a location the host chooses, and checks each against its `trace_sha256`. Open one with `npx playwright show-trace <path>`, or at <https://trace.playwright.dev>, which runs in the browser and transmits nothing. Treat the trace as a credential wherever it is opened.
 
-The sampling quotas cannot be met from the tracker alone, and `/qa-pilot:qa-review` records them as unmet when the reviewer cannot reach the machine. The quotas are in the [reviewing guide](../../qa-pilot/skills/qa-review/SKILL.md).
+The sampling quotas cannot be met from the tracker alone, and `/qa-pilot:qa-review` records them as unmet when the reviewer cannot reach the machine. The quotas are in the [reviewing guide](./skills/qa-review/SKILL.md).
 
 ## How strong these gates actually are
 
@@ -168,7 +170,7 @@ Specific ceilings, each stated in the code or the schemas:
 - **The environment name is taken on trust.** `env_name` comes from the report, as the deploy SHA does, because nothing in the run directory identifies the environment independently. A report relabelled to another registered environment is a known ceiling. The planned fix is for the guard to record the request origins it saw and for the gate to match them against the registered app URLs.
 - **The restricted account is an attestation.** QA owns keeping the account restricted.
 - **The guard is only as good as the signatures.** This is why decision 0001 asks for a replay check next to the profile that judges every live operation name against the guard's own functions.
-- **Some actions are not seen.** Among them: drag-and-drop, pointer handlers that act before click, keyboard activation other than Enter or Space, WebSocket frames, `routeFromHAR`, popups outside the guarded context, and Node's own `node:http` and `node:net`. Deliberate subversion of the guard is left to review. The full list is in the header of [`write-guard.fixture.ts`](../../qa-pilot/templates/write-guard.fixture.ts).
+- **Some actions are not seen.** Among them: drag-and-drop, pointer handlers that act before click, keyboard activation other than Enter or Space, WebSocket frames, `routeFromHAR`, popups outside the guarded context, and Node's own `node:http` and `node:net`. Deliberate subversion of the guard is left to review. The full list is in the header of [`write-guard.fixture.ts`](./templates/write-guard.fixture.ts).
 - **An agentic session has nothing to publish with.** It cannot produce a trace or a machine-readable result, so "Claude clicked through it and it looked fine" does not reach the record by the normal route. That is a practical barrier, not a mathematical one.
 
-For the wider list of what the plugin requires of a host, and what swapping each piece would cost, see [What it enforces](../../qa-pilot/DECISIONS.md).
+For the wider list of what the plugin requires of a host, and what swapping each piece would cost, see [What it enforces](./DECISIONS.md).

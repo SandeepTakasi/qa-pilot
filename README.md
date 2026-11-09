@@ -86,7 +86,7 @@ opt-in per environment (see the [host profile](https://sandeeptakasi.github.io/q
 qa-pilot/    the plugin: skills, zero-dependency scripts, schemas, the ClickUp guard hook,
              and templates (the write guard, a CI workflow, the spec lint config
              eslint.qa-pilot.config.mjs) to copy into a host repo
-site/        the documentation site, built from the plugin's own markdown (site/DESIGN.md)
+site/        the documentation site: the repo's own markdown, listed in site/docs.json
 docs/        architecture notes and decision records
 fixtures/    a fake host repo the tests and the browser proof of the write guard run against
 ```

@@ -100,7 +100,7 @@ A trace can also hold a long-lived refresh token, so a leaked trace can keep min
 for that account long after the run. The account the runs use must be restricted: its own
 tenant, no admin rights, no billing, nothing it could not safely lose. If a trace leaks,
 disable that account or rotate its credentials; deleting the attachment does not un-leak it.
-[Production](https://sandeeptakasi.github.io/qa-pilot/docs/production/) has the full reasoning.
+[Production](./PRODUCTION.md) has the full reasoning.
 
 **Where traces go** is the environment's `evidence_upload` (`tracker`, `reference` or
 `local`), described in the [profile schema](./schemas/qa-pilot.config.schema.md). Off

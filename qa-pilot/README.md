@@ -39,7 +39,7 @@ An environment says what it is: `kind: qa | staging | production`, declared rath
 - **Full capture.** Every case keeps a trace.
 - **A declared write policy and a live guard.** A production feature must be `read-only` or `scoped-write`, and the profile must say what a write looks like on that host (`mutation.write_signatures`). Clicks are judged in the page before the app sees them, requests at the network layer. The guard is a second layer under the restricted account, not the boundary.
 
-The reasoning and each rule's enforcement point are in [the production page](https://sandeeptakasi.github.io/qa-pilot/docs/production/).
+The reasoning and each rule's enforcement point are in [the production page](./PRODUCTION.md).
 
 ### How strong these gates actually are
 
@@ -47,13 +47,13 @@ Worth being precise, because "impossible" would be overselling it. The checks ab
 
 So someone determined to fabricate a green result could hand-write the inputs, and nothing here stops that. QA-Pilot makes the evidenced path the path of least resistance, not the only conceivable one. Sampling does not close that gap: it has QA open a share of passing evidence (all P0, at least 30% of P1, 10% of P2) and every failure, which checks that what is recorded shows what the case claims. A pass that rests on a weak assertion looks green in its trace, which is why specs are linted for missing assertions, fixed sleeps and skipped tests, and QA reviews each case's expected outcomes before it runs.
 
-An agentic browser session has no trace or machine-readable result to publish with, so "Claude clicked through it and it looked fine" does not reach the record by the normal route. That is a practical barrier, not a mathematical one. What the gate cannot verify (such as the environment name in a report, which is taken on trust like the deploy SHA) is listed in [the production page](https://sandeeptakasi.github.io/qa-pilot/docs/production/).
+An agentic browser session has no trace or machine-readable result to publish with, so "Claude clicked through it and it looked fine" does not reach the record by the normal route. That is a practical barrier, not a mathematical one. What the gate cannot verify (such as the environment name in a report, which is taken on trust like the deploy SHA) is listed in [the production page](./PRODUCTION.md).
 
 ## Evidence
 
 One artifact per case per run: **`trace.zip`**, carrying the video, console output, DOM snapshots and network log in one file.
 
-Where it goes is the environment's `evidence_upload`: `reference` (the default off production: the tracker gets the usual fields plus the trace's path and sha256, and the trace stays on the machine that ran it), `tracker` (opt-in: attached to the case's ClickUp task) or `local` (production and `tracker: none`: no application data leaves the machine). The rules are in the [host profile schema](./schemas/qa-pilot.config.schema.md); why a trace is a credential is in [the production page](https://sandeeptakasi.github.io/qa-pilot/docs/production/). Reviewers verify a kept trace by its sha256 and open it with `npx playwright show-trace <path>`.
+Where it goes is the environment's `evidence_upload`: `reference` (the default off production: the tracker gets the usual fields plus the trace's path and sha256, and the trace stays on the machine that ran it), `tracker` (opt-in: attached to the case's ClickUp task) or `local` (production and `tracker: none`: no application data leaves the machine). The rules are in the [host profile schema](./schemas/qa-pilot.config.schema.md); why a trace is a credential is in [the production page](./PRODUCTION.md). Reviewers verify a kept trace by its sha256 and open it with `npx playwright show-trace <path>`.
 
 Without ClickUp, set `tracker: none` and everything stays in local files. With ClickUp, you set up its side once, by hand, from the checklist in [SETUP-CLICKUP.md](./SETUP-CLICKUP.md); the plugin writes into it but does not create it.
 
@@ -90,6 +90,7 @@ SETUP-CI.md        running the approved suite unattended, and what CI cannot do
 templates/         the write guard (write-guard.mjs, write-guard.fixture.ts), a GitHub
                    Actions workflow and the spec lint config (eslint.qa-pilot.config.mjs),
                    to copy into a host repo
+PRODUCTION.md      the rules for running against production, and what they cannot prove
 CHANGELOG.md       what changed, and what to do when upgrading
 THIRD_PARTY_NOTICES.md  licence of the one bundled dependency
 ```

@@ -18,8 +18,9 @@ After changing any document the site renders (plugin docs, schemas, skills, `sit
 cd site && npm run build:local
 ```
 
-It fails on a broken link, and on an em or en dash only in a site-authored page; check plugin docs
-for dashes yourself.
+It fails on a broken link or a missing anchor, and on an em or en dash in a docs.json lede, the
+site's only own text; check plugin docs for dashes yourself. Every page is rendered from a repo
+file listed in `site/docs.json`; add a page there, never as site-only prose.
 
 `qa-pilot/templates/qa-pilot-ci.yml` has no unit tests. After changing a `run:` step, run it under
 `bash -eo pipefail` (how GitHub runs it) with stub commands for each exit path, and capture a
