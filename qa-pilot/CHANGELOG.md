@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Upgrading
+
+1. **Re-copy both write-guard templates.** Any request but `GET`, `HEAD` or `OPTIONS` is now a
+   write, whether or not a `write_signatures` entry names it. Before, a `POST` no signature
+   matched went through unrecorded.
+2. **Allow-list your reads that use another method.** A `read-only` run that sends one (a
+   search over `POST`, a GraphQL query, a token refresh, analytics) is now blocked and refused
+   by the gate. Run one read-only feature on a QA environment, read the blocked requests in each
+   `writes.json`, and add an `allow_signatures` entry for every one that is a read, anchored to
+   its host. Under `scoped-write` such requests are recorded, not blocked.
+
+### Changed
+
+- **The write guard is default-deny by method.** A write the profile never listed is caught
+  instead of missed. `write_signatures` are now needed only for a write sent as a `GET`;
+  production still requires one entry.
+
 ## 0.4.3 (2026-10-24)
 
 Pilot readiness. A full-cycle review of 0.4.2 found ways for CI to go green on cases that never

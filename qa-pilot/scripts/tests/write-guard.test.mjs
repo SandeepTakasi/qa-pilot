@@ -16,6 +16,7 @@ const GRAPHQL = {
   ],
   allow_signatures: [
     { method: 'POST', url: '/api/search' },
+    { method: 'POST', url: '/graphql$', body: '"query"\\s*:\\s*"\\s*query\\b', note: 'GraphQL query' },
   ],
 };
 
@@ -69,7 +70,7 @@ test('signatures compile with their method and optional body', () => {
   assert.equal(c.writes[0].method, 'POST');
   assert.ok(c.writes[0].body instanceof RegExp);
   assert.equal(c.writes[1].body, null);
-  assert.equal(c.allows.length, 1);
+  assert.equal(c.allows.length, 2);
 });
 
 test('a regex that does not compile throws, naming where it is', () => {
@@ -153,12 +154,28 @@ test('a body signature separates a mutation from a query on the same URL', () =>
 });
 
 test('a request with no body never matches a body signature', () => {
-  const c = cfg(GRAPHQL);
-  assert.equal(decideRequest(req('POST', 'https://api.test/graphql', null), { policy: 'read-only' }, c).action, 'allow');
   // A pattern that would match the text "null" or "undefined" must still not fire.
-  const any = cfg({ write_signatures: [{ method: 'POST', url: '/graphql$', body: '.*' }] });
-  assert.equal(decideRequest(req('POST', 'https://api.test/graphql', null), { policy: 'read-only' }, any).action, 'allow');
-  assert.equal(decideRequest(req('POST', 'https://api.test/graphql', undefined), { policy: 'read-only' }, any).action, 'allow');
+  const any = cfg({ write_signatures: [{ method: '*', url: '/graphql$', body: '.*' }] });
+  for (const body of [null, undefined]) {
+    assert.equal(decideRequest(req('GET', 'https://api.test/graphql', body), { policy: 'read-only' }, any).action, 'allow');
+  }
+  // Nor does a body allow signature let a bodiless POST through.
+  const v = decideRequest(req('POST', 'https://api.test/graphql', null), { policy: 'read-only' }, cfg(GRAPHQL));
+  assert.deepEqual(v, { action: 'block', reason: 'POST is not GET, HEAD or OPTIONS; policy read-only' });
+});
+
+test('any method but GET, HEAD or OPTIONS is a write with no signature at all', () => {
+  const c = cfg();
+  for (const m of ['POST', 'PUT', 'PATCH', 'DELETE', 'post']) {
+    assert.equal(decideRequest(req(m, 'https://api.test/x', '{}'), { policy: 'read-only' }, c).action, 'block', m);
+    assert.equal(decideRequest(req(m, 'https://api.test/x', '{}'), { policy: 'scoped-write' }, c).action, 'observe', m);
+  }
+  for (const m of ['GET', 'HEAD', 'OPTIONS']) {
+    assert.equal(decideRequest(req(m, 'https://api.test/x'), { policy: 'read-only' }, c).action, 'allow', m);
+  }
+  const reads = cfg({ allow_signatures: [{ method: 'POST', url: '^https://api\\.test/search$' }] });
+  assert.equal(decideRequest(req('POST', 'https://api.test/search', '{}'), { policy: 'read-only' }, reads).action, 'allow');
+  assert.equal(decideRequest(req('POST', 'https://api.test/searchx', '{}'), { policy: 'read-only' }, reads).action, 'block');
 });
 
 test('a write request: read-only blocks, scoped-write and unrestricted observe', () => {
@@ -192,8 +209,9 @@ test('an unknown policy blocks write requests', () => {
 });
 
 test('url matching is case-sensitive, as the schema says', () => {
-  const c = cfg({ write_signatures: [{ method: 'POST', url: '/Save$' }] });
-  assert.equal(decideRequest(req('POST', 'https://api.test/save'), { policy: 'read-only' }, c).action, 'allow');
+  const c = cfg({ write_signatures: [{ method: 'GET', url: '/Save$' }] });
+  assert.equal(decideRequest(req('GET', 'https://api.test/save'), { policy: 'read-only' }, c).action, 'allow');
+  assert.equal(decideRequest(req('GET', 'https://api.test/Save'), { policy: 'read-only' }, c).action, 'block');
 });
 
 // --- page injection (C2): every function works when rebuilt from its source ---------

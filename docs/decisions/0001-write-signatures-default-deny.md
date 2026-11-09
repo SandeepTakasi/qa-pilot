@@ -31,3 +31,11 @@ profile change and after every host release.
 - Functions with side effects outside the app's data (model quota, mail) stay blocked; a feature
   that needs them runs `scoped-write`, where calls are recorded, not stopped.
 - The check is host code and lives with the host profile, not in this repository.
+
+## Amendment, 2026-11-09: default-deny by method
+
+The guard now does this itself. Any request whose method is not GET, HEAD or OPTIONS is a write
+unless an `allow_signatures` entry matches it; `write_signatures` still adds writes, which is
+needed only for a write sent as a GET. A channel-wide signature is no longer what makes a new
+operation visible: its method does. Hosts keep their allow lists, and add entries for any read
+that uses another method (token refresh, analytics) that the channel signatures never covered.

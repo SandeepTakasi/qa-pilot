@@ -80,7 +80,7 @@ mutation:                           # optional; required when any environment is
       url: <regex string>           # matched against the full request URL
       body: <regex string>          # optional; matched against the request body
       note: string                  # optional: why this is a write
-  allow_signatures:                 # optional, same shape: reads that a write signature matches
+  allow_signatures:                 # optional, same shape: reads that look like writes (a POST search)
     - ...
 
 cross_app:                          # required when apps has > 1 entry
@@ -197,9 +197,9 @@ A feature's cases declare whether specs may change data (`mutation.policy` in `c
 
 `url` and `body` compile with `new RegExp(pattern)` (case-sensitive); `deny_controls.text` compiles with the `i` flag.
 
-A request is a **write** when it matches any `write_signatures` entry and no `allow_signatures` entry (for reads that look like writes, such as a streaming read over POST).
+A request is a **write** when its method is anything but `GET`, `HEAD` or `OPTIONS`, or when it matches any `write_signatures` entry, and it matches no `allow_signatures` entry. So a `POST`, `PUT`, `PATCH` or `DELETE` needs no signature to be caught. List the reads that use those methods (a search over `POST`, a GraphQL query, a token refresh, analytics) in `allow_signatures`, or a `read-only` run that sends one is blocked and refused. `write_signatures` are needed only for writes sent as a `GET`, and to name a channel's writes in the record.
 
-**The write guard is the second layer, not the boundary.** On production the boundary is the restricted `test_account`. A write that no signature matches is a write the guard lets through (see `docs/decisions/0001-write-signatures-default-deny.md` in the QA-Pilot repository), and `test_account` is an unverified attestation, so QA owns keeping the account restricted and the signature list complete.
+**The write guard is the second layer, not the boundary.** On production the boundary is the restricted `test_account`. A write sent as a `GET` that no signature matches is a write the guard lets through (see `docs/decisions/0001-write-signatures-default-deny.md` in the QA-Pilot repository), and `test_account` is an unverified attestation, so QA owns keeping the account restricted and the allow list tight.
 
 Unknown keys under `mutation`, `deny_controls`, a signature entry, `stabilization`, `context` or a `sources` entry are **errors**: a misspelt `write_signature` would otherwise leave the guard with no signatures. Keep host-specific patterns here, never in the plugin.
 

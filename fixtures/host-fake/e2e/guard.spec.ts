@@ -228,6 +228,13 @@ test('GUARD-READONLY-016 @read-only a spec handler cannot turn an allowed read i
   expect(guardState.blocked).toBe(1);
 });
 
+test('GUARD-READONLY-017 @read-only a POST no write signature names is still aborted', async ({ page, guardState }) => {
+  await serve(page, '/projects', '<p>Projects</p>');
+  const outcome = await page.evaluate(() => fetch('/telemetry', { method: 'POST', body: '{}' }).then(() => 'reached', () => 'failed'));
+  expect(outcome).toBe('failed');
+  expect(guardState.blocked).toBe(1);
+});
+
 // --- scoped-write ---------------------------------------------------------------------
 
 test('GUARD-SCOPED-001 @scoped-write a write is allowed only in a row carrying the prefix', async ({ page }) => {

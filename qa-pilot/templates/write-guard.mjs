@@ -8,8 +8,8 @@
 // cases.schema.md ("May these tests write?").
 //
 // ponytail: ceilings, by design. Not seen: drag-and-drop, keyboard activation other than
-// Enter/Space, WebSocket frames, and popups opened outside the guarded context. Requests are
-// only as well classified as the host's write_signatures make them.
+// Enter/Space, WebSocket frames, and popups opened outside the guarded context. A write sent
+// as a GET is caught only when a write_signatures entry names it.
 
 // Generic on purpose. Host-specific words and icons belong in the host profile's
 // mutation.deny_controls, which is added to these, never replacing them.
@@ -101,6 +101,8 @@ export function decideControl({ label, icons, pageUrl, ownRowText }, { policy, p
 
 /**
  * Decide one network request. `body` is `request.postData()`, null when there is none.
+ * Any method but GET, HEAD or OPTIONS is a write, as is anything a write signature matches,
+ * unless an allow signature marks it a read: an unlisted write is caught, not missed.
  * @returns {{ action: 'allow' | 'block' | 'observe', reason: string }}
  */
 export function decideRequest({ method, url, body }, { policy }, cfg) {
@@ -109,10 +111,11 @@ export function decideRequest({ method, url, body }, { policy }, cfg) {
   const matches = (s) => (s.method === '*' || s.method === m) && s.url.test(u)
     && (s.body === null || (typeof body === 'string' && s.body.test(body)));
   const hit = cfg.writes.findIndex(matches);
-  if (hit === -1) return { action: 'allow', reason: 'matches no write signature' };
+  const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(m);
+  if (hit === -1 && !unsafe) return { action: 'allow', reason: `${m} matches no write signature` };
   const allowed = cfg.allows.findIndex(matches);
   if (allowed !== -1) return { action: 'allow', reason: `allow_signatures[${allowed}] marks it a read` };
-  const what = `${m} matches write_signatures[${hit}]`;
+  const what = hit !== -1 ? `${m} matches write_signatures[${hit}]` : `${m} is not GET, HEAD or OPTIONS`;
   if (policy === 'read-only') return { action: 'block', reason: `${what}; policy read-only` };
   if (policy === 'scoped-write' || policy === 'unrestricted') return { action: 'observe', reason: `${what}; recorded under ${policy}` };
   return { action: 'block', reason: `${what}; unknown policy "${policy}"` };

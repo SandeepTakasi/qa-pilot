@@ -17,7 +17,7 @@
 // ponytail: ceilings, by design. Not seen: drag-and-drop, pointer or mouse handlers that act
 // before click, keyboard activation other than Enter/Space, WebSocket frames, routeFromHAR,
 // popups opened outside the guarded context, and frames other than each page's main frame
-// for setScope. Requests are only as well classified as the host's write_signatures.
+// for setScope. A write sent as a GET is caught only when a write_signatures entry names it.
 // Requests Playwright does not route are made to route or refused: a keepalive fetch loses
 // its keepalive flag, and SharedWorker is refused and recorded as a blocked write.
 //

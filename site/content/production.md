@@ -106,7 +106,7 @@ The guard is a Playwright fixture, `write-guard.fixture.ts`, that specs import `
 Specs call an ordinary `locator.click()`; the guard decides in two places:
 
 - **In the page.** Capture-phase listeners injected before any app script runs judge clicks, submits and Enter or Space key presses before the application sees them.
-- **At the network layer.** A route judges every request against the host's `write_signatures`. A spec's own route handlers are wrapped so the guard decides first.
+- **At the network layer.** A route judges every request by its method and the host's signatures. A spec's own route handlers are wrapped so the guard decides first.
 
 Under any policy but `unrestricted`, the request paths a spec would reach for outside the guarded page (the `request` fixture, `page.request`, `fetch()`, `browser.newContext()`, `launch` and so on) are refused. For cross-app specs, `newGuardedContext()` replaces `browser.newContext()`.
 
@@ -114,11 +114,11 @@ Each test attempt leaves a `writes.json` beside its trace: the guard's record, a
 
 ## write_signatures
 
-The guard needs two things from the host: which controls are writes, and which requests are writes. Controls come with generic defaults (verbs such as save, delete, publish, submit, upload and rename, plus generic icon names), and `deny_controls` adds to them without replacing them. Requests have no safe default, because URL and method alone cannot always tell a write from a read. A request is a write when it matches any `mutation.write_signatures` entry and no `allow_signatures` entry.
+The guard needs two things from the host: which controls are writes, and which requests are writes. Controls come with generic defaults (verbs such as save, delete, publish, submit, upload and rename, plus generic icon names), and `deny_controls` adds to them without replacing them. Requests default to safe: any method but `GET`, `HEAD` or `OPTIONS` is a write. A request is a write when it uses such a method or matches any `mutation.write_signatures` entry, and it matches no `allow_signatures` entry. The allow list names the reads that use another method (a search over `POST`, a GraphQL query, a token refresh); a write signature is needed for a write sent as a `GET`.
 
 Each entry has a required `method` (an uppercase HTTP method, or `*`), a required `url` regex matched against the full request URL, an optional `body` regex (for GraphQL and RPC-style backends that put every operation on one URL) and an optional `note`. The field rules are in the [host profile reference](../../qa-pilot/schemas/qa-pilot.config.schema.md).
 
-Write signatures are default-deny per channel ([decision 0001](../../docs/decisions/0001-write-signatures-default-deny.md)). For every channel where reads and writes share a method and host, write one signature that matches the whole channel and list the reads in `allow_signatures`. A new operation is then blocked and appears in `writes.json` instead of passing silently, and a read-only run that touches a new read is refused and names it. Anchor allow entries to their host, because an allow entry overrides every write signature.
+Requests are default-deny ([decision 0001](../../docs/decisions/0001-write-signatures-default-deny.md)). A new operation over `POST` is blocked and appears in `writes.json` instead of passing silently, and a read-only run that touches a new read is refused and names it. Production still needs at least one write signature: name the main write channel, so the record says which channel a blocked write used. Anchor allow entries to their host, because an allow entry overrides every write signature.
 
 Unknown keys under `mutation`, `deny_controls` or a signature are errors, and every regex must compile, so a misspelt `write_signature` cannot leave the guard with no signatures and no complaint.
 
