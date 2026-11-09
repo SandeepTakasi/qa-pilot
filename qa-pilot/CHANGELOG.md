@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.4.5 (2026-11-09)
+
+Publishing becomes one command. Nothing to do when upgrading: the skill calls it, and the
+CI template pins `v0.4.5`.
 
 ### Changed
 
