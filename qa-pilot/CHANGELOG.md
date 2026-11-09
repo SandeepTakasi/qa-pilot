@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Publishing is one command.** `scripts/publish.mjs <run-dir> --feature-dir testing/<feature>
+  --profile <p> --statuses <current statuses.json>` runs the report build, the publish gate, the
+  status transitions, the confidence score and the payload in that order, stops at the first
+  refusal, and writes the approval ledger only once every step has passed. `/qa-pilot:publish-results`
+  calls it instead of having the model chain five scripts and their flags by hand, the place
+  0.4.2's ordering bugs came from. The individual scripts are unchanged and still callable.
+
 ## 0.4.4 (2026-11-09)
 
 The write guard catches writes the profile never listed, and the production page moves into the

@@ -92,7 +92,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" --record-approvals \
   --ids <CASE-ID,CASE-ID>
 ```
 
-It prints `{ "approved_ledger": { ... } }`. Write that object to `testing/<feature>/approved.json` before the next run's group, and commit it. A passing case records the run's spec hash; an approved confirmed failure removes any entry. Publishing keeps entries but never creates the first one, so without this step an approved case goes back to review on its next pass and CI, which reads only `approved.json`, selects nothing. Under `tracker: none`, check the file is tracked, as `/qa-pilot:publish-results` step 4 does:
+It prints `{ "approved_ledger": { ... } }`. Write that object to `testing/<feature>/approved.json` before the next run's group, and commit it. A passing case records the run's spec hash; an approved confirmed failure removes any entry. Publishing keeps entries but never creates the first one, so without this step an approved case goes back to review on its next pass and CI, which reads only `approved.json`, selects nothing. Under `tracker: none`, check the file is tracked, as `/qa-pilot:publish-results` step 3 does:
 
 ```bash
 git ls-files --error-unmatch testing/<feature>/approved.json
@@ -152,7 +152,7 @@ When the cases file declares requirements, recompute:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/case-status.mjs" --cases testing/<feature>/cases.yaml --statuses <current statuses.json> --verdicts testing/<feature>/verdicts/<run_id>.json --profile <profile-path>
 ```
 
-Write the current statuses file as `/qa-pilot:publish-results` step 4 does, fetched now so it holds the decisions just taken. The script exits 1 when no case is executable and still prints everything. Read its `requirements` (absent when none are declared or the block has lint errors; a warning says so, so rerun `validate-cases.mjs`). Report the counts and name criteria by id: `uncovered`, `failing` (a covering case failed or went flaky), `proved` (a covering case passed and QA approved that pass), `unproved` (covered, not yet proved). Coverage changes neither score nor readiness; do not call a feature covered while any criterion is not `proved`.
+Write the current statuses file as `/qa-pilot:publish-results` step 2 does, fetched now so it holds the decisions just taken. The script exits 1 when no case is executable and still prints everything. Read its `requirements` (absent when none are declared or the block has lint errors; a warning says so, so rerun `validate-cases.mjs`). Report the counts and name criteria by id: `uncovered`, `failing` (a covering case failed or went flaky), `proved` (a covering case passed and QA approved that pass), `unproved` (covered, not yet proved). Coverage changes neither score nor readiness; do not call a feature covered while any criterion is not `proved`.
 
 **Any P0 that is not an approved pass means Not Ready regardless of score**; say so explicitly. A fully reviewed feature can still read Not Ready.
 

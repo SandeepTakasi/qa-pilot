@@ -138,4 +138,16 @@ if (twin.cases.map((c) => c.id).sort().join() !== [...QUIET].sort().join()) fail
 const accepted = gate(CLEAN);
 if (accepted.status !== 0) fail(`the publish gate refused the clean twin:\n${accepted.stderr}`);
 console.log(`accepted, as designed: ${accepted.stdout.trim()}`);
+
+// --- 3. the clean twin through the whole publish sequence ---------------------------------
+const GUARD = join(OUT, 'guard');
+writeFileSync(join(GUARD, 'clickup-map.json'), JSON.stringify(Object.fromEntries([...WRITERS, ...QUIET].map((id, i) => [id, `task${i}`]))));
+rmSync(join(GUARD, 'verdicts'), { recursive: true, force: true });
+rmSync(join(GUARD, 'approved.json'), { force: true });
+const published = node('publish.mjs', [CLEAN, '--feature-dir', GUARD, '--profile', PROFILE, '--statuses', join(CLEAN, 'statuses.json')]);
+if (published.status !== 0) fail(`publish.mjs refused the clean twin:\n${published.stderr}`);
+const payload = JSON.parse(published.stdout);
+if (!existsSync(join(GUARD, 'verdicts', `${twin.run_id}.json`))) fail('publish.mjs wrote no run record');
+if (payload.cases.length !== QUIET.length) fail(`the payload holds ${payload.cases.length} cases, not ${QUIET.length}`);
+console.log(`published, as designed: ${payload.cases.length} cases in ${payload.mode} mode`);
 console.log('refuse-check: PASS');
