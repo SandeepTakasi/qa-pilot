@@ -297,7 +297,7 @@ discards most of what `on-failure` saves.
 The workflow checks QA-Pilot out at a ref. Pin a tag or commit SHA, not a branch, or a change
 to QA-Pilot can turn your build red overnight with nothing in your history to explain it.
 
-The template pins `ref: v0.4.3` and needs 0.4.3 or newer: `select` takes `--cases` always
+The template pins `ref: v0.4.4` and needs 0.4.3 or newer: `select` takes `--cases` always
 and `verdict` takes `--expect`, and an older `ci-gate.mjs` ignores flags it does not know, so
 the job would go green on less than it claims. Upgrade the template and the pin together.
 

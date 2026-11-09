@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.4.4 (2026-11-09)
+
+The write guard catches writes the profile never listed, and the production page moves into the
+plugin.
 
 ### Upgrading
 
@@ -18,6 +21,8 @@
 - **The write guard is default-deny by method.** A write the profile never listed is caught
   instead of missed. `write_signatures` are now needed only for a write sent as a `GET`;
   production still requires one entry.
+- **The production page is `PRODUCTION.md`** in the plugin, so it reads on the repository as well
+  as on the documentation site. Its content is unchanged. The CI template pins `v0.4.4`.
 
 ## 0.4.3 (2026-10-24)
 
